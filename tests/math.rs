@@ -3,7 +3,7 @@ use enumo::Sexp;
 use ruler::*;
 use std::{collections::HashSet, str::FromStr};
 
-const CVEC_LEN: usize = 10;
+const CVEC_LEN: usize = 1000;
 
 type Constant = Option<i64>;
 

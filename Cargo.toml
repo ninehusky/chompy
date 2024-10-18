@@ -9,3 +9,4 @@ egraph-serialize = "0.2.0"
 indexmap = "2.6.0"
 lazy_static = "1.5.0"
 ruler = { path = "./ruler" }
+rand = "0.8.5"

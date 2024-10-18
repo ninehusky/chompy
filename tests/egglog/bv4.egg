@@ -1,0 +1,53 @@
+;;; term language
+
+(datatype BVValue
+   (ValueVar String)
+   (ValueNum i64))
+
+(datatype BVOp
+   (Shl)
+   (Shr)
+   (Add)
+   (Sub)
+   (Neg)
+   (Mul)
+   (Not)
+   (Concat)
+   (Lt)
+   (Gt)
+   (Sum))
+
+(sort BVTerm)
+
+(sort BVTermVec (Vec BVTerm))
+
+(function Bitvector (BVValue BVValue) BVTerm)
+(function BVOp1 (BVValue BVOp BVTerm) BVTerm)
+(function BVOp2 (BVValue BVOp BVTerm BVTerm) BVTerm)
+(function BVOp3 (BVValue BVOp BVTerm BVTerm BVTerm) BVTerm)
+(function BVOpn (BVValue BVOp BVTermVec) BVTerm)
+
+;;; predicates
+(sort Pred)
+
+(datatype PredOp
+  (Le))
+
+(function PredOp2 (PredOp BVValue BVValue) Pred)
+
+(relation cond-equal (Pred BVTerm BVTerm))
+
+(function eclass (BVTerm) i64 :merge (min old new))
+(function pred-eclass (Pred) i64 :merge (min old new))
+
+(ruleset eclass-report)
+(ruleset non-cond-rewrites)
+(ruleset cond-rewrites)
+
+(rule
+  ((eclass ?bvterm))
+  ((extract "eclass:")
+   (extract (eclass ?bvterm))
+   (extract "candidate term:")
+   (extract ?bvterm))
+   :ruleset eclass-report)
