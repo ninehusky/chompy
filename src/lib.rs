@@ -74,9 +74,9 @@ pub trait Chomper {
         let mut conditional_rules: Vec<Rule> = vec![];
 
         for current_size in 0..MAX_SIZE {
-            info!("adding programs of size {}:", current_size);
+            println!("adding programs of size {}:", current_size);
 
-            info!("finding eclass term map...");
+            println!("finding eclass term map...");
             let eclass_term_map = self
                 .reset_eclass_term_map(egraph)
                 .values()
@@ -97,14 +97,14 @@ pub trait Chomper {
                     .plug(TERM_PLACEHOLDER, &term_workload)
             };
 
-            info!("new workload len: {}", new_workload.force().len());
+            println!("new workload len: {}", new_workload.force().len());
 
             let atoms = self.atoms().force();
 
             let memo = &mut HashSet::default();
 
             for term in &new_workload.force() {
-                // info!("term: {}", term);
+                // println!("term: {}", term);
                 let term_string = self.make_string_not_bad(term.to_string().as_str());
                 if !atoms.contains(term) && !self.has_var(term) {
                     continue;
@@ -134,27 +134,27 @@ pub trait Chomper {
                     "#,
                     )
                     .unwrap();
-                info!("starting cvec match");
+                println!("starting cvec match");
                 let vals = self.cvec_match(egraph, memo);
 
                 if vals.non_conditional.is_empty() && vals.conditional.is_empty() {
                     break;
                 }
 
-                info!("found {} non-conditional rules", vals.non_conditional.len());
-                info!("found {} conditional rules", vals.conditional.len());
+                println!("found {} non-conditional rules", vals.non_conditional.len());
+                println!("found {} conditional rules", vals.conditional.len());
                 for val in &vals.conditional {
                     let generalized = self.generalize_rule(val);
                     if let ValidationResult::Valid = self.validate_rule(&generalized) {
                         if utils::does_rule_have_good_vars(&generalized) {
-                            info!(
+                            println!(
                                 "Conditional rule: if {} then {} ~> {}",
                                 generalized.condition.clone().unwrap(),
                                 generalized.lhs,
                                 generalized.rhs
                             );
 
-                            self.add_conditional_rewrite(egraph, &generalized);
+                            // self.add_conditional_rewrite(egraph, &generalized);
                         }
                     }
                 }
@@ -181,7 +181,7 @@ pub trait Chomper {
                             // TODO: derivability check here
                         }
                     } else {
-                        // info!(
+                        // println!(
                         //     "perfect cvec match but failed validation: {} ~> {}",
                         //     val.lhs, val.rhs
                         // );
@@ -270,9 +270,9 @@ pub trait Chomper {
 
         let mask_to_preds = self.make_mask_to_preds();
 
-        info!("hi from cvec match");
+        println!("hi from cvec match");
         let eclass_term_map: HashMap<i64, Sexp> = self.reset_eclass_term_map(egraph);
-        info!("eclass term map len: {}", eclass_term_map.len());
+        println!("eclass term map len: {}", eclass_term_map.len());
         let ec_keys: Vec<&i64> = eclass_term_map.keys().collect();
         for i in 0..ec_keys.len() {
             let ec1 = ec_keys[i];
@@ -325,7 +325,7 @@ pub trait Chomper {
                     }
 
                     if !has_meaningful_diff {
-                        info!("no meaningful diff");
+                        println!("no meaningful diff");
                         continue;
                     }
 
@@ -353,7 +353,45 @@ pub trait Chomper {
         result
     }
 
-    fn add_rewrite(&mut self, egraph: &mut EGraph, rule: &Rule) {
+    fn is_rewrite_derivable(
+        &mut self,
+        empty_egraph: &EGraph,
+        rule: &Rule,
+        non_cond_ruleset: Vec<&Rule>,
+        cond_ruleset: Vec<&Rule>,
+    ) -> bool {
+        let mut egraph = empty_egraph.clone();
+        for rule in non_cond_ruleset {
+            self.add_rewrite(&mut egraph, rule);
+        }
+        for rule in cond_ruleset {
+            self.add_conditional_rewrite(&mut egraph, rule);
+        }
+        let term1 = self.make_string_not_bad(rule.lhs.to_string().as_str());
+        let term2 = self.make_string_not_bad(rule.rhs.to_string().as_str());
+
+        egraph
+            .parse_and_run_program(
+                None,
+                format!(
+                    r#"
+               ({UNIVERSAL_RELATION} {term1})
+               ({UNIVERSAL_RELATION} {term2})
+
+               (run 5 (ruleset non-cond-rewrites))
+               (run 5 (ruleset cond-rewrites))
+               "#
+                )
+                .as_str(),
+            )
+            .unwrap();
+
+        egraph
+            .parse_and_run_program(None, format!(r#"(check (= {} {}))"#, term1, term2).as_str())
+            .is_ok()
+    }
+
+    fn add_rewrite(&self, egraph: &mut EGraph, rule: &Rule) {
         let term1 = self.make_string_not_bad(rule.lhs.to_string().as_str());
         let term2 = self.make_string_not_bad(rule.rhs.to_string().as_str());
         // TODO: deal with rewrites which are essentially "anything matches this". they are not
@@ -361,7 +399,7 @@ pub trait Chomper {
         if term1 == "?a" {
             return;
         }
-        info!("Rule: {} ~> {}", term1, term2);
+        println!("Rule: {} ~> {}", term1, term2);
         egraph
             .parse_and_run_program(
                 None,
@@ -378,14 +416,14 @@ pub trait Chomper {
             .unwrap();
     }
 
-    fn add_conditional_rewrite(&mut self, egraph: &mut EGraph, rule: &Rule) {
+    fn add_conditional_rewrite(&self, egraph: &mut EGraph, rule: &Rule) {
         // TODO: @ninehusky: let's brainstorm ways to encode conditional equality with respect to a
         // specific condition (see #20).
         let cond = rule.condition.as_ref().unwrap().to_string();
         let term1 = rule.lhs.to_string();
         let term2 = rule.rhs.to_string();
 
-        info!(
+        println!(
             "adding conditional rewrite: if {} then {} -> {}",
             cond, term1, term2
         );
@@ -399,11 +437,13 @@ pub trait Chomper {
         "#
         );
 
-        println!("cond rewrite prog: {}", cond_rewrite_prog);
+        let cond = egraph.parse_and_run_program(None, &cond_rewrite_prog);
 
-        egraph
-            .parse_and_run_program(None, &cond_rewrite_prog)
-            .unwrap();
+        if cond.is_err() {
+            println!("error: {:?}", cond);
+        } else {
+            println!("cond rewrite prog: {}", cond_rewrite_prog);
+        }
     }
 
     fn has_var(&self, term: &Sexp) -> bool {
@@ -420,6 +460,7 @@ pub trait Chomper {
         }
     }
 
+    // TODO: some of these should probably put in some sort of `Language` trait.
     fn language_name() -> String;
     fn productions(&self) -> Workload;
     fn atoms(&self) -> Workload;
@@ -428,6 +469,8 @@ pub trait Chomper {
     fn validate_rule(&self, rule: &Rule) -> ValidationResult;
     fn interpret_term(&self, term: &ruler::enumo::Sexp) -> CVec<Self>;
     fn interpret_pred(&self, term: &ruler::enumo::Sexp) -> Vec<bool>;
+    /// fn concretize_predicate(&self, pred: &Sexp) -> Sexp;
+    /// fn make_var(id: String) -> Sexp;
     fn constant_pattern(&self) -> Pattern;
     fn matches_var_pattern(&self, term: &Sexp) -> bool;
 }
