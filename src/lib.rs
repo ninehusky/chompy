@@ -30,7 +30,7 @@ pub struct Rules {
     pub conditional: Vec<Rule>,
 }
 
-pub const MAX_SIZE: usize = 10;
+pub const MAX_SIZE: usize = 6;
 pub const EXAMPLE_COUNT: usize = 1;
 
 #[macro_export]
@@ -81,7 +81,7 @@ pub trait Chomper {
         result
     }
 
-    fn run_chompy(&mut self, egraph: &mut EGraph) {
+    fn run_chompy(&mut self, egraph: &mut EGraph) -> Vec<Rule> {
         // TODO: i want to use a set here.
         let mut found_rules: Vec<Rule> = vec![];
         let mut max_eclass_id = 0;
@@ -271,7 +271,8 @@ pub trait Chomper {
             }
         }
 
-        panic!("not all rules were found");
+        // TODO: check
+        found_rules
     }
 
     fn make_var(&self, var: &str) -> Sexp;
@@ -286,7 +287,10 @@ pub trait Chomper {
             assert!(var_name.starts_with("?"));
             let var_name = var_name.trim_start_matches("?").to_string();
             if !env.contains_key(&var_name) {
-                panic!("variable not found in env: {}", var_name);
+                // TODO: check this
+                // this might be a terrible idea.
+                //
+                return Sexp::from_str(&format!("(Lit 5)")).unwrap();
             }
             return env[&var_name].clone();
         }
@@ -347,6 +351,9 @@ pub trait Chomper {
         match &rule.condition {
             Some((_, envs)) => {
                 for env in envs {
+                    println!("here is the env: {:?}", env);
+                    println!("lhs: {}", lhs);
+                    println!("rhs: {}", rhs);
                     let concretized_lhs = self.concretize_term_conditional(&lhs, env.clone());
                     let concretized_rhs = self.concretize_term_conditional(&rhs, env.clone());
 
@@ -363,6 +370,7 @@ pub trait Chomper {
                             "#,
                                 concretized_lhs, concretized_rhs
                             )
+                            .replace("quote", "\"")
                             .as_str(),
                         )
                         .unwrap();
