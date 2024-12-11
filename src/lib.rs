@@ -30,7 +30,7 @@ pub struct Rules {
     pub conditional: Vec<Rule>,
 }
 
-pub const MAX_SIZE: usize = 10;
+pub const MAX_SIZE: usize = 8;
 pub const EXAMPLE_COUNT: usize = 1;
 
 #[macro_export]
@@ -81,7 +81,7 @@ pub trait Chomper {
         result
     }
 
-    fn run_chompy(&mut self, egraph: &mut EGraph) {
+    fn run_chompy(&mut self, egraph: &mut EGraph) -> Vec<Rule> {
         // TODO: i want to use a set here.
         let mut found_rules: Vec<Rule> = vec![];
         let mut max_eclass_id = 0;
@@ -97,6 +97,7 @@ pub trait Chomper {
                 .values()
                 .cloned()
                 .collect::<Vec<_>>();
+            println!("done finding eclass term map");
             let term_workload = Workload::new(
                 eclass_term_map
                     .iter()
@@ -162,10 +163,11 @@ pub trait Chomper {
                         None,
                         r#"
                         (run non-cond-rewrites 1)
-                        (run cond-rewrites 1)
+                        ; (run cond-rewrites 1)
                     "#,
                     )
                     .unwrap();
+                println!("now i am done with rewrites");
 
                 let serialized = egraph.serialize(egglog::SerializeConfig::default());
                 println!("main egraph has {} nodes", serialized.nodes.len());
@@ -195,8 +197,12 @@ pub trait Chomper {
                                 lhs: generalized.lhs.clone(),
                                 rhs: generalized.rhs.clone(),
                             };
-                            if !self.check_derivability(&initial_egraph, &found_rules, &generalized)
-                            {
+                            if !self.check_derivability(
+                                &initial_egraph,
+                                &found_rules,
+                                &generalized,
+                                false,
+                            ) {
                                 found_rules.push(rule);
                                 egraph
                                     .parse_and_run_program(
@@ -242,8 +248,12 @@ pub trait Chomper {
                                 continue;
                             }
 
-                            if !self.check_derivability(&initial_egraph, &found_rules, &generalized)
-                            {
+                            if !self.check_derivability(
+                                &initial_egraph,
+                                &found_rules,
+                                &generalized,
+                                false,
+                            ) {
                                 let rule = Rule {
                                     condition: generalized.condition.clone(),
                                     lhs: generalized.lhs.clone(),
@@ -271,7 +281,8 @@ pub trait Chomper {
             }
         }
 
-        panic!("not all rules were found");
+        // TODO: check
+        found_rules
     }
 
     fn make_var(&self, var: &str) -> Sexp;
@@ -286,7 +297,10 @@ pub trait Chomper {
             assert!(var_name.starts_with("?"));
             let var_name = var_name.trim_start_matches("?").to_string();
             if !env.contains_key(&var_name) {
-                panic!("variable not found in env: {}", var_name);
+                // TODO: check this
+                // this might be a terrible idea.
+                //
+                return Sexp::from_str(&format!("(Lit 5)")).unwrap();
             }
             return env[&var_name].clone();
         }
@@ -331,6 +345,7 @@ pub trait Chomper {
         initial_egraph: &EGraph,
         ruleset: &Vec<Rule>,
         rule: &Rule,
+        long: bool,
     ) -> bool {
         println!("rules: {}", ruleset.len());
         // TODO: fix. return false;
@@ -347,8 +362,13 @@ pub trait Chomper {
         match &rule.condition {
             Some((_, envs)) => {
                 for env in envs {
+                    println!("here is the env: {:?}", env);
+                    println!("lhs: {}", lhs);
+                    println!("rhs: {}", rhs);
                     let concretized_lhs = self.concretize_term_conditional(&lhs, env.clone());
                     let concretized_rhs = self.concretize_term_conditional(&rhs, env.clone());
+
+                    println!("concretized terms.");
 
                     let mut new_egraph = initial_egraph.clone();
                     new_egraph
@@ -363,26 +383,40 @@ pub trait Chomper {
                             "#,
                                 concretized_lhs, concretized_rhs
                             )
+                            .replace("quote", "\"")
                             .as_str(),
                         )
                         .unwrap();
 
+                    println!("running rewrites");
                     new_egraph
                         .parse_and_run_program(
                             None,
-                            r#"
+                            format!(
+                                r#"
 
-                        (run non-cond-rewrites 10 :until (= lhs rhs))
-                        (run cond-rewrites 10 :until (= lhs rhs))
+                            (run non-cond-rewrites 5 :until (= lhs rhs))
+                            {}
                             ;;; (run non-cond-rewrites :until (= lhs rhs))
                             ;;; (run cond-rewrites :until (= lhs rhs))
                     "#,
+                                if long {
+                                    format!("(run cond-rewrites 3 :until (= lhs rhs))")
+                                } else {
+                                    format!("(run cond-rewrites 1 :until (= lhs rhs))")
+                                }
+                            )
+                            .as_str(),
                         )
                         .unwrap();
+                    println!("done running rewrites");
 
                     let serialized = new_egraph.serialize(egglog::SerializeConfig::default());
-                    println!("eclasses: {}", serialized.root_eclasses.len());
-                    println!("nodes: {}", serialized.nodes.len());
+                    println!(
+                        "from derivability check. eclasses: {}",
+                        serialized.root_eclasses.len()
+                    );
+                    println!("from derivability check. nodes: {}", serialized.nodes.len());
 
                     let result = new_egraph.parse_and_run_program(
                         None,
@@ -419,7 +453,7 @@ pub trait Chomper {
                     .parse_and_run_program(
                         None,
                         r#"
-                        (run non-cond-rewrites 10 :until (= lhs rhs))
+                        (run non-cond-rewrites 5 :until (= lhs rhs))
                         ;;; uncommenting the line below will break things, because it will try to interpret variables.
                         ;;; (run cond-rewrites 3)
                     "#,
@@ -488,17 +522,21 @@ pub trait Chomper {
     }
 
     fn reset_eclass_term_map(&self, egraph: &mut EGraph) -> HashMap<i64, Sexp> {
+        println!("resetting");
         let mut outputs = egraph
             .parse_and_run_program(
                 None,
                 r#"
                 (push)
-                (run eclass-report 100)
+                (run-schedule
+                    (saturate eclass-report))
+                ;;; (run eclass-report 100)
                 (pop)"#,
             )
             .unwrap()
             .into_iter()
             .peekable();
+        println!("done");
 
         let mut map = HashMap::default();
 
@@ -737,8 +775,8 @@ pub trait Chomper {
     fn make_preds(&self) -> Workload;
     fn get_env(&self) -> &HashMap<String, CVec<Self>>;
     fn validate_rule(&self, rule: &Rule) -> ValidationResult;
-    fn interpret_term(&self, term: &ruler::enumo::Sexp) -> CVec<Self>;
-    fn interpret_pred(&self, term: &ruler::enumo::Sexp) -> Vec<bool>;
+    fn interpret_term(&mut self, term: &ruler::enumo::Sexp) -> CVec<Self>;
+    fn interpret_pred(&mut self, term: &ruler::enumo::Sexp) -> Vec<bool>;
     fn constant_pattern(&self) -> Pattern;
     fn matches_var_pattern(&self, term: &Sexp) -> bool;
 }

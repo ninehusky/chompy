@@ -2,6 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use std::fmt::Debug;
 
+use egglog::SerializeConfig;
 use egglog::{
     ast::{Span, Symbol},
     constraint::{SimpleTypeConstraint, TypeConstraint},
@@ -81,14 +82,25 @@ impl PrimitiveLike for Ite {
         values: &[egglog::Value],
         egraph: Option<&mut egglog::EGraph>,
     ) -> Option<egglog::Value> {
+        println!("hi from the ite apply function");
         let egraph = egraph.unwrap();
+        let serialized = egraph.serialize(SerializeConfig::default());
+
+        let nodes = serialized.nodes.len();
+
+        println!("nodes: {}", nodes);
+
         let sexp = Sexp::from_str(&egraph.extract_value_to_string(values[0])).unwrap();
 
-        if self.interpreter.interp_cond(&sexp) {
+        println!("ite - interpreting: {}", sexp);
+
+        let res = if self.interpreter.interp_cond(&sexp) {
             Some(values[1])
         } else {
             Some(values[2])
-        }
+        };
+        println!("bye from the ite apply function");
+        res
     }
 }
 

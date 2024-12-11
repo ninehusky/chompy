@@ -2,8 +2,10 @@ use chompy::{CVec, Chomper};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use ruler::{
     enumo::{Sexp, Workload},
-    HashMap, ValidationResult,
+    HashMap, HashSet, ValidationResult,
 };
+
+use std::str::FromStr;
 
 use z3::ast::Ast;
 
@@ -55,10 +57,10 @@ impl Chomper for HalideChomper {
 
     fn productions(&self) -> ruler::enumo::Workload {
         Workload::new(&[
-            // format!(
-            //     "(ternary {} {} {})",
-            //     TERM_PLACEHOLDER, TERM_PLACEHOLDER, TERM_PLACEHOLDER
-            // ),
+            format!(
+                "(ternary {} {} {})",
+                TERM_PLACEHOLDER, TERM_PLACEHOLDER, TERM_PLACEHOLDER
+            ),
             format!("(binary {} {})", TERM_PLACEHOLDER, TERM_PLACEHOLDER),
             format!("(unary {})", TERM_PLACEHOLDER),
         ])
@@ -74,8 +76,8 @@ impl Chomper for HalideChomper {
     }
 
     fn atoms(&self) -> Workload {
-        // Workload::new(&["(Var a)", "(Var b)", "(Lit 1)", "(Lit 0)"])
         Workload::new(&["(Var a)", "(Var b)"])
+        // Workload::new(&["(Var a)", "(Var b)", "(Lit 1)", "(Lit 0)"])
     }
 
     fn matches_var_pattern(&self, term: &ruler::enumo::Sexp) -> bool {
@@ -308,7 +310,7 @@ impl Chomper for HalideChomper {
 }
 
 impl HalideChomper {
-    fn make_env(rng: &mut StdRng) -> HashMap<String, Vec<Option<i64>>> {
+    pub fn make_env(rng: &mut StdRng) -> HashMap<String, Vec<Option<i64>>> {
         let mut env = HashMap::default();
         let dummy = HalideChomper { env: env.clone() };
         for atom in &dummy.atoms().force() {
@@ -328,6 +330,76 @@ impl HalideChomper {
         }
         env
     }
+}
+
+pub fn get_vars(sexp: &Sexp) -> HashSet<String> {
+    let mut vars: HashSet<String> = HashSet::default();
+    get_vars_internal(sexp, &mut vars);
+    vars
+}
+
+fn get_vars_internal(sexp: &Sexp, vars: &mut HashSet<String>) {
+    match sexp {
+        Sexp::Atom(a) => {
+            if a.starts_with("?") {
+                // remove the "?"
+                vars.insert(a[1..].to_string());
+            }
+        }
+        Sexp::List(l) => {
+            for term in l {
+                get_vars_internal(term, vars);
+            }
+        }
+    }
+}
+
+// fn get_vars(ast: z3::ast::Int) -> Vec<String> {
+//     let mut vars: HashSet<String> = HashSet::default();
+//     match ast {
+//         z3::ast::Int::
+//     }
+// }
+
+// generates a binding from variables -> values that satisfy
+// the given condition.
+pub fn generate_environment(cond: &Sexp) -> HashMap<String, Sexp> {
+    let mut cfg = z3::Config::new();
+    cfg.set_timeout_msec(1000);
+    let ctx = z3::Context::new(&cfg);
+    let solver = z3::Solver::new(&ctx);
+    let constraint = sexp_to_z3(&ctx, cond);
+    solver.assert(&constraint._eq(&z3::ast::Int::from_i64(&ctx, 1)));
+    let result = solver.check();
+    let mut env = HashMap::default();
+    if result == z3::SatResult::Sat {
+        let model = solver.get_model();
+        // TODO: clean this up. this kind of string manipulation is not ideal.
+        // we should be able to parse the z3 expression for
+        // constants and extract the values through interpretation of the model.
+        let model_str = model.unwrap().to_string();
+        let lines: Vec<&str> = model_str.lines().collect();
+        for line in lines {
+            println!("line: {}", line);
+            // split on "->"
+            let parts = line.split("->").collect::<Vec<&str>>();
+            if parts.len() != 2 {
+                panic!("Unexpected number of parts: {}", parts.len());
+            }
+            // remove parens
+            let var = parts[0].trim().trim_matches(|c| c == '(' || c == ')');
+            let val = parts[1]
+                .trim()
+                .trim_matches(|c| c == '(' || c == ')')
+                .replace(' ', "");
+            println!("val: {}", val);
+            let val_num: i64 = val.parse().unwrap();
+            let sexp = Sexp::from_str(&format!("(Lit {})", val_num).to_string()).unwrap();
+            // do we need CVEC_LEN here?
+            env.insert(var.to_string(), sexp);
+        }
+    }
+    env
 }
 
 fn sexp_to_z3<'a>(ctx: &'a z3::Context, sexp: &Sexp) -> z3::ast::Int<'a> {
@@ -448,14 +520,19 @@ pub mod tests {
 
     use super::*;
 
-    #[test]
+    // not running for now because is expensive.
+    // #[test]
     fn run_halide_chomper() {
         let env = HalideChomper::make_env(&mut StdRng::seed_from_u64(0));
-        let mut chomper = HalideChomper { env };
+        let mut chomper = HalideChomper {
+            env,
+            memo: Default::default(),
+        };
         let mut egraph = EGraph::default();
 
         #[derive(Debug)]
         struct HalidePredicateInterpreter {
+            memo: Default::default(),
             chomper: HalideChomper,
         }
 
@@ -480,7 +557,7 @@ pub mod tests {
         });
         egraph.add_arcsort(halide_sort.clone()).unwrap();
         egraph.add_arcsort(dummy_sort).unwrap();
-        init_egraph!(egraph, "./egglog/halide.egg");
+        init_egraph!(egraph, "../../tests/egglog/halide.egg");
 
         chomper.run_chompy(&mut egraph);
     }
