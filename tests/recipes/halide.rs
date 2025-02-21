@@ -1,17 +1,67 @@
-use egg::{EGraph, Pattern, RecExpr, Rewrite};
-use ruler::{
-    enumo::{Filter, Metric, Rule, Ruleset, Workload},
+use chompy::{
+    enumo::{Filter, Metric, Rule, Ruleset, Sexp, Workload},
     recipe_utils::{
         base_lang, iter_metric, recursive_rules, recursive_rules_cond, run_workload, Lang,
     },
     HashMap, Limits, SynthAnalysis, SynthLanguage,
 };
+use egg::{EGraph, Pattern, RecExpr, Rewrite};
 
 use crate::Pred;
 
+pub fn make_conditional_wkld() -> Workload {
+    // 1. Make a bunch of expressions which are just ints.
+    let int_lang = Lang::new(
+        &[],
+        &["a", "b", "c"],
+        &[&["abs"], &["+", "-", "*", "/", "%", "min", "max"]],
+    );
+
+    let mut wkld = iter_metric(base_lang(int_lang.ops.len()), "EXPR", Metric::Atoms, 3)
+        .filter(Filter::Contains("VAR".parse().unwrap()))
+        .plug("VAR", &Workload::new(int_lang.vars))
+        .plug("VAL", &Workload::new(int_lang.vals));
+
+    for (i, ops) in int_lang.ops.iter().enumerate() {
+        wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    }
+
+    // 2. Make expressions which use the ints to create a conditional.
+    let int_to_bool_lang = Lang::new(
+        &["0"],
+        &["a", "b", "c"],
+        &[&["!", "abs"], &["<", "<=", "==", "!="]],
+    );
+
+    let mut wkld2 = iter_metric(
+        base_lang(int_to_bool_lang.ops.len()),
+        "EXPR",
+        Metric::Atoms,
+        3,
+    )
+    .filter(Filter::Contains("VAR".parse().unwrap()))
+    .plug("VAR", &wkld)
+    .plug("VAL", &wkld);
+
+    for (i, ops) in int_to_bool_lang.ops.iter().enumerate() {
+        wkld2 = wkld2.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    }
+
+    println!("len: {}", wkld2.force().len());
+
+    wkld
+}
+
 fn compute_conditional_structures() -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, Ruleset<Pred>) {
     // Start by pre-computing a bunch of stuff about conditions.
-    let condition_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
+    let condition_lang = Lang::new(
+        &["0"],
+        &["a", "b", "c"],
+        &[
+            &["!", "abs"],
+            &["<", "<=", "!=", "+", "-", "*", "min", "max", "||", "&&"],
+        ],
+    );
 
     // chuck em all into an e-graph.
     let base_lang = if condition_lang.ops.len() == 2 {
@@ -19,7 +69,7 @@ fn compute_conditional_structures() -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, 
     } else {
         base_lang(3)
     };
-    let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+    let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 5)
         .filter(Filter::Contains("VAR".parse().unwrap()))
         .plug("VAR", &Workload::new(condition_lang.vars))
         .plug("VAL", &Workload::new(condition_lang.vals));
@@ -34,7 +84,28 @@ fn compute_conditional_structures() -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, 
 
     let mut cond_prop_ruleset = Ruleset::default();
 
-    let forced = wkld.filter(Filter::MetricEq(Metric::Atoms, 3)).force();
+    // only bools. kind of a weird type checking thing going on here.
+    let forced: Vec<Sexp> = wkld
+        .force()
+        .into_iter()
+        .filter(|x| {
+            if let Sexp::List(l) = x {
+                if let Sexp::Atom(a) = &l[0] {
+                    if a == "||"
+                        || a == "&&"
+                        || a == "!"
+                        || a == "<"
+                        || a == "<="
+                        || a == "=="
+                        || a == "!="
+                    {
+                        return true;
+                    }
+                }
+            }
+            false
+        })
+        .collect();
 
     let true_recexpr: RecExpr<Pred> = "TRUE".parse().unwrap();
 

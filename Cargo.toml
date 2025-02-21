@@ -1,7 +1,8 @@
 [package]
-name = "ruler"
+name = "chompy"
 version = "0.1.0"
-authors = ["Max Willsey <me@mwillsey.com>", "Chandrakana Nandi <cnandi@cs.washington.edu>"]
+# I'm the author of Chompy, but this work builds off of Ruler! github.com/uwplse/ruler
+authors = ["Andrew Cheung <a7cheung@ucsd.edu>"]
 edition = "2018"
 
 [dependencies]

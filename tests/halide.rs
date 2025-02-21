@@ -1,5 +1,5 @@
+use chompy::*;
 use num::{ToPrimitive, Zero};
-use ruler::*;
 use z3::ast::Ast;
 
 type Constant = i64;
@@ -405,6 +405,7 @@ mod halide;
 mod test {
     use crate::halide::{
         halide_rules, halide_rules_for_caviar_conditional, halide_rules_for_caviar_total_only,
+        make_conditional_wkld,
     };
     use crate::{egg_to_z3, Pred};
     use std::{
@@ -412,14 +413,14 @@ mod test {
         time::{Duration, Instant},
     };
 
-    use egg::{AstSize, Extractor, Pattern, RecExpr};
-    use ruler::{
+    use chompy::{
         enumo::{Filter, Metric, Rule, Ruleset, Workload},
         logger,
         recipe_utils::{recursive_rules, run_workload, Lang},
         Limits,
     };
-    use ruler::{SynthAnalysis, SynthLanguage};
+    use chompy::{SynthAnalysis, SynthLanguage};
+    use egg::{AstSize, Extractor, Pattern, RecExpr};
     use z3::ast::Ast;
 
     #[test]
@@ -431,6 +432,8 @@ mod test {
 
         let start = Instant::now();
         // let all_rules = halide_rules();
+        let cond_lang = make_conditional_wkld();
+        panic!();
         let all_rules = halide_rules_for_caviar_conditional();
         println!("done");
         let duration = start.elapsed();
