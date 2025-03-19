@@ -55,10 +55,6 @@ fn run_workload_internal<L: SynthLanguage>(
 
     let mut chosen: Ruleset<L> = prior.clone();
 
-    println!("Candidates:");
-    for c in &candidates {
-        println!("{}", c.0);
-    }
     // minimize the total candidates with respect to the prior rules
     let (chosen_total, _) =
         candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
