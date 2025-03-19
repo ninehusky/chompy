@@ -1,113 +1,352 @@
-#[cfg(test)]
-#[path = "./recipes/halide.rs"]
-mod halide;
+use egg::{EGraph, Pattern, RecExpr, Rewrite};
+use ruler::{
+    enumo::{Filter, Metric, Rule, Ruleset, Workload},
+    recipe_utils::{
+        base_lang, iter_metric, recursive_rules, recursive_rules_cond, run_workload, Lang,
+    },
+    HashMap, Limits, SynthAnalysis, SynthLanguage,
+};
 
-#[allow(unused_imports)]
-mod test {
-    use crate::halide::{
-        halide_rules, halide_rules_for_caviar_conditional, halide_rules_for_caviar_total_only,
+use ruler::halide::Pred;
+
+fn compute_conditional_structures() -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, Ruleset<Pred>) {
+    // Start by pre-computing a bunch of stuff about conditions.
+    // let condition_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
+    let condition_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
+
+    // chuck em all into an e-graph.
+    let base_lang = if condition_lang.ops.len() == 2 {
+        base_lang(2)
+    } else {
+        base_lang(3)
     };
-    use ruler::halide::{egg_to_z3, Pred};
-    use std::{
-        str::FromStr,
-        sync::Arc,
-        time::{Duration, Instant},
-    };
-
-    use egg::{
-        rewrite, AstSize, ConditionEqual, ConditionalApplier, Extractor, Pattern, RecExpr, Rewrite,
-    };
-    use ruler::{
-        enumo::{Filter, Metric, Rule, Ruleset, Workload},
-        logger,
-        recipe_utils::{recursive_rules, run_workload, Lang},
-        Limits,
-    };
-    use ruler::{SynthAnalysis, SynthLanguage};
-    use z3::ast::Ast;
-
-    #[test]
-    fn test_conditional_deriability_direct() {
-        // tests that {`if x >= 0 then x ~> |x|`} derives `if x > 5 then x ~> |x|`.
-        let (rule_a, _): (Rule<Pred>, _) = Rule::from_string("x ==> (abs x) if (>= x 0)").unwrap();
-        let (rule_b, _): (Rule<Pred>, _) = Rule::from_string("x ==> (abs x) if (> x 5)").unwrap();
-        let mut ruleset_a = Ruleset::default();
-        let mut ruleset_b = Ruleset::default();
-
-        ruleset_a.add(rule_a.clone());
-        ruleset_b.add(rule_b.clone());
-
-        let mut cond_prop_ruleset: Ruleset<Pred> = Ruleset::default();
-
-        cond_prop_ruleset.add(Rule::from_string("TRUE ==> (>= x 0) if (> x 5)").unwrap().0);
-
-        let (can, cannot) = ruleset_a.derive(
-            ruler::DeriveType::LhsAndRhs,
-            &ruleset_b,
-            Limits::deriving(),
-            &Some(cond_prop_ruleset.clone()),
-        );
-
-        assert!(can.len() == 1);
-        assert!(cannot.is_empty());
-
-        let (can, cannot) = ruleset_b.derive(
-            ruler::DeriveType::LhsAndRhs,
-            &ruleset_a,
-            Limits::deriving(),
-            &Some(cond_prop_ruleset),
-        );
-
-        assert!(can.is_empty());
-        assert!(cannot.len() == 1);
+    let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+        .filter(Filter::Contains("VAR".parse().unwrap()))
+        .plug("VAR", &Workload::new(condition_lang.vars))
+        .plug("VAL", &Workload::new(condition_lang.vals));
+    // let ops = vec![lang.uops, lang.bops, lang.tops];
+    for (i, ops) in condition_lang.ops.iter().enumerate() {
+        wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
 
-    #[test]
-    fn test_conditional_derivability_step() {
-        // tests that {`if x >= 0 then x ~> |x|`} derives `if x > 5 then x ~> |x|`.
-        let (rule_a, _): (Rule<Pred>, _) = Rule::from_string("x ==> (abs x) if (>= x 0)").unwrap();
-        let (rule_b, _): (Rule<Pred>, _) = Rule::from_string("x ==> (abs x) if (> x 5)").unwrap();
-        let mut ruleset_a = Ruleset::default();
-        let mut ruleset_b = Ruleset::default();
+    let egraph: EGraph<Pred, SynthAnalysis> = wkld.to_egraph();
 
-        ruleset_a.add(rule_a.clone());
-        ruleset_b.add(rule_b.clone());
+    let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
-        let mut cond_prop_ruleset: Ruleset<Pred> = Ruleset::default();
+    let wkld = wkld.filter(Filter::MetricEq(Metric::Atoms, 3));
 
-        cond_prop_ruleset.add(Rule::from_string("TRUE ==> (> x 4) if (> x 5)").unwrap().0);
-        cond_prop_ruleset.add(Rule::from_string("TRUE ==> (>= x 0) if (> x 4)").unwrap().0);
+    let cond_prop_ruleset = Pred::get_condition_propogation_rules(&wkld);
 
-        let (can, cannot) = ruleset_a.derive(
-            ruler::DeriveType::LhsAndRhs,
-            &ruleset_b,
-            Limits::deriving(),
-            &Some(cond_prop_ruleset.clone()),
-        );
-
-        assert!(can.len() == 1);
-        assert!(cannot.is_empty());
-
-        let (can, cannot) = ruleset_b.derive(
-            ruler::DeriveType::LhsAndRhs,
-            &ruleset_a,
-            Limits::deriving(),
-            &Some(cond_prop_ruleset),
-        );
-
-        assert!(can.is_empty());
-        assert!(cannot.len() == 1);
+    println!("cond prop rules: {}", cond_prop_ruleset.len());
+    for rule in &cond_prop_ruleset {
+        println!("{}", rule.0);
     }
 
-    #[test]
-    fn run() {
-        let rule_path = "chompy-rules.txt";
+    for cond in wkld.force() {
+        let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
+        let cond_pat = Pattern::from(&cond);
 
-        let start = Instant::now();
-        let all_rules = halide_rules_for_caviar_conditional();
-        let end = Instant::now();
-        println!("finished in {:?}", end.duration_since(start));
-        println!("writing halide rules to: {}", rule_path);
-        all_rules.to_file(rule_path);
+        let cond_id = egraph
+            .lookup_expr(&cond_pat.to_string().parse().unwrap())
+            .unwrap();
+
+        let pvec = egraph[cond_id]
+            .data
+            .cvec
+            .clone()
+            .iter()
+            .map(|b| *b != Some(0))
+            .collect();
+
+        pvec_to_terms
+            .entry(pvec)
+            .or_default()
+            .push(cond_pat.clone());
     }
+
+    (pvec_to_terms, cond_prop_ruleset)
+}
+
+pub fn halide_rules_for_caviar_conditional() -> Ruleset<Pred> {
+    let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures();
+    let mut all_rules = Ruleset::default();
+
+    let mod_rules = recursive_rules_cond(
+        Metric::Atoms,
+        3,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["%"]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(mod_rules);
+
+    let equality = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &[],
+            &["a", "b", "c"],
+            &[&["!"], &["==", "!=", "<", ">", ">=", "<=", "min", "max"]],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(equality);
+
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(bool_only);
+
+    let rat_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["+", "-", "*"]],
+        ),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(rat_only);
+
+    let div_only = recursive_rules_cond(
+        Metric::Atoms,
+        3,
+        Lang::new(&["-1", "0", "1"], &["a", "b", "c"], &[&[], &["/", "%"]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(div_only);
+
+    let min_max = recursive_rules_cond(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min", "max", "&&"]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(min_max);
+
+    all_rules
+}
+
+#[allow(dead_code)]
+pub fn halide_rules_for_caviar_total_only() -> Ruleset<Pred> {
+    let mut all_rules = Ruleset::default();
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        all_rules.clone(),
+    );
+    all_rules.extend(bool_only);
+    let rat_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["+", "-", "*", "min", "max"]],
+        ),
+        all_rules.clone(),
+    );
+    all_rules.extend(rat_only.clone());
+    let pred_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["<", "<=", "==", "!="], &[]],
+        ),
+        all_rules.clone(),
+    );
+    all_rules.extend(pred_only);
+
+    let full = recursive_rules(
+        Metric::Atoms,
+        4,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[
+                &["!"],
+                &[
+                    "&&", "||", "+", "-", "*", "/", "%", "min", "max", "<", "<=", "==", "!=",
+                ],
+                &[],
+            ],
+        ),
+        all_rules.clone(),
+    );
+    all_rules.extend(full);
+
+    all_rules
+}
+
+#[allow(dead_code)]
+pub fn halide_rules() -> Ruleset<Pred> {
+    let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures();
+
+    let mut all_rules = Ruleset::default();
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||", "^"]]),
+        all_rules.clone(),
+    );
+    all_rules.extend(bool_only);
+    let rat_only = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&["-"], &["+", "-", "*", "min", "max"]],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+    all_rules.extend(rat_only.clone());
+    let pred_only = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&["-"], &["<", "<=", "==", "!="], &["select"]],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+    all_rules.extend(pred_only);
+
+    let full = recursive_rules_cond(
+        Metric::Atoms,
+        4,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[
+                &["-", "!"],
+                &[
+                    "&&", "||", "^", "+", "-", "*", "min", "max", "<", "<=", "==", "!=",
+                ],
+                &["select"],
+            ],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+    all_rules.extend(full);
+
+    println!("all_rules: done");
+
+    let nested_bops_arith = Workload::new(&["(bop e e)", "v"])
+        .plug("e", &Workload::new(&["(bop v v)", "(uop v)", "v"]))
+        .plug("bop", &Workload::new(&["+", "-", "*", "<", "max", "min"]))
+        .plug("uop", &Workload::new(&["-", "!"]))
+        .plug("v", &Workload::new(&["a", "b", "c"]))
+        .filter(Filter::Canon(vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]));
+    let new = run_workload(
+        nested_bops_arith,
+        all_rules.clone(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+        None,
+        None,
+    );
+    all_rules.extend(new);
+    let nested_bops_full = Workload::new(&["(bop e e)", "v"])
+        .plug("e", &Workload::new(&["(bop v v)", "(uop v)", "v"]))
+        .plug(
+            "bop",
+            &Workload::new(&["&&", "||", "!=", "<=", "==", "<", "max", "min"]),
+        )
+        .plug("uop", &Workload::new(&["-", "!"]))
+        .plug("v", &Workload::new(&["a", "b", "c"]))
+        .filter(Filter::Canon(vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]));
+    let new = run_workload(
+        nested_bops_full,
+        all_rules.clone(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+        None,
+        None,
+    );
+    all_rules.extend(new.clone());
+
+    // NOTE: The following workloads do NOT use all_rules as prior rules
+    // Using all_rules as prior_rules leads to OOM
+    let select_base = Workload::new([
+        "(select V V V)",
+        "(select V (OP V V) V)",
+        "(select V V (OP V V))",
+        "(select V (OP V V) (OP V V))",
+        "(OP V (select V V V))",
+    ])
+    .plug("V", &Workload::new(["a", "b", "c", "d"]));
+
+    let arith = select_base
+        .clone()
+        .plug("OP", &Workload::new(["+", "-", "*"]));
+    let new = run_workload(
+        arith,
+        rat_only.clone(),
+        Limits::synthesis(),
+        Limits {
+            iter: 1,
+            node: 100_000,
+            match_: 100_000,
+        },
+        true,
+        None,
+        None,
+    );
+    all_rules.extend(new);
+
+    let arith = select_base.plug("OP", &Workload::new(["min", "max"]));
+    let new = run_workload(
+        arith,
+        rat_only.clone(),
+        Limits::synthesis(),
+        Limits {
+            iter: 1,
+            node: 100_000,
+            match_: 100_000,
+        },
+        true,
+        None,
+        None,
+    );
+    all_rules.extend(new);
+
+    all_rules
 }

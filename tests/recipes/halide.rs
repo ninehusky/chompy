@@ -88,7 +88,7 @@ pub fn halide_rules_for_caviar_conditional() -> Ruleset<Pred> {
         Lang::new(
             &[],
             &["a", "b", "c"],
-            &[&["!"], &["==", "!=", "<", ">", ">=", "<="]],
+            &[&["!"], &["==", "!=", "<", ">", ">=", "<=", "min", "max"]],
         ),
         all_rules.clone(),
         &pvec_to_terms,
@@ -130,27 +130,16 @@ pub fn halide_rules_for_caviar_conditional() -> Ruleset<Pred> {
 
     all_rules.extend(div_only);
 
-    let min_plus = recursive_rules_cond(
+    let min_max = recursive_rules_cond(
         Metric::Atoms,
         7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min", "max", "&&"]]),
         all_rules.clone(),
         &pvec_to_terms,
         &cond_prop_ruleset,
     );
 
-    all_rules.extend(min_plus);
-
-    let max_plus = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "max"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
-
-    all_rules.extend(max_plus);
+    all_rules.extend(min_max);
 
     all_rules
 }
