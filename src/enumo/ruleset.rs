@@ -425,6 +425,23 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         for ids in by_cvec.values() {
             let exprs: Vec<_> = ids.iter().map(|&id| extract.find_best(id).1).collect();
+            if exprs
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .contains(&"(\"%\" 0 a)".to_string())
+            {
+                println!("exprs:");
+                for e in &exprs {
+                    println!("{}", e.to_string());
+                }
+                println!("cvec:");
+                for id in ids {
+                    let class = egraph[*id].clone();
+                    println!("{:?}", class.data.cvec);
+                    break;
+                }
+            }
 
             for (idx, e1) in exprs.iter().enumerate() {
                 for e2 in exprs[(idx + 1)..].iter() {
@@ -446,8 +463,10 @@ impl<L: SynthLanguage> Ruleset<L> {
             let popped = self.0.pop();
             if let Some((_, rule)) = popped {
                 if rule.is_valid() {
+                    println!("{} is valid", rule.name);
                     selected.add(rule.clone());
                 } else {
+                    println!("{} is invalid", rule.name);
                     invalid.add(rule.clone());
                 }
 
