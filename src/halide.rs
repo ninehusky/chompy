@@ -103,8 +103,20 @@ impl SynthLanguage for Pred {
             Pred::Add([x, y]) => map!(get_cvec, x, y => x.checked_add(*y)),
             Pred::Sub([x, y]) => map!(get_cvec, x, y => x.checked_sub(*y)),
             Pred::Mul([x, y]) => map!(get_cvec, x, y => x.checked_mul(*y)),
-            Pred::Div([x, y]) => map!(get_cvec, x, y => x.checked_div(*y)),
-            Pred::Mod([x, y]) => map!(get_cvec, x, y => x.checked_rem(*y)),
+            Pred::Div([x, y]) => map!(get_cvec, x, y => {
+                if *y == zero {
+                    Some(zero)
+                } else {
+                    x.checked_div(*y)
+                }
+            }),
+            Pred::Mod([x, y]) => map!(get_cvec, x, y => {
+                if *y == zero {
+                    Some(zero)
+                } else {
+                    x.checked_rem(*y)
+                }
+            }),
             Pred::Min([x, y]) => map!(get_cvec, x, y => Some(*x.min(y))),
             Pred::Max([x, y]) => map!(get_cvec, x, y => Some(*x.max(y))),
             Pred::Select([x, y, z]) => map!(get_cvec, x, y, z => {
@@ -363,14 +375,24 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ctx,
                 &[&buf[usize::from(*x)], &buf[usize::from(*y)]],
             )),
-            Pred::Div([x, y]) => buf.push(z3::ast::Int::div(
-                &buf[usize::from(*x)],
-                &buf[usize::from(*y)].clone(),
-            )),
-            Pred::Mod([x, y]) => buf.push(z3::ast::Int::modulo(
-                &buf[usize::from(*x)],
-                &buf[usize::from(*y)].clone(),
-            )),
+            Pred::Div([x, y]) => {
+                let l = &buf[usize::from(*x)];
+                let r = &buf[usize::from(*y)];
+                buf.push(z3::ast::Bool::ite(
+                    &r._eq(&zero),
+                    &zero,
+                    &z3::ast::Int::div(l, r),
+                ))
+            }
+            Pred::Mod([x, y]) => {
+                let l = &buf[usize::from(*x)];
+                let r = &buf[usize::from(*y)];
+                buf.push(z3::ast::Bool::ite(
+                    &r._eq(&zero),
+                    &zero,
+                    &z3::ast::Int::rem(l, r),
+                ))
+            }
             Pred::Min([x, y]) => {
                 let l = &buf[usize::from(*x)];
                 let r = &buf[usize::from(*y)];
