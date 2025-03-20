@@ -602,12 +602,14 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
                     "/" => {
                         let x = sexpr_to_z3(ctx, tail[0]);
                         let y = sexpr_to_z3(ctx, tail[1]);
-                        z3::ast::Int::div(&x, &y)
+                        let zero = z3::ast::Int::from_i64(&ctx, 0);
+                        z3::ast::Bool::ite(&y._eq(&zero), &zero, &z3::ast::Int::div(&x, &y))
                     }
                     "%" => {
                         let x = sexpr_to_z3(ctx, tail[0]);
                         let y = sexpr_to_z3(ctx, tail[1]);
-                        z3::ast::Int::modulo(&x, &y)
+                        let zero = z3::ast::Int::from_i64(&ctx, 0);
+                        z3::ast::Bool::ite(&y._eq(&zero), &zero, &z3::ast::Int::modulo(&x, &y))
                     }
                     "min" => {
                         let x = sexpr_to_z3(ctx, tail[0]);
