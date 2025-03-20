@@ -426,6 +426,18 @@ impl<L: SynthLanguage> Ruleset<L> {
         for ids in by_cvec.values() {
             let exprs: Vec<_> = ids.iter().map(|&id| extract.find_best(id).1).collect();
 
+            // if !exprs
+            //     .iter()
+            //     .filter(|e| e.to_string() == "a".to_string())
+            //     .collect::<Vec<_>>()
+            //     .is_empty()
+            // {
+            //     println!("exprs:");
+            //     for e in &exprs {
+            //         println!("{}", e);
+            //     }
+            // }
+
             for (idx, e1) in exprs.iter().enumerate() {
                 for e2 in exprs[(idx + 1)..].iter() {
                     candidates.add_from_recexprs(e1, e2);

@@ -71,6 +71,21 @@ pub fn halide_rules_for_caviar_conditional() -> Ruleset<Pred> {
     let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures();
     let mut all_rules = Ruleset::default();
 
+    let mul_div_mod = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["*", "/", "%"]],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(mul_div_mod);
+
     let mod_rules = recursive_rules_cond(
         Metric::Atoms,
         3,
