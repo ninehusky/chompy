@@ -1,7 +1,11 @@
 use crate::*;
 
-use enumo::Sexp;
+use egg::RecExpr;
+use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
+use recipe_utils::{
+    base_lang, iter_metric, recursive_rules, recursive_rules_cond, run_workload, Lang,
+};
 use z3::ast::Ast;
 
 type Constant = i64;
@@ -137,6 +141,7 @@ impl SynthLanguage for Pred {
             Some(5.to_i64().unwrap()),
             Some(100.to_i64().unwrap()),
         ];
+
         let cvecs = self_product(&consts, vars.len());
 
         egraph.analysis.cvec_len = cvecs[0].len();
@@ -658,4 +663,174 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
         z3::SatResult::Unknown => ValidationResult::Unknown,
         z3::SatResult::Sat => ValidationResult::Unknown,
     }
+}
+
+pub fn compute_conditional_structures(
+    conditional_soup: &Workload,
+) -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, Ruleset<Pred>) {
+    let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
+    let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
+
+    let cond_prop_ruleset = Pred::get_condition_propogation_rules(conditional_soup);
+
+    println!("cond prop rules: {}", cond_prop_ruleset.len());
+    for rule in &cond_prop_ruleset {
+        println!("{}", rule.0);
+    }
+
+    for cond in conditional_soup.force() {
+        let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
+        let cond_pat = Pattern::from(&cond);
+
+        let cond_id = egraph
+            .lookup_expr(&cond_pat.to_string().parse().unwrap())
+            .unwrap();
+
+        let pvec = egraph[cond_id]
+            .data
+            .cvec
+            .clone()
+            .iter()
+            .map(|b| *b != Some(0))
+            .collect();
+
+        pvec_to_terms
+            .entry(pvec)
+            .or_default()
+            .push(cond_pat.clone());
+    }
+
+    (pvec_to_terms, cond_prop_ruleset)
+}
+
+/// Incrementally construct a ruleset by running rule inference up to a size bound,
+/// using previously-learned rules at each step.
+/// Importantly, this function is different from `recursive_rules_cond` in that it does not
+/// actually generate the terms that it derives equivalences for.
+pub fn soup_to_rules(
+    soup: &Workload,
+    conditions: Option<&Workload>,
+    prior_rules: &Ruleset<Pred>,
+    n: usize,
+) -> Ruleset<Pred> {
+    for t in soup.force() {
+        println!("{:?}", t.to_string());
+    }
+
+    let (pvec_to_terms, cond_prop_ruleset) = if let Some(conditions) = conditions {
+        // If we have a workload of conditions, compute the conditional structures
+        // to help with rule inference.
+        let (fst, snd) = compute_conditional_structures(conditions);
+        (Some(fst), Some(snd))
+    } else {
+        (None, None)
+    };
+
+    let mut ruleset = Ruleset::<Pred>::default();
+    for i in 1..n {
+        let workload = soup.clone().filter(Filter::MetricLt(Metric::Atoms, i + 1));
+        let rules = run_workload(
+            workload,
+            prior_rules.clone(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+            pvec_to_terms.clone(),
+            cond_prop_ruleset.clone(),
+        );
+        ruleset.extend(rules);
+    }
+    ruleset
+}
+
+pub fn handwritten_recipes() -> Ruleset<Pred> {
+    let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
+
+    let base_lang = if cond_lang.ops.len() == 2 {
+        base_lang(2)
+    } else {
+        base_lang(3)
+    };
+
+    let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+        .filter(Filter::Contains("VAR".parse().unwrap()))
+        .plug("VAR", &Workload::new(cond_lang.vars))
+        .plug("VAL", &Workload::new(cond_lang.vals));
+    for (i, ops) in cond_lang.ops.iter().enumerate() {
+        wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    }
+
+    // only want conditions greater than size 2
+    wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
+
+    let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
+    let mut all_rules = Ruleset::default();
+
+    let equality = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &[],
+            &["a", "b", "c"],
+            &[&["!"], &["==", "!=", "<", ">", ">=", "<="]],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(equality);
+
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(bool_only);
+
+    let rat_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*"]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(rat_only);
+
+    let div_only = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["/", "%"]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(div_only);
+
+    let min_plus = recursive_rules_cond(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(min_plus);
+
+    let max_plus = recursive_rules_cond(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "max"]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(max_plus);
+
+    all_rules
 }
