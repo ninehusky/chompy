@@ -28,11 +28,15 @@ impl FromStr for ChompyMode {
 #[tokio::main]
 pub async fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
+    if args.len() < 3 {
         panic!("Usage: chompy <mode> <output_file_path>");
     }
-    let mode = ChompyMode::from_str(&args[1]).unwrap();
-    let output_file = &args[2];
+
+    println!("args: {:?}", args);
+    // second to last argument is the mode.
+    let mode = ChompyMode::from_str(&args[args.len() - 2]).unwrap();
+    // last argument is the output file path.
+    let output_file = &args[args.len() - 1];
     let rules = match mode {
         ChompyMode::HandwrittenRecipes => {
             halide::handwritten_recipes()
