@@ -4,6 +4,7 @@ use ruler::halide;
 use ruler::halide::Pred;
 use ruler::enumo::Ruleset;
 
+use std::fs::File;
 use std::str::FromStr;
 
 // Outlines how to perform Halide rule synthesis.
