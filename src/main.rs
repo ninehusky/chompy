@@ -37,6 +37,10 @@ pub async fn main() {
     let mode = ChompyMode::from_str(&args[args.len() - 2]).unwrap();
     // last argument is the output file path.
     let output_file = &args[args.len() - 1];
+    // create the output file if it doesn't exist.
+    if let Err(e) = File::create(output_file) {
+        panic!("Failed to create output file: {}", e);
+    }
     let rules = match mode {
         ChompyMode::HandwrittenRecipes => {
             halide::handwritten_recipes()
@@ -101,10 +105,24 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
         ],
     });
 
+    let min_lt_le_recipe = Recipe {
+        max_size: 7,
+        vals: vec![],
+        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ops: vec![
+            vec![],
+            vec!["!".to_string()],
+            vec!["<".to_string(), "<=".to_string(), "min".to_string(), "&&".to_string(), "||".to_string()],
+        ]
+    };
+
+    let min_lt_le_cond_recipe = None;
+
     let recipe_list = vec![
         (equality_recipe, equality_cond_recipe),
         (bool_recipe, bool_cond_recipe),
         (rat_recipe, rat_cond_recipe),
+        (min_lt_le_recipe, min_lt_le_cond_recipe)
     ];
 
     let mut prior_ruleset: Ruleset<Pred> = Ruleset::default();
