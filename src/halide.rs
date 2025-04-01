@@ -131,6 +131,317 @@ impl SynthLanguage for Pred {
         }
     }
 
+    fn custom_modify(egraph: &mut EGraph<Self, SynthAnalysis>, id: Id) {
+        if egraph[id].nodes.iter().any(|n| matches!(n, Pred::Lit(_))) {
+            // we are already a constant.
+            return;
+        }
+
+        let get_const = |nodes: &[Pred]| {
+            for n in nodes {
+                if let Pred::Lit(c) = n {
+                    return Some(*c);
+                }
+            }
+            None
+        };
+
+        for n in &egraph[id].nodes {
+            match n {
+                Pred::Abs(a) => {
+                    let x = get_const(&egraph[*a].nodes);
+                    if x.is_none() {
+                        continue;
+                    }
+                    let x = x.unwrap();
+                    let c_id = egraph.add(Pred::Lit(x.abs()));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Lt([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c_id = egraph.add(Pred::Lit(if a < b { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Leq([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c_id = egraph.add(Pred::Lit(if a <= b { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Gt([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c_id = egraph.add(Pred::Lit(if a > b { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Geq([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c_id = egraph.add(Pred::Lit(if a >= b { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Eq([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c_id = egraph.add(Pred::Lit(if a == b { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Neq([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c_id = egraph.add(Pred::Lit(if a != b { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Implies([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let a_bool = a != 0;
+                    let b_bool = b != 0;
+                    let c_id = egraph.add(Pred::Lit(if !a_bool || b_bool { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Not(a) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    if a.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let c_id = egraph.add(Pred::Lit(if a == 0 { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::And([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let a_bool = a != 0;
+                    let b_bool = b != 0;
+                    let c_id = egraph.add(Pred::Lit(if a_bool && b_bool { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Or([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let a_bool = a != 0;
+                    let b_bool = b != 0;
+                    let c_id = egraph.add(Pred::Lit(if a_bool || b_bool { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Xor([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let a_bool = a != 0;
+                    let b_bool = b != 0;
+                    let c_id = egraph.add(Pred::Lit(if a_bool ^ b_bool { 1 } else { 0 }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Add([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c = a.checked_add(b);
+                    if c.is_none() {
+                        continue;
+                    }
+                    let c_id = egraph.add(Pred::Lit(c.unwrap()));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Sub([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c = a.checked_sub(b);
+                    if c.is_none() {
+                        continue;
+                    }
+                    let c_id = egraph.add(Pred::Lit(c.unwrap()));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Mul([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c = a.checked_mul(b);
+                    if c.is_none() {
+                        continue;
+                    }
+                    let c_id = egraph.add(Pred::Lit(c.unwrap()));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Div([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    if b == 0 {
+                        // a / 0 == 0
+                        let c_id = egraph.add(Pred::Lit(0));
+                        egraph.union(c_id, id);
+                    } else {
+                        let c = a.checked_div(b);
+                        if c.is_none() {
+                            continue;
+                        }
+                        let c_id = egraph.add(Pred::Lit(c.unwrap()));
+                        egraph.union(c_id, id);
+                    }
+                    return;
+                }
+                Pred::Mod([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    if b == 0 {
+                        // a / 0 == 0
+                        let c_id = egraph.add(Pred::Lit(0));
+                        egraph.union(c_id, id);
+                    } else {
+                        let c = a.checked_rem(b);
+                        if c.is_none() {
+                            continue;
+                        }
+                        let c_id = egraph.add(Pred::Lit(c.unwrap()));
+                        egraph.union(c_id, id);
+                    }
+                    return;
+                }
+                Pred::Min([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c = if a < b { a } else { b };
+                    let c_id = egraph.add(Pred::Lit(c));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Max([a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    if a.is_none() || b.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let c = if a > b { a } else { b };
+                    let c_id = egraph.add(Pred::Lit(c));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Select([cond, a, b]) => {
+                    let a = get_const(&egraph[*a].nodes);
+                    let b = get_const(&egraph[*b].nodes);
+                    let cond = get_const(&egraph[*cond].nodes);
+                    if a.is_none() || b.is_none() || cond.is_none() {
+                        continue;
+                    }
+                    let a = a.unwrap();
+                    let b = b.unwrap();
+                    let cond = cond.unwrap();
+
+                    let cond_true = cond != 0;
+                    let c_id = egraph.add(Pred::Lit(if cond_true { a } else { b }));
+                    egraph.union(c_id, id);
+                    return;
+                }
+                Pred::Var(v) => {
+                    // if let Some(a) = get_const(&egraph[*v].nodes) {
+                    //     let c_id = egraph.add(Pred::Lit(a));
+                    //     egraph.union(c_id, id);
+                    continue;
+                    // }
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
     fn initialize_vars(egraph: &mut EGraph<Self, SynthAnalysis>, vars: &[String]) {
         let consts = vec![
             Some((-10).to_i64().unwrap()),
@@ -784,16 +1095,16 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
     let bool_only = recursive_rules(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||", "<"]]),
         all_rules.clone(),
     );
 
-    all_rules.extend(bool_only);
+    all_rules.extend(bool_only.clone());
 
     let rat_only = recursive_rules(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "/", "%"]]),
         all_rules.clone(),
     );
 
@@ -802,7 +1113,7 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
     let div_only = recursive_rules_cond(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["/", "%"]]),
+        Lang::new(&["-1", "0", "1"], &["a", "b", "c"], &[&[], &["/", "%"]]),
         all_rules.clone(),
         &pvec_to_terms,
         &cond_prop_ruleset,
@@ -810,27 +1121,87 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     all_rules.extend(div_only);
 
-    let min_plus = recursive_rules_cond(
+    let min_max = recursive_rules(
         Metric::Atoms,
         7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
         all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
     );
 
-    all_rules.extend(min_plus);
+    all_rules.extend(min_max);
 
-    let max_plus = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "max"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
+    // INTOP means int -> int -> int.
+
+    let int_base = Workload::new(["V", "(INTOP V V)"])
+        .plug("V", &Workload::new(["a", "b", "c"]))
+        .plug("INTOP", &Workload::new(["min", "max"]));
+
+    println!("int base:");
+    for t in int_base.clone().force() {
+        println!("{:?}", t.to_string());
+    }
+
+    let int_to_bool_base = Workload::new(["(INT2BOOLOP V V)"])
+        .plug("V", &int_base)
+        .plug("INT2BOOLOP", &Workload::new(["<", "<=", ">", ">="]));
+
+    println!("int to bool base:");
+    for t in int_to_bool_base.clone().force() {
+        println!("{:?}", t.to_string());
+    }
+
+    let bool_base = Workload::new(["(BOP BOOL BOOL)"])
+        .plug("BOOL", &int_to_bool_base.clone())
+        .plug("V", &int_base)
+        .plug("BOP", &Workload::new(["&&", "||"]));
+
+    println!("test wkld");
+    let mut found_and_term = false;
+    let mut found_lt_term = false;
+    for t in bool_base
+        .clone()
+        .append(int_to_bool_base.clone())
+        .append(int_base.clone())
+        .filter(Filter::MetricLt(Metric::Atoms, 8))
+        .force()
+    {
+        println!("{:?}", t.to_string());
+        if t.to_string() == "(&& (< a b ) (< a c ) )" {
+            found_and_term = true;
+        } else if t.to_string() == "(< a (min b c ) )" {
+            found_lt_term = true;
+        }
+    }
+
+    if !(found_and_term && found_lt_term) {
+        if !found_and_term {
+            println!("missing and term");
+        }
+        if !found_lt_term {
+            println!("missing lt term");
+        }
+        panic!("missing terms");
+    }
+
+    let min_le_kitchen_sink = run_workload(
+        bool_base
+            .append(int_to_bool_base)
+            .append(int_base)
+            .filter(Filter::MetricLt(Metric::Atoms, 8)),
+        // dummy_workload,
+        bool_only.clone(),
+        Limits::synthesis(),
+        Limits {
+            iter: 3,
+            node: 900_000,
+            match_: 900_000,
+        },
+        true,
+        None,
+        None,
     );
 
-    all_rules.extend(max_plus);
+    all_rules.extend(min_le_kitchen_sink);
 
     all_rules
 }
