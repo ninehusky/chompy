@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["Max Willsey <me@mwillsey.com>", "Chandrakana Nandi <cnandi@cs.washington.edu>"]
 edition = "2018"
 
+[[bin]]
+name = "ruler"
+path = "src/main.rs"
+
+
 [dependencies]
 clap = { version = "3.0.7", features = ["derive"] }
 log = "0.4"
