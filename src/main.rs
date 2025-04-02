@@ -4,7 +4,7 @@ use ruler::enumo::Ruleset;
 use ruler::json_to_recipe;
 
 use ruler::halide::recipe_to_rules;
-use ruler::Recipe;
+use ruler::{ConditionRecipe, Recipe};
 
 use std::fs::File;
 use std::path::PathBuf;
@@ -45,11 +45,9 @@ struct ChompyArgs {
 #[tokio::main]
 pub async fn main() {
     let args = ChompyArgs::parse();
-    println!("args: {:?}", args);
-    // second to last argument is the mode.
     let mode = args.mode;
-    // last argument is the output file path.
     let output_file = args.output_path;
+
     // create the output file if it doesn't exist.
     if let Err(e) = File::create(output_file.clone()) {
         panic!("Failed to create output file: {}", e);
@@ -57,7 +55,9 @@ pub async fn main() {
     let rules = match mode {
         ChompyMode::HandwrittenRecipe => {
             // make this path relative to this file.
-            let recipe_path = args.recipe_path.unwrap();
+            let recipe_path = args.recipe_path.unwrap_or_else(|| {
+                panic!("No recipe path provided.");
+            });
             let recipe = json_to_recipe(recipe_path.to_str().unwrap());
             recipe_to_rules(&recipe)
         }
@@ -73,87 +73,85 @@ pub async fn main() {
 
 
 pub async fn run_gpt_eval() -> Ruleset<Pred> {
-    // let equality_recipe = Recipe {
-    //     max_size: 5,
-    //     vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-    //     vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-    //     ops: vec![
-    //         vec![],
-    //         vec!["!".to_string()],
-    //         vec!["==".to_string(), "!=".to_string(), "<".to_string(), ">".to_string(), "<=".to_string(), ">=".to_string(), "min".to_string(), "max".to_string()], // Conditional operators
-    //     ],
-    // };
+    // TODO: @ninehusky -- in the eval, this should be replaced eventually with reading straight from the JSON representing
+    // the handwritten recipe.
+    let minmax_recipe = Recipe {
+        name: "minmax".to_string(),
+        max_size: 5,
+        vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
+        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ops: vec![
+            vec!["!".to_string()],
+            vec!["==".to_string(), "!=".to_string(), "<".to_string(), ">".to_string(), "<=".to_string(), ">=".to_string(), "min".to_string(), "max".to_string()], // Conditional operators
+        ],
+        conditions: None,
+    };
 
-    // let equality_cond_recipe = None;
+    let bool_recipe = Recipe {
+        name: "bool".to_string(),
+        max_size: 5,
+        vals: vec!["0".to_string(), "1".to_string()],
+        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ops: vec![
+            vec!["!".to_string()],
+            vec!["&&".to_string(), "||".to_string()],
+        ],
+        conditions: None,
+    };
 
-    // let bool_recipe = Recipe {
-    //     max_size: 5,
-    //     vals: vec!["0".to_string(), "1".to_string()],
-    //     vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-    //     ops: vec![
-    //         vec![],
-    //         vec!["!".to_string()],
-    //         vec!["&&".to_string(), "||".to_string()],
-    //     ],
-    // };
+    let rat_recipe = Recipe {
+        name: "rat".to_string(),
+        max_size: 5,
+        vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
+        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ops: vec![
+            vec!["abs".to_string()],
+            vec!["+".to_string(), "-".to_string(), "*".to_string(), "/".to_string()],
+        ],
+        conditions: Some(
+            ConditionRecipe {
+                max_size: 3,
+                ops: vec![
+                    vec![],
+                    vec!["<".to_string(), "<=".to_string(), "!=".to_string()],
+                ],
+                vals: vec!["0".to_string()],
+            }
+        )
+    };
 
-    // let bool_cond_recipe = None;
+    let min_lt_le_recipe = Recipe {
+        name: "min_lt_le".to_string(),
+        max_size: 7,
+        vals: vec![],
+        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ops: vec![
+            vec![],
+            vec!["!".to_string()],
+            vec!["<".to_string(), "<=".to_string(), "min".to_string(), "&&".to_string(), "||".to_string()],
+        ],
+        conditions: None,
+    };
 
-    // let rat_recipe = Recipe {
-    //     max_size: 5,
-    //     vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-    //     vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-    //     ops: vec![
-    //         vec![],
-    //         vec!["abs".to_string()],
-    //         vec!["+".to_string(), "-".to_string(), "*".to_string(), "/".to_string()],
-    //     ],
-    // };
-
-    // let rat_cond_recipe = Some(Recipe {
-    //     max_size: 3,
-    //     vals: vec!["0".to_string()],
-    //     vars: rat_recipe.vars.clone(),
-    //     ops: vec![
-    //         vec![],
-    //         vec![],
-    //         vec!["<".to_string(), "<=".to_string(), "!=".to_string()],
-    //     ],
-    // });
-
-    // let min_lt_le_recipe = Recipe {
-    //     max_size: 7,
-    //     vals: vec![],
-    //     vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-    //     ops: vec![
-    //         vec![],
-    //         vec!["!".to_string()],
-    //         vec!["<".to_string(), "<=".to_string(), "min".to_string(), "&&".to_string(), "||".to_string()],
-    //     ]
-    // };
-
-    // let min_lt_le_cond_recipe = None;
-
-    // let recipe_list = vec![
-    //     (equality_recipe, equality_cond_recipe),
-    //     (bool_recipe, bool_cond_recipe),
-    //     (rat_recipe, rat_cond_recipe),
-    //     (min_lt_le_recipe, min_lt_le_cond_recipe)
-    // ];
+    let recipe_list = vec![bool_recipe, rat_recipe, minmax_recipe, min_lt_le_recipe];
 
     let mut prior_ruleset: Ruleset<Pred> = Ruleset::default();
 
-    // for (recipe, cond_recipe) in recipe_list {
-    //     let (workload, cond_r) = llm::generate_alphabet_soup(&recipe, cond_recipe.as_ref()).await;
-    //     let ruleset = halide::soup_to_rules(
-    //         &workload,
-    //         cond_r.as_ref(),
-    //         &prior_ruleset,
-    //         recipe.max_size
-    //     );
+    for recipe in recipe_list {
+        let cond_recipe = match recipe.conditions {
+            Some(ref cond) => Some(cond.clone()),
+            None => None,
+        };
+        let (workload, cond_r) = llm::generate_alphabet_soup(&recipe, cond_recipe.as_ref()).await;
+        let ruleset = halide::soup_to_rules(
+            &workload,
+            cond_r.as_ref(),
+            &prior_ruleset,
+            recipe.max_size
+        );
 
-    //     prior_ruleset.extend(ruleset);
-    // }
+        prior_ruleset.extend(ruleset);
+    }
 
     prior_ruleset
 }

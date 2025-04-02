@@ -5,7 +5,7 @@ use crate::enumo::Workload;
 
 use std::str::FromStr;
 
-use crate::Recipe;
+use crate::{ConditionRecipe, Recipe};
 
 const PROMPT_DE_LA_SOPA_ALFABETO: &str = r#"
 You are an expert in generating a list of terms for a given
@@ -104,7 +104,7 @@ ops: {ops},
 "#;
 
 
-pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&Recipe>) -> (Workload, Option<Workload>) {
+pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&ConditionRecipe>) -> (Workload, Option<Workload>) {
     let client = Client::new();
 
     let soup = alphabet_soup(&client, term_recipe).await.unwrap();
@@ -114,7 +114,7 @@ pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&Recipe
 
     if let Some(cond_recipe) = cond_r {
         // If a condition recipe is provided, generate conditions based on the previous workload.
-        let condition_workload = condition_soup(&client, soup, cond_recipe).await.unwrap();
+        let condition_workload = condition_soup(&client, &soup, &term_recipe.vars, cond_recipe).await.unwrap();
 
         // Convert the generated conditions into a workload
         let cond_workload = soup_to_workload(condition_workload).unwrap();
@@ -126,7 +126,7 @@ pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&Recipe
 
 }
 
-pub async fn condition_soup(client: &Client, term_workload_as_vec: Vec<String>, r: &Recipe) -> Result<Vec<String>, reqwest::Error> {
+pub async fn condition_soup(client: &Client, term_workload_as_vec: &Vec<String>, vars: &Vec<String>, r: &ConditionRecipe) -> Result<Vec<String>, reqwest::Error> {
     // TODO: @ninehusky -- check that term workload vars are superset of recipe vars.
     let content = PROMPT_DE_LA_SOPA_ALFABETO_CON_CONDICIONES
         .replace("{last_step_workload}",
@@ -134,7 +134,7 @@ pub async fn condition_soup(client: &Client, term_workload_as_vec: Vec<String>, 
             &term_workload_as_vec.join("\n"))
         .replace("{max_size}", &r.max_size.to_string())
         .replace("{vals}", format!("{:?}", r.vals).as_str())
-        .replace("{vars}", format!("{:?}", r.vars).as_str())
+        .replace("{vars}", format!("{:?}", vars).as_str())
         .replace("{ops}", format!("{:?}", r.ops).as_str());
 
     // Define request payload for the Responses API
@@ -232,6 +232,7 @@ pub mod tests {
 
         let cond_recipe = ConditionRecipe {
             max_size: 3,
+            vars: recipe.vars.clone(), // Use the same variables as the term recipe
             ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
             vals: vec!["0".to_string()],
         };
