@@ -117,6 +117,29 @@ impl Limits {
     }
 }
 
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct ConditionRecipe {
+    pub max_size: usize,
+    pub ops: Vec<Vec<String>>,
+    pub vals: Vec<String>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Recipe {
+    pub name: String,
+    pub max_size: usize,
+    pub vars: Vec<String>,
+    pub ops: Vec<Vec<String>>,
+    pub vals: Vec<String>,
+    pub conditions: Option<ConditionRecipe>,
+}
+
+pub fn json_to_recipe(path: &str) -> Vec<Recipe> {
+    let contents = std::fs::read_to_string(path).unwrap();
+    let recipe_contents = serde_json::from_str(&contents).unwrap();
+    recipe_contents
+}
+
 /// Used for interval analysis and constant folding
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Interval<T> {
@@ -208,5 +231,16 @@ impl SynthLanguage for egg::SymbolLang {
 
     fn validate(_lhs: &Pattern<Self>, _rhs: &Pattern<Self>) -> ValidationResult {
         ValidationResult::Invalid
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn json_to_recipe_test() {
+        let recipe = json_to_recipe("recipes/default-recipe.json");
+        println!("{:?}", recipe);
     }
 }

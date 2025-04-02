@@ -1,0 +1,37 @@
+
+
+[
+	{
+        "name": "bool_basic",
+		"max_size": 5,
+		"vars": ["a", "b", "c"],
+		"vals": [],
+		"ops": [
+			["!"],
+			["&&", "||"]
+		],
+		"conditions": null
+	},
+	{
+        "name": "rat_basic",
+		"max_size": 5,
+		"vars": ["a", "b", "c"],
+		"vals": [],
+		"ops": [
+			[],
+			["+", "-", "*"]
+		],
+		"conditions": null
+    },
+    {
+        "name": "mul_div_mod",
+        "max_size": 5,
+        "vars": ["a", "b", "c"],
+        "vals": [],
+        "ops": [
+            [],
+            ["*", "/", "%"]
+        ],
+        "conditions": null
+    }
+]

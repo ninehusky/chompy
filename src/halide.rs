@@ -743,94 +743,156 @@ pub fn soup_to_rules(
     ruleset
 }
 
-pub fn handwritten_recipes() -> Ruleset<Pred> {
-    let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
+pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
+    let mut ruleset: Ruleset<Pred> = Ruleset::default();
+    for r in recipes {
+        let rules = match &r.conditions {
+            Some(c) => {
+                let cond_lang = Lang {
+                    vars: r.vars.clone(),
+                    vals: c.vals.clone(),
+                    ops: c.ops.clone(),
+                };
 
-    let base_lang = if cond_lang.ops.len() == 2 {
-        base_lang(2)
-    } else {
-        base_lang(3)
-    };
+                let base_lang = if cond_lang.ops.len() == 2 {
+                    base_lang(2)
+                } else {
+                    base_lang(3)
+                };
 
-    let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
-        .filter(Filter::Contains("VAR".parse().unwrap()))
-        .plug("VAR", &Workload::new(cond_lang.vars))
-        .plug("VAL", &Workload::new(cond_lang.vals));
-    for (i, ops) in cond_lang.ops.iter().enumerate() {
-        wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+                let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+                    .filter(Filter::Contains("VAR".parse().unwrap()))
+                    .plug("VAR", &Workload::new(cond_lang.vars))
+                    .plug("VAL", &Workload::new(cond_lang.vals));
+                for (i, ops) in cond_lang.ops.iter().enumerate() {
+                    wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+                }
+
+                // only want conditions greater than size 2
+                wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
+
+                let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
+
+                recursive_rules_cond(
+                    Metric::Atoms,
+                    r.max_size,
+                    Lang {
+                        vars: r.vars.clone(),
+                        vals: r.vals.clone(),
+                        ops: r.ops.clone(),
+                    },
+                    ruleset.clone(),
+                    &pvec_to_terms,
+                    &cond_prop_ruleset,
+                )
+            }
+            None => recursive_rules(
+                Metric::Atoms,
+                r.max_size,
+                Lang {
+                    vars: r.vars.clone(),
+                    vals: r.vals.clone(),
+                    ops: r.ops.clone(),
+                },
+                ruleset.clone(),
+            ),
+        };
+        ruleset.extend(rules);
     }
+    ruleset
+}
 
-    // only want conditions greater than size 2
-    wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
+// NOTE: @ninehusky -- keeping this here for reference, but we should use `json_to_recipe` instead.
+#[allow(dead_code)]
+pub fn handwritten_recipe() -> Ruleset<Pred> {
+    panic!("no!!!");
+    // let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
 
-    let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
-    let mut all_rules = Ruleset::default();
+    // let base_lang = if cond_lang.ops.len() == 2 {
+    //     base_lang(2)
+    // } else {
+    //     base_lang(3)
+    // };
 
-    let equality = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(
-            &[],
-            &["a", "b", "c"],
-            &[&["!"], &["==", "!=", "<", ">", ">=", "<="]],
-        ),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+    //     .filter(Filter::Contains("VAR".parse().unwrap()))
+    //     .plug("VAR", &Workload::new(cond_lang.vars))
+    //     .plug("VAL", &Workload::new(cond_lang.vals));
+    // for (i, ops) in cond_lang.ops.iter().enumerate() {
+    //     wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    // }
 
-    all_rules.extend(equality);
+    // // only want conditions greater than size 2
+    // wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
-    let bool_only = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-        all_rules.clone(),
-    );
+    // let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
+    // let mut all_rules = Ruleset::default();
 
-    all_rules.extend(bool_only);
+    // let equality = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(
+    //         &[],
+    //         &["a", "b", "c"],
+    //         &[&["!"], &["==", "!=", "<", ">", ">=", "<="]],
+    //     ),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
-    let rat_only = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*"]]),
-        all_rules.clone(),
-    );
+    // all_rules.extend(equality);
 
-    all_rules.extend(rat_only);
+    // let bool_only = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+    //     all_rules.clone(),
+    // );
 
-    let div_only = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["/", "%"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // all_rules.extend(bool_only);
 
-    all_rules.extend(div_only);
+    // let rat_only = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*"]]),
+    //     all_rules.clone(),
+    // );
 
-    let min_plus = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // all_rules.extend(rat_only);
 
-    all_rules.extend(min_plus);
+    // let div_only = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["/", "%"]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
-    let max_plus = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "max"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // all_rules.extend(div_only);
 
-    all_rules.extend(max_plus);
+    // let min_plus = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     7,
+    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
-    all_rules
+    // all_rules.extend(min_plus);
+
+    // let max_plus = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     7,
+    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "max"]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
+
+    // all_rules.extend(max_plus);
+
+    // all_rules
 }
