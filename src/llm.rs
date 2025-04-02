@@ -5,6 +5,8 @@ use crate::enumo::Workload;
 
 use std::str::FromStr;
 
+use crate::Recipe;
+
 const PROMPT_DE_LA_SOPA_ALFABETO: &str = r#"
 You are an expert in generating a list of terms for a given
 programming language. The syntax of the programming language
@@ -101,13 +103,6 @@ vars: {vars},
 ops: {ops},
 "#;
 
-#[derive(Clone)]
-pub struct Recipe {
-    pub max_size: usize,
-    pub vars: Vec<String>,
-    pub ops: Vec<Vec<String>>,
-    pub vals: Vec<String>,
-}
 
 pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&Recipe>) -> (Workload, Option<Workload>) {
     let client = Client::new();
@@ -229,9 +224,18 @@ pub fn soup_to_workload(soup: Vec<String>) -> Result<Workload, Box<dyn std::erro
 pub mod tests {
     #[allow(unused_imports)]
     use super::*;
+    use crate::ConditionRecipe;
+
 
     #[tokio::test]
     pub async fn test() {
+
+        let cond_recipe = ConditionRecipe {
+            max_size: 3,
+            ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
+            vals: vec!["0".to_string()],
+        };
+
         let recipe = Recipe {
             max_size: 3,
             vars: vec!["x".to_string(), "y".to_string()],
@@ -243,13 +247,7 @@ pub mod tests {
                 "max".to_string(),
             ]],
             vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-        };
-
-        let cond_recipe = Recipe {
-            max_size: 3,
-            vars: recipe.vars.clone(), // Use the same variables as the term recipe
-            ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
-            vals: vec!["0".to_string()],
+            conditions: Some(cond_recipe),
         };
 
         let soup_workloads = generate_alphabet_soup(&recipe, Some(cond_recipe).as_ref()).await;

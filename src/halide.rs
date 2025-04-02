@@ -743,7 +743,66 @@ pub fn soup_to_rules(
     ruleset
 }
 
-pub fn handwritten_recipes() -> Ruleset<Pred> {
+pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
+    let mut ruleset: Ruleset<Pred> = Ruleset::default();
+    for r in recipes {
+        let rules = match &r.conditions {
+            Some(c) => {
+                let cond_lang = Lang {
+                    vars: r.vars.clone(),
+                    vals: c.vals.clone(),
+                    ops: c.ops.clone(),
+                };
+
+                let base_lang = if cond_lang.ops.len() == 2 {
+                    base_lang(2)
+                } else {
+                    base_lang(3)
+                };
+
+                let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+                    .filter(Filter::Contains("VAR".parse().unwrap()))
+                    .plug("VAR", &Workload::new(cond_lang.vars))
+                    .plug("VAL", &Workload::new(cond_lang.vals));
+                for (i, ops) in cond_lang.ops.iter().enumerate() {
+                    wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+                }
+
+                // only want conditions greater than size 2
+                wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
+
+                let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
+
+                recursive_rules_cond(
+                    Metric::Atoms,
+                    r.max_size,
+                    Lang {
+                        vars: r.vars.clone(),
+                        vals: r.vals.clone(),
+                        ops: r.ops.clone(),
+                    },
+                    ruleset.clone(),
+                    &pvec_to_terms,
+                    &cond_prop_ruleset,
+                )
+            }
+            None => recursive_rules(
+                Metric::Atoms,
+                r.max_size,
+                Lang {
+                    vars: r.vars.clone(),
+                    vals: r.vals.clone(),
+                    ops: r.ops.clone(),
+                },
+                ruleset.clone(),
+            ),
+        };
+        ruleset.extend(rules);
+    }
+    ruleset
+}
+
+pub fn handwritten_recipe() -> Ruleset<Pred> {
     let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
 
     let base_lang = if cond_lang.ops.len() == 2 {

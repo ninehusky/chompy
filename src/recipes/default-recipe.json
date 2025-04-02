@@ -1,0 +1,31 @@
+[
+	{
+        "name": "bool_basic",
+		"max_size": 7,
+		"vars": ["a", "b", "c"],
+		"vals": ["0", "1"],
+		"ops": [
+			["!"],
+			["&&", "||"]
+		],
+		"conditions": null
+	},
+	{
+        "name": "rat_basic",
+		"max_size": 5,
+		"vars": ["a", "b"],
+		"vals": ["-1", "0", "1"],
+		"ops": [
+			["abs"],
+			["&&", "||"]
+		],
+		"conditions": {
+			"max_size": 3,
+			"vals": ["0", "1"],
+			"ops": [
+				[],
+				["<", "<=", ">"]
+			]
+		}
+	}
+]
