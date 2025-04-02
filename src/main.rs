@@ -1,5 +1,4 @@
-use ruler::llm;
-use ruler::halide;
+use ruler::{halide, llm};
 use ruler::halide::Pred;
 use ruler::enumo::Ruleset;
 use ruler::json_to_recipe;
@@ -8,9 +7,13 @@ use ruler::halide::recipe_to_rules;
 use ruler::Recipe;
 
 use std::fs::File;
+use std::path::PathBuf;
 use std::str::FromStr;
 
+use clap::Parser;
+
 // Outlines how to perform Halide rule synthesis.
+#[derive(Debug)]
 pub enum ChompyMode {
     HandwrittenRecipe,
     LLMAlphabetSoup,
@@ -29,32 +32,33 @@ impl FromStr for ChompyMode {
     }
 }
 
+#[derive(Parser, Debug)]
+struct ChompyArgs {
+    #[clap(short, long)]
+    mode: ChompyMode,
+    #[clap(short, long)]
+    output_path: PathBuf,
+    #[clap(short, long)]
+    recipe_path: Option<PathBuf>,
+}
+
 #[tokio::main]
 pub async fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 3 {
-        panic!("Usage: chompy <mode> <output_file_path>");
-    }
-
+    let args = ChompyArgs::parse();
     println!("args: {:?}", args);
     // second to last argument is the mode.
-    let mode = ChompyMode::from_str(&args[args.len() - 2]).unwrap();
+    let mode = args.mode;
     // last argument is the output file path.
-    let output_file = &args[args.len() - 1];
+    let output_file = args.output_path;
     // create the output file if it doesn't exist.
-    if let Err(e) = File::create(output_file) {
+    if let Err(e) = File::create(output_file.clone()) {
         panic!("Failed to create output file: {}", e);
     }
     let rules = match mode {
         ChompyMode::HandwrittenRecipe => {
             // make this path relative to this file.
-            let path_str = "./src/recipes/default-recipe.json";
-            println!("pwd: {:?}", std::env::current_dir().unwrap());
-            let actual_path = std::path::Path::new(&path_str);
-            println!("path: {:?}", actual_path.to_str());
-            let recipe = json_to_recipe(path_str);
-            // println!("recipe: {:?}", recipe);
-            // halide::handwritten_recipe()
+            let recipe_path = args.recipe_path.unwrap();
+            let recipe = json_to_recipe(recipe_path.to_str().unwrap());
             recipe_to_rules(&recipe)
         }
         ChompyMode::LLMAlphabetSoup => {
@@ -64,7 +68,7 @@ pub async fn main() {
             todo!("Not implemented yet.");
         }
     };
-    rules.to_file(output_file);
+    rules.to_file(output_file.to_str().unwrap());
 }
 
 
