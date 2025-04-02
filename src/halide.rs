@@ -766,21 +766,6 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
     let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
     let mut all_rules = Ruleset::default();
 
-    let equality = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(
-            &[],
-            &["a", "b", "c"],
-            &[&["!"], &["==", "!=", "<", ">", ">=", "<="]],
-        ),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
-
-    all_rules.extend(equality);
-
     let bool_only = recursive_rules(
         Metric::Atoms,
         5,
@@ -790,47 +775,28 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     all_rules.extend(bool_only);
 
-    let rat_only = recursive_rules(
+    let arith_basic = recursive_rules(
+        Metric::Atoms,
+        3,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["+", "-", "*", "/", "%"]],
+        ),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(arith_basic);
+
+    let arith_bigger = recursive_rules_cond(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*"]]),
-        all_rules.clone(),
-    );
-
-    all_rules.extend(rat_only);
-
-    let div_only = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["/", "%"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "/", "%"]]),
         all_rules.clone(),
         &pvec_to_terms,
         &cond_prop_ruleset,
     );
-
-    all_rules.extend(div_only);
-
-    let min_plus = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
-
-    all_rules.extend(min_plus);
-
-    let max_plus = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "max"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
-
-    all_rules.extend(max_plus);
+    all_rules.extend(arith_bigger);
 
     all_rules
 }
