@@ -766,29 +766,34 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
     let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
     let mut all_rules = Ruleset::default();
 
-    let bool_only = recursive_rules(
+    let equality = recursive_rules(
         Metric::Atoms,
         5,
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(equality);
+
+    let comparisons = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(comparisons);
+
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        7,
         Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
         all_rules.clone(),
     );
 
     all_rules.extend(bool_only);
 
-    let arith_basic = recursive_rules(
-        Metric::Atoms,
-        3,
-        Lang::new(
-            &["-1", "0", "1"],
-            &["a", "b", "c"],
-            &[&[], &["+", "-", "*", "/", "%"]],
-        ),
-        all_rules.clone(),
-    );
-
-    all_rules.extend(arith_basic);
-
-    let arith_bigger = recursive_rules_cond(
+    let arith_basic = recursive_rules_cond(
         Metric::Atoms,
         5,
         Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "/", "%"]]),
@@ -796,7 +801,81 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
         &pvec_to_terms,
         &cond_prop_ruleset,
     );
-    all_rules.extend(arith_bigger);
+
+    all_rules.extend(arith_basic.clone());
+
+    let mul_div = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["*", "/", "%"]],
+        ),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(mul_div);
+
+    // turn this knob back to 7
+    // to derive the following rules (changed to 5 for local testing):
+    // "(min (max ?x ?y) (max ?x ?z)) ==> (max (min ?y ?z) ?x)"
+    // "(min (max (min ?x ?y) ?z) ?y) ==> (min (max ?x ?z) ?y)"
+    let min_max = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(min_max);
+
+    // the special workloads, which mostly revolve around
+    // composing int2boolop(int_term, int_term) or things like that
+    // together.
+    //
+    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "min", "max"]]);
+
+    let bool_lang = Lang::new(&[], &[], &[&[], &["=="]]);
+
+    let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
+        .filter(Filter::Contains("VAR".parse().unwrap()))
+        .plug("VAR", &Workload::new(int_lang.vars))
+        .plug("VAL", &Workload::new(int_lang.vals))
+        .append(Workload::new(&["0", "1"]));
+    // let ops = vec![lang.uops, lang.bops, lang.tops];
+    for (i, ops) in int_lang.ops.iter().enumerate() {
+        int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    }
+
+    let mut big_wkld = Workload::new(&["0", "1"]).append(
+        Workload::new(&["(OP V V)"])
+            // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
+            // thing where we have to basically feed in these operators one at a time.
+            .plug("OP", &Workload::new(&["=="]))
+            .plug("V", &int_wkld)
+            .filter(Filter::MetricLt(Metric::Atoms, 8)),
+    );
+
+    for t in big_wkld.force() {
+        println!("t: {}", t.to_string());
+    }
+
+    let wrapped_rules = run_workload(
+        big_wkld,
+        arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
+        Limits::synthesis(),
+        Limits {
+            iter: 1,
+            node: 100_000,
+            match_: 100_000,
+        },
+        true,
+        Some(pvec_to_terms.clone()),
+        Some(cond_prop_ruleset.clone()),
+    );
+
+    all_rules.extend(wrapped_rules);
 
     all_rules
 }
