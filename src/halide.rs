@@ -793,10 +793,15 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     all_rules.extend(bool_only);
 
+    // corresponds to "mul/div with constants + mul/div with constants and other arith"
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "/", "%"]]),
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["+", "-", "*", "/", "%"]],
+        ),
         all_rules.clone(),
         &pvec_to_terms,
         &cond_prop_ruleset,
@@ -804,31 +809,42 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     all_rules.extend(arith_basic.clone());
 
-    let mul_div = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(
-            &["-1", "0", "1"],
-            &["a", "b", "c"],
-            &[&[], &["*", "/", "%"]],
-        ),
-        all_rules.clone(),
-    );
-
-    all_rules.extend(mul_div);
-
-    // turn this knob back to 7
+    // turn this knob back to 7 (for min/max size 6)
     // to derive the following rules (changed to 5 for local testing):
     // "(min (max ?x ?y) (max ?x ?z)) ==> (max (min ?y ?z) ?x)"
     // "(min (max (min ?x ?y) ?z) ?y) ==> (min (max ?x ?z) ?y)"
     let min_max = recursive_rules(
         Metric::Atoms,
-        5,
+        7,
         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
         all_rules.clone(),
     );
 
     all_rules.extend(min_max);
+
+    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]);
+
+    let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
+        .filter(Filter::Contains("VAR".parse().unwrap()))
+        .plug("VAR", &Workload::new(int_lang.vars))
+        .plug("VAL", &Workload::new(int_lang.vals))
+        .append(Workload::new(&["0", "1"]));
+    // let ops = vec![lang.uops, lang.bops, lang.tops];
+    for (i, ops) in int_lang.ops.iter().enumerate() {
+        int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    }
+
+    let mut big_wkld = Workload::new(&["0", "1"]).append(
+        Workload::new(&["(OP V V)"])
+            // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
+            // thing where we have to basically feed in these operators one at a time.
+            .plug(
+                "OP",
+                &Workload::new(&["==", "<", "<=", ">", ">=", "||", "&&"]),
+            )
+            .plug("V", &int_wkld)
+            .filter(Filter::MetricLt(Metric::Atoms, 8)),
+    );
 
     // the special workloads, which mostly revolve around
     // composing int2boolop(int_term, int_term) or things like that
