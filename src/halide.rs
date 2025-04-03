@@ -895,3 +895,12 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     all_rules
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    #[test]
+    fn ruleset_cannot_derive() {
+        let ruleset: Ruleset<Pred> = Ruleset::default();
+    }
+}
