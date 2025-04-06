@@ -34,6 +34,7 @@ egg::define_language! {
     "min" = Min([Id; 2]),
     "max" = Max([Id; 2]),
     "select" = Select([Id; 3]),
+    "istrue" = IsTrue(Id),
     Var(Symbol),
   }
 }
@@ -128,6 +129,9 @@ impl SynthLanguage for Pred {
               if xbool {Some(*y)} else {Some(*z)}
             }),
             Pred::Var(_) => vec![],
+            Pred::IsTrue(x) => {
+                panic!("IsTrue should not be used in eval");
+            }
         }
     }
 
@@ -417,6 +421,9 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ))
             }
             Pred::Var(v) => buf.push(z3::ast::Int::new_const(ctx, v.to_string())),
+            Pred::IsTrue(x) => {
+                panic!("IsTrue should not be used in eval");
+            }
         }
     }
     buf.pop().unwrap()
