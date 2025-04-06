@@ -665,12 +665,29 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let egraph = scheduler.run(&egraph, condition_propogation_rules);
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
+        println!("lexpr: {}", lexpr);
+        println!("rexpr: {}", rexpr);
 
         let l_id = out_egraph
             .lookup_expr(lexpr)
             .unwrap_or_else(|| panic!("Did not find {}", lexpr));
         let r_id = out_egraph.lookup_expr(rexpr);
         if let Some(r_id) = r_id {
+            if l_id == r_id {
+                println!(
+                    "# eclasses in the egraph: {}",
+                    out_egraph.number_of_classes()
+                );
+                for node in out_egraph[l_id].nodes.iter() {
+                    println!("node: {}", node);
+                }
+                let true_id = out_egraph.lookup_expr(&"TRUE".parse().unwrap()).unwrap();
+                if l_id == true_id {
+                    println!("YES!");
+                } else {
+                    println!("NO!");
+                }
+            }
             l_id == r_id
         } else {
             false
@@ -732,7 +749,9 @@ impl<L: SynthLanguage> Ruleset<L> {
                     condition_propogation_rules.as_ref().unwrap(),
                 )
             } else {
-                self.can_derive(derive_type, rule, limits)
+                println!("debug: skipping {} for now.", rule);
+                // self.can_derive(derive_type, rule, limits)
+                true
             }
         })
     }
