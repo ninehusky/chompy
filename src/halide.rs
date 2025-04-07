@@ -129,8 +129,13 @@ impl SynthLanguage for Pred {
               if xbool {Some(*y)} else {Some(*z)}
             }),
             Pred::Var(_) => vec![],
-            Pred::IsTrue(x) => {
-                panic!("IsTrue should not be used in eval");
+            Pred::IsTrue(_) => {
+                // TODO: @ninehusky - I actually kind of want to panic here, because
+                // cvec matching on `istrue` is just a bad thing waiting to happen.
+                // I'm actually not sure what a more principled fix would be, however,
+                // so leaving it as is for now. Maybe we can kick the can to later --
+                // if a rule is generated with `istrue`, we can panic then?
+                vec![]
             }
         }
     }
@@ -421,8 +426,8 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ))
             }
             Pred::Var(v) => buf.push(z3::ast::Int::new_const(ctx, v.to_string())),
-            Pred::IsTrue(x) => {
-                panic!("IsTrue should not be used in eval");
+            Pred::IsTrue(_) => {
+                panic!("IsTrue should not be used in egg_to_z3");
             }
         }
     }

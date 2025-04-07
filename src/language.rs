@@ -46,7 +46,7 @@ where
         // it better be the case that the parent condition exists in the e-graph.
         if egraph
             .lookup_expr(
-                &format!("(IsTrue {})", self.parent_cond.to_string())
+                &format!("(istrue {})", self.parent_cond.to_string())
                     .parse()
                     .unwrap(),
             )
@@ -56,7 +56,7 @@ where
         }
 
         let new_id = egraph.add_expr(
-            &format!("(IsTrue {})", self.my_cond.to_string())
+            &format!("(istrue {})", self.my_cond.to_string())
                 .parse()
                 .unwrap(),
         );
@@ -77,14 +77,21 @@ impl<L: SynthLanguage> ImplicationSwitch<L> {
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
         // uhh okay so the searcher is just gonna be a simple searcher for
         // the expression `(IsTrue <parent_cond>)`.
-        let searcher: Pattern<L> = format!("(IsTrue {})", self.parent_cond.to_string())
+        let searcher: Pattern<L> = format!("(istrue {})", self.parent_cond.to_string())
             .parse()
             .unwrap();
 
+        let applier: ImplicationApplier<L> = ImplicationApplier {
+            parent_cond: self.parent_cond.clone(),
+            my_cond: self.my_cond.clone(),
+        };
+
+        // NOTE @ninehusky: I made the string like this so that we don't confuse it with
+        // a rewrite rule.
         Rewrite::new(
             format!("{} implies {}", self.parent_cond, self.my_cond),
             searcher,
-            self.my_cond.clone(),
+            applier,
         )
         .unwrap()
     }
@@ -531,5 +538,218 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         _cond: &Pattern<Self>,
     ) -> ValidationResult {
         ValidationResult::Valid
+    }
+}
+
+// run these tests with `cargo test --test implication`
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::halide::Pred;
+    use egg::{EGraph, Id, Runner};
+
+    #[test]
+    // in previous step, we have (IsTrue foo)
+    // now let's see if we can add (IsTrue bar)
+    // given foo implies bar.
+    pub fn implication_toggle_one_step() {
+        let implication: ImplicationSwitch<Pred> = ImplicationSwitch {
+            parent_cond: "foo".parse().unwrap(),
+            my_cond: "bar".parse().unwrap(),
+        };
+
+        let rewrite: Rewrite<Pred, SynthAnalysis> = implication.rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[rewrite]);
+
+        let result = runner.egraph.clone();
+
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_some());
+    }
+
+    // foo ==> bar
+    // bar ==> baz
+    // istrue foo. do we see istrue bar and istrue baz?
+    #[test]
+    pub fn implication_toggle_multi_step() {
+        let foo_imp_bar = ImplicationSwitch {
+            parent_cond: "foo".parse().unwrap(),
+            my_cond: "bar".parse().unwrap(),
+        }
+        .rewrite();
+
+        let bar_imp_baz = ImplicationSwitch {
+            parent_cond: "bar".parse().unwrap(),
+            my_cond: "baz".parse().unwrap(),
+        }
+        .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[foo_imp_bar, bar_imp_baz]);
+
+        let result = runner.egraph.clone();
+
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_some());
+    }
+
+    #[test]
+    pub fn implication_no_toggle_simple() {
+        let bar_imp_baz = ImplicationSwitch {
+            parent_cond: "bar".parse().unwrap(),
+            my_cond: "baz".parse().unwrap(),
+        }
+        .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[bar_imp_baz]);
+
+        let result = runner.egraph.clone();
+
+        // nothing should have changed.
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(result
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+    }
+
+    #[test]
+    // foo ==> bar
+    // bar ==> baz
+    // bar ==> qux
+    pub fn implication_toggle_more_complex() {
+        let foo_imp_bar = ImplicationSwitch {
+            parent_cond: "foo".parse().unwrap(),
+            my_cond: "bar".parse().unwrap(),
+        }
+        .rewrite();
+
+        let bar_imp_baz = ImplicationSwitch {
+            parent_cond: "bar".parse().unwrap(),
+            my_cond: "baz".parse().unwrap(),
+        }
+        .rewrite();
+
+        let baz_imp_qux = ImplicationSwitch {
+            parent_cond: "baz".parse().unwrap(),
+            my_cond: "qux".parse().unwrap(),
+        }
+        .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue qux)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[foo_imp_bar, bar_imp_baz, baz_imp_qux]);
+
+        let result = runner.egraph.clone();
+
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue qux)".parse().unwrap())
+            .is_some());
     }
 }
