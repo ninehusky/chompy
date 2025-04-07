@@ -4,12 +4,91 @@ use std::{
 };
 
 use egg::{
-    Analysis, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, PatternAst, RecExpr,
-    Rewrite,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, PatternAst,
+    RecExpr, Rewrite,
 };
 use enumo::{Rule, Workload};
 
 use crate::*;
+
+// An `ImplicationSwitch` models the implication of one condition to another.
+//
+// For example, given conditions `c`, `c'`, if that `c` implies `c'`,
+// then an `ImplicationSwitch` will model the implication `c => c'`.
+// In practice, the user is responsible for setting up the fact that `c` is true
+// in the e-graph through adding the term `(IsTrue c)`.
+//
+// When the corresponding `ImplicationSwitch` is run (i.e., when it's run as a rule),
+// then it will add `(IsTrue c')` to the e-graph, paving the way for conditional rewrite
+// rules. See `ConditionalRewrite` for more details.
+pub struct ImplicationSwitch<L: SynthLanguage> {
+    parent_cond: Pattern<L>,
+    my_cond: Pattern<L>,
+}
+
+struct ImplicationApplier<L: SynthLanguage> {
+    parent_cond: Pattern<L>,
+    my_cond: Pattern<L>,
+}
+
+impl<L> Applier<L, SynthAnalysis> for ImplicationApplier<L>
+where
+    L: SynthLanguage,
+{
+    fn apply_one(
+        &self,
+        egraph: &mut egg::EGraph<L, SynthAnalysis>,
+        _eclass: egg::Id,
+        _subst: &egg::Subst,
+        _searcher_ast: Option<&PatternAst<L>>,
+        _rule_name: egg::Symbol,
+    ) -> Vec<egg::Id> {
+        // it better be the case that the parent condition exists in the e-graph.
+        if egraph
+            .lookup_expr(
+                &format!("(IsTrue {})", self.parent_cond.to_string())
+                    .parse()
+                    .unwrap(),
+            )
+            .is_none()
+        {
+            panic!("Parent condition not found in egraph");
+        }
+
+        let new_id = egraph.add_expr(
+            &format!("(IsTrue {})", self.my_cond.to_string())
+                .parse()
+                .unwrap(),
+        );
+        // may need to return just vec![] in some cases if there was no need
+        // to fire the rule?
+        vec![new_id]
+    }
+}
+
+impl<L: SynthLanguage> ImplicationSwitch<L> {
+    pub fn new(parent_cond: &Pattern<L>, my_cond: &Pattern<L>) -> Self {
+        Self {
+            parent_cond: parent_cond.clone(),
+            my_cond: my_cond.clone(),
+        }
+    }
+
+    pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
+        // uhh okay so the searcher is just gonna be a simple searcher for
+        // the expression `(IsTrue <parent_cond>)`.
+        let searcher: Pattern<L> = format!("(IsTrue {})", self.parent_cond.to_string())
+            .parse()
+            .unwrap();
+
+        Rewrite::new(
+            format!("{} implies {}", self.parent_cond, self.my_cond),
+            searcher,
+            self.my_cond.clone(),
+        )
+        .unwrap()
+    }
+}
 
 #[derive(Clone)]
 pub struct SynthAnalysis {
