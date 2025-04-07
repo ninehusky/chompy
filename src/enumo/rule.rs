@@ -1,6 +1,6 @@
 use egg::{
-    Analysis, Applier, Condition, ConditionEqual, ConditionalApplier, ENodeOrVar, Language,
-    PatternAst, Rewrite, Subst,
+    Analysis, Applier, AstSize, Condition, ConditionEqual, ConditionalApplier, ENodeOrVar,
+    Extractor, Language, MultiPattern, PatternAst, Rewrite, Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -127,30 +127,18 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
     }
 }
 
-pub struct ConditionChecker<L: SynthLanguage> {
-    pub cond: Pattern<L>,
-}
-
-impl<L: SynthLanguage, N: egg::Analysis<L>> Condition<L, N> for ConditionChecker<L> {
-    fn check(&self, egraph: &mut EGraph<L, N>, _eclass: Id, _subst: &Subst) -> bool {
-        egraph
-            .lookup_expr(&format!("(istrue {})", self.cond).parse().unwrap())
-            .is_some()
-    }
-}
-
 impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
-        let cond = ConditionChecker {
-            cond: cond_pat.clone(),
-        };
-        let rhs = ConditionalApplier {
-            condition: cond,
-            applier: Rhs { rhs: r_pat.clone() },
-        };
 
-        let rewrite = Rewrite::new(name.clone(), l_pat.clone(), rhs).ok();
+        let l_pat_ast: PatternAst<L> = l_pat.clone().ast;
+        let cond_pat_ast: PatternAst<L> = cond_pat.clone().ast;
+        let search_pat: MultiPattern<L> = MultiPattern::new(vec![
+            ("?lpat".parse().unwrap(), l_pat_ast),
+            ("?condpat".parse().unwrap(), cond_pat_ast),
+        ]);
+
+        let rewrite = Rewrite::new(name.clone(), search_pat, Rhs { rhs: r_pat.clone() }).ok();
 
         rewrite.map(|rw| Rule {
             name: name.into(),
@@ -231,7 +219,14 @@ fn apply_pat<L: Language, A: Analysis<L>>(
 
 #[cfg(test)]
 mod test {
-    use crate::enumo::Rule;
+    use egg::{EGraph, Runner};
+
+    use crate::enumo::{Rule, Ruleset};
+
+    use crate::language::{SynthAnalysis, SynthLanguage};
+
+    use super::halide::Pred;
+    use super::ImplicationSwitch;
 
     #[test]
     fn parse() {
@@ -271,5 +266,107 @@ mod test {
         assert_eq!(forwards.name.to_string(), "(* a b) ==> (* c d) if (+ e f)");
         assert!(forwards.cond.is_some());
         assert_eq!(forwards.cond.unwrap().to_string(), "(+ e f)");
+    }
+
+    #[test]
+    fn cond_rewrite_fires() {
+        let rule: Rule<Pred> = Rule::from_string("(/ x x) ==> 1 if (!= x 0)").unwrap().0;
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule.clone());
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+        egraph.add_expr(&"(/ x x)".parse().unwrap());
+        egraph.add_expr(&"1".parse().unwrap());
+
+        egraph.add_expr(&"(istrue (!= x 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph)
+            .run(&[rule.rewrite]);
+
+        let result = runner.egraph;
+
+        assert_eq!(
+            result.lookup_expr(&"1".parse().unwrap()),
+            result.lookup_expr(&"(/ x x)".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn cond_rewrite_does_not_fire() {
+        let rule: Rule<Pred> = Rule::from_string("(/ x x) ==> 1 if (!= x 0)").unwrap().0;
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule.clone());
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+        egraph.add_expr(&"(/ x x)".parse().unwrap());
+        egraph.add_expr(&"1".parse().unwrap());
+
+        egraph.add_expr(&"(istrue (== x 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph)
+            .run(&[rule.rewrite]);
+
+        let result = runner.egraph;
+
+        assert_ne!(
+            result.lookup_expr(&"1".parse().unwrap()),
+            result.lookup_expr(&"(/ x x)".parse().unwrap())
+        );
+    }
+
+    // kind of an end-to-end-ish test.
+    // 1. add the following implication rules:
+    //    x > 5 implies x > 0
+    //    x > 0 implies x != 0
+    // 2. add the following conditional rule:
+    // (/ x x) ==> 1 if (!= x 0)
+    // 3. see if (/ a a) rewrites to 1
+    #[test]
+    fn cond_rewrite_fires_eventually() {
+        let rule: Rule<Pred> = Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0;
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule.clone());
+
+        let x_gt_5_imp_x_gt_0 =
+            ImplicationSwitch::new(&"(> x 5)".parse().unwrap(), &"(> x 0)".parse().unwrap())
+                .rewrite();
+
+        let x_gt_0_imp_x_not_0 =
+            ImplicationSwitch::new(&"(> x 0)".parse().unwrap(), &"(!= x 0)".parse().unwrap())
+                .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue (> x 5))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[x_gt_5_imp_x_gt_0, x_gt_0_imp_x_not_0]);
+
+        let mut result = runner.egraph.clone();
+        assert!(result
+            .lookup_expr(&"(istrue (!= x 0))".parse().unwrap())
+            .is_some());
+
+        result.add_expr(&"(/ x x)".parse().unwrap());
+        result.add_expr(&"(/ y y)".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(result)
+            .run(&[rule.rewrite]);
+
+        let result = runner.egraph;
+
+        assert_eq!(
+            result.lookup_expr(&"1".parse().unwrap()).unwrap(),
+            result.lookup_expr(&"(/ x x)".parse().unwrap()).unwrap()
+        );
+
+        assert_ne!(
+            result.lookup_expr(&"1".parse().unwrap()).unwrap(),
+            result.lookup_expr(&"(/ y y)".parse().unwrap()).unwrap()
+        )
     }
 }

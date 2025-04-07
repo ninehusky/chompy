@@ -38,10 +38,10 @@ where
     fn apply_one(
         &self,
         egraph: &mut egg::EGraph<L, SynthAnalysis>,
-        _eclass: egg::Id,
-        _subst: &egg::Subst,
-        _searcher_ast: Option<&PatternAst<L>>,
-        _rule_name: egg::Symbol,
+        eclass: egg::Id,
+        subst: &egg::Subst,
+        searcher_ast: Option<&PatternAst<L>>,
+        rule_name: egg::Symbol,
     ) -> Vec<egg::Id> {
         // it better be the case that the parent condition exists in the e-graph.
         if egraph
