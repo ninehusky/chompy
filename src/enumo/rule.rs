@@ -1,6 +1,6 @@
 use egg::{
-    Analysis, Applier, ConditionEqual, ConditionalApplier, ENodeOrVar, Language, PatternAst,
-    Rewrite, Subst,
+    Analysis, Applier, Condition, ConditionEqual, ConditionalApplier, ENodeOrVar, Language,
+    PatternAst, Rewrite, Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -55,26 +55,7 @@ impl<L: SynthLanguage> Rule<L> {
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
             let forwards = if cond.is_some() {
-                let rewrite = Rewrite::new(
-                    name.clone(),
-                    l_pat.clone(),
-                    ConditionalApplier {
-                        condition: ConditionEqual::new(
-                            cond.clone().unwrap(),
-                            "TRUE".parse().unwrap(),
-                        ),
-                        applier: Rhs { rhs: r_pat.clone() },
-                    },
-                )
-                .unwrap();
-
-                Self {
-                    name: name.clone().into(),
-                    lhs: l_pat.clone(),
-                    rhs: r_pat.clone(),
-                    cond: cond.clone(),
-                    rewrite,
-                }
+                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap()).unwrap()
             } else {
                 Self {
                     name: name.clone().into(),
@@ -146,14 +127,31 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
     }
 }
 
+pub struct ConditionChecker<L: SynthLanguage> {
+    pub cond: Pattern<L>,
+}
+
+impl<L: SynthLanguage, N: egg::Analysis<L>> Condition<L, N> for ConditionChecker<L> {
+    fn check(&self, egraph: &mut EGraph<L, N>, _eclass: Id, _subst: &Subst) -> bool {
+        egraph
+            .lookup_expr(&format!("(istrue {})", self.cond).parse().unwrap())
+            .is_some()
+    }
+}
+
 impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
+        let cond = ConditionChecker {
+            cond: cond_pat.clone(),
+        };
         let rhs = ConditionalApplier {
-            condition: ConditionEqual::new(cond_pat.clone(), "TRUE".parse().unwrap()),
+            condition: cond,
             applier: Rhs { rhs: r_pat.clone() },
         };
+
         let rewrite = Rewrite::new(name.clone(), l_pat.clone(), rhs).ok();
+
         rewrite.map(|rw| Rule {
             name: name.into(),
             lhs: l_pat.clone(),
