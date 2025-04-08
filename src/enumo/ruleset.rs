@@ -1,4 +1,4 @@
-use egg::{AstSize, EClass, Extractor, Pattern, RecExpr};
+use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::{io::Write, str::FromStr, sync::Arc};
@@ -641,7 +641,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         derive_type: DeriveType,
         rule: &Rule<L>,
         limits: Limits,
-        condition_propogation_rules: &Self,
+        condition_propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> bool {
         let scheduler = Scheduler::Saturating(limits);
         let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
@@ -649,9 +649,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         let rexpr = &L::instantiate(&rule.rhs);
 
         let cond = &L::instantiate(&rule.cond.clone().unwrap());
-        let cond_id = egraph.add_expr(cond);
-        let true_id = egraph.add_expr(&"TRUE".parse().unwrap());
-        egraph.union(cond_id, true_id);
+
+        egraph.add_expr(&format!("(istrue {})", cond).parse().unwrap());
+
+        println!("added condition: {}", format!("(istrue {})", cond));
 
         match derive_type {
             DeriveType::Lhs => {
@@ -663,7 +664,19 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
-        let egraph = scheduler.run(&egraph, condition_propogation_rules);
+        println!("cond prop rules: {:?}", condition_propagation_rules);
+
+        // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
+        // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
+        // but maybe eventually we should just have a single Scheduler that can run both?
+        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(condition_propagation_rules);
+
+        let egraph = runner.egraph;
+
+        println!("cond: {}", cond);
+
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
         println!("lexpr: {}", lexpr);
         println!("rexpr: {}", rexpr);
@@ -678,15 +691,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                     "# eclasses in the egraph: {}",
                     out_egraph.number_of_classes()
                 );
-                for node in out_egraph[l_id].nodes.iter() {
-                    println!("node: {}", node);
-                }
-                let true_id = out_egraph.lookup_expr(&"TRUE".parse().unwrap()).unwrap();
-                if l_id == true_id {
-                    println!("YES!");
-                } else {
-                    println!("NO!");
-                }
             }
             l_id == r_id
         } else {
@@ -735,7 +739,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         derive_type: DeriveType,
         against: &Self,
         limits: Limits,
-        condition_propogation_rules: &Option<Self>,
+        condition_propogation_rules: Option<&Vec<Rewrite<L, SynthAnalysis>>>,
     ) -> (Self, Self) {
         against.partition(|rule| {
             if rule.cond.is_some() {
@@ -749,9 +753,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     condition_propogation_rules.as_ref().unwrap(),
                 )
             } else {
-                println!("debug: skipping {} for now.", rule);
-                // self.can_derive(derive_type, rule, limits)
-                true
+                self.can_derive(derive_type, rule, limits)
             }
         })
     }
@@ -760,7 +762,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let r1: Ruleset<L> = Ruleset::from_file(one);
         let r2: Ruleset<L> = Ruleset::from_file(two);
 
-        let (can, cannot) = r1.derive(derive_type, &r2, Limits::deriving(), &None);
+        let (can, cannot) = r1.derive(derive_type, &r2, Limits::deriving(), None);
         println!(
             "Using {} ({}) to derive {} ({}).\nCan derive {}, cannot derive {}. Missing:",
             one,

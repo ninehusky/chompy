@@ -127,18 +127,76 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
     }
 }
 
+pub struct ConditionChecker<L: SynthLanguage> {
+    cond: Pattern<L>,
+}
+
+// thank you Cole.
+pub fn lookup_pattern<L, N>(pattern: &Pattern<L>, egraph: &EGraph<L, N>, subst: &Subst) -> bool
+where
+    L: Language,
+    N: Analysis<L>,
+{
+    let mut ids: Vec<Option<Id>> = vec![None; pattern.ast.as_ref().len()];
+    for (i, enode_or_var) in pattern.ast.as_ref().iter().enumerate() {
+        match enode_or_var {
+            ENodeOrVar::Var(v) => {
+                ids[i] = subst.get(*v).copied();
+            }
+            ENodeOrVar::ENode(e) => {
+                let mut resolved_enode: L = e.clone();
+                for child in resolved_enode.children_mut() {
+                    match ids[usize::from(*child)] {
+                        None => {
+                            return false;
+                        }
+                        Some(id) => {
+                            *child = id;
+                        }
+                    }
+                }
+                match egraph.lookup(resolved_enode) {
+                    None => {
+                        return false;
+                    }
+                    Some(id) => {
+                        ids[i] = Some(id);
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
+impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
+    fn check(
+        &self,
+        egraph: &mut egg::EGraph<L, SynthAnalysis>,
+        eclass: egg::Id,
+        subst: &Subst,
+    ) -> bool {
+        lookup_pattern(&self.cond, egraph, subst)
+    }
+}
+
 impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
 
-        let l_pat_ast: PatternAst<L> = l_pat.clone().ast;
         let cond_pat_ast: PatternAst<L> = cond_pat.clone().ast;
-        let search_pat: MultiPattern<L> = MultiPattern::new(vec![
-            ("?lpat".parse().unwrap(), l_pat_ast),
-            ("?condpat".parse().unwrap(), cond_pat_ast),
-        ]);
 
-        let rewrite = Rewrite::new(name.clone(), search_pat, Rhs { rhs: r_pat.clone() }).ok();
+        let rewrite = Rewrite::new(
+            name.clone(),
+            l_pat.clone(),
+            ConditionalApplier {
+                condition: ConditionChecker {
+                    cond: cond_pat.clone(),
+                },
+                applier: r_pat.clone(),
+            },
+        )
+        .ok();
 
         rewrite.map(|rw| Rule {
             name: name.into(),

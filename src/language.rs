@@ -55,13 +55,23 @@ where
             panic!("Parent condition not found in egraph");
         }
 
+        if egraph.lookup_expr(
+            &format!("(istrue {})", self.my_cond.to_string())
+                .parse()
+                .unwrap(),
+        ) != None
+        {
+            // we already have the condition in the egraph, so no need to add it.
+            return vec![];
+        }
+
         let new_id = egraph.add_expr(
             &format!("(istrue {})", self.my_cond.to_string())
                 .parse()
                 .unwrap(),
         );
-        // may need to return just vec![] in some cases if there was no need
-        // to fire the rule?
+
+        println!("added (istrue {})", self.my_cond.to_string());
         vec![new_id]
     }
 }
@@ -334,44 +344,45 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     }
 
     fn get_condition_propogation_rules(conditions: &Workload) -> Ruleset<Self> {
-        let forced = conditions.force();
-        let mut result = Ruleset::default();
-        let mut cache: HashMap<(String, String), bool> = Default::default();
-        let true_recexpr: RecExpr<Self> = "TRUE".parse().unwrap();
-        for c in &forced {
-            let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
-            let c_pat = Pattern::from(&c_recexpr.clone());
-            for c2 in &forced {
-                let c2_recexpr: RecExpr<Self> = c2.to_string().parse().unwrap();
-                let c2_pat = Pattern::from(&c2_recexpr.clone());
-                if Self::condition_implies(
-                    &c.to_string().parse().unwrap(),
-                    &c2.to_string().parse().unwrap(),
-                    &mut cache,
-                ) {
-                    // c => c2
-                    let rw_name = format!("{} => {} if {} == true", c, c2, c);
-                    let rw: Rewrite<Self, SynthAnalysis> = Rewrite::new(
-                        rw_name.clone(),
-                        Pattern::from(&true_recexpr.clone()),
-                        c2_pat.clone(),
-                    )
-                    .unwrap();
-                    let rule: Rule<Self> = Rule {
-                        name: rw_name.into(),
-                        lhs: Pattern::from(&true_recexpr.clone()),
-                        rhs: c2_pat.clone(),
-                        // if cond1 is true, then cond1 -> cond2.
-                        cond: Some(c_pat.clone()),
-                        rewrite: rw,
-                    };
-                    let mut dummy = Ruleset::default();
-                    dummy.add(rule);
-                    result = result.union(&dummy);
-                }
-            }
-        }
-        result
+        todo!()
+        // let forced = conditions.force();
+        // let mut result = Ruleset::default();
+        // let mut cache: HashMap<(String, String), bool> = Default::default();
+        // let true_recexpr: RecExpr<Self> = "TRUE".parse().unwrap();
+        // for c in &forced {
+        //     let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
+        //     let c_pat = Pattern::from(&c_recexpr.clone());
+        //     for c2 in &forced {
+        //         let c2_recexpr: RecExpr<Self> = c2.to_string().parse().unwrap();
+        //         let c2_pat = Pattern::from(&c2_recexpr.clone());
+        //         if Self::condition_implies(
+        //             &c.to_string().parse().unwrap(),
+        //             &c2.to_string().parse().unwrap(),
+        //             &mut cache,
+        //         ) {
+        //             // c => c2
+        //             let rw_name = format!("{} => {} if {} == true", c, c2, c);
+        //             let rw: Rewrite<Self, SynthAnalysis> = Rewrite::new(
+        //                 rw_name.clone(),
+        //                 Pattern::from(&true_recexpr.clone()),
+        //                 c2_pat.clone(),
+        //             )
+        //             .unwrap();
+        //             let rule: Rule<Self> = Rule {
+        //                 name: rw_name.into(),
+        //                 lhs: Pattern::from(&true_recexpr.clone()),
+        //                 rhs: c2_pat.clone(),
+        //                 // if cond1 is true, then cond1 -> cond2.
+        //                 cond: Some(c_pat.clone()),
+        //                 rewrite: rw,
+        //             };
+        //             let mut dummy = Ruleset::default();
+        //             dummy.add(rule);
+        //             result = result.union(&dummy);
+        //         }
+        //     }
+        // }
+        // result
     }
 
     fn condition_implies(
