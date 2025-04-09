@@ -1,6 +1,6 @@
 use crate::*;
 
-use egg::RecExpr;
+use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
 use recipe_utils::{
@@ -135,7 +135,7 @@ impl SynthLanguage for Pred {
                 // I'm actually not sure what a more principled fix would be, however,
                 // so leaving it as is for now. Maybe we can kick the can to later --
                 // if a rule is generated with `istrue`, we can panic then?
-                vec![]
+                vec![None, None, None]
             }
         }
     }
@@ -250,6 +250,19 @@ impl SynthLanguage for Pred {
         let lexpr = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref());
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&lexpr._eq(&rexpr).not());
+        if matches!(solver.check(), z3::SatResult::Sat) {
+            let model = solver.get_model().unwrap();
+            println!(
+                "Rule {} ==> {} is invalid.\nthe model is:\n{:?}eval({}) = {:?}\neval({}) = {:?}\n",
+                lhs,
+                rhs,
+                model,
+                lhs,
+                model.eval(&lexpr),
+                rhs,
+                model.eval(&rexpr)
+            );
+        }
         match solver.check() {
             z3::SatResult::Unsat => ValidationResult::Valid,
             z3::SatResult::Unknown => ValidationResult::Unknown,
@@ -274,6 +287,21 @@ impl SynthLanguage for Pred {
         let lexpr = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref());
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&z3::ast::Bool::implies(&cexpr, &lexpr._eq(&rexpr)).not());
+
+        if matches!(solver.check(), z3::SatResult::Sat) {
+            let model = solver.get_model().unwrap();
+            println!(
+                "Rule if {} then {} ==> {} is invalid.\nthe model is:\n{:?}eval({}) = {:?}\neval({}) = {:?}\n",
+                cond,
+                lhs,
+                rhs,
+                model,
+                lhs,
+                model.eval(&lexpr),
+                rhs,
+                model.eval(&rexpr)
+            );
+        }
 
         match solver.check() {
             z3::SatResult::Unsat => ValidationResult::Valid,
@@ -679,16 +707,14 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
 
 pub fn compute_conditional_structures(
     conditional_soup: &Workload,
-) -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, Ruleset<Pred>) {
+) -> (
+    HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
+    Vec<Rewrite<Pred, SynthAnalysis>>,
+) {
     let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
     let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
     let cond_prop_ruleset = Pred::get_condition_propogation_rules(conditional_soup);
-
-    println!("cond prop rules: {}", cond_prop_ruleset.len());
-    for rule in &cond_prop_ruleset {
-        println!("{}", rule.0);
-    }
 
     for cond in conditional_soup.force() {
         let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();

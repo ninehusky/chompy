@@ -1,7 +1,7 @@
-use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner};
+use egg::{Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use std::{io::Write, str::FromStr, sync::Arc};
+use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
 use crate::{
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature,
@@ -196,7 +196,8 @@ impl<L: SynthLanguage> Ruleset<L> {
         F: Fn(&Rule<L>) -> bool + std::marker::Sync,
     {
         let rules: Vec<&Rule<L>> = self.0.values().collect();
-        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_par_iter().partition(|rule| f(rule));
+        // let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_par_iter().partition(|rule| f(rule));
+        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_iter().partition(|rule| f(rule));
         let mut yes = Ruleset::default();
         let mut no = Ruleset::default();
         yes.add_all(yeses);
@@ -486,7 +487,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         &mut self,
         chosen: &Self,
         scheduler: Scheduler,
-        prop_rules: &Self,
+        prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         added_rule: &Rule<L>,
     ) {
         let mut will_choose: Self = Default::default();
@@ -503,16 +504,16 @@ impl<L: SynthLanguage> Ruleset<L> {
             initial.push((lhs, rhs, rule.clone()));
         }
 
-        let true_term = egraph.add_expr(&"TRUE".parse().unwrap());
         let cond_ast = &L::instantiate(&added_rule.cond.clone().unwrap());
-        let cond = egraph.add_expr(&cond_ast.clone());
-        egraph.union(cond, true_term);
+        egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
 
         // 2.5: do condition propogation
-        let egraph = scheduler.run(&egraph, prop_rules);
+        let runner: Runner<L, SynthAnalysis> = Runner::default()
+            .with_egraph(egraph.clone())
+            .run(prop_rules);
 
         // 3. compress with the rules we've chosen so far
-        let egraph = scheduler.run(&egraph, chosen);
+        let egraph = scheduler.run(&runner.egraph, chosen);
 
         let mut cache: HashMap<(String, String), bool> = Default::default();
 
@@ -581,7 +582,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         &mut self,
         prior: Ruleset<L>,
         scheduler: Scheduler,
-        prop_rules: &Self,
+        prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> (Self, Self) {
         let mut invalid: Ruleset<L> = Default::default();
         let mut chosen = prior.clone();
@@ -644,15 +645,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         condition_propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> bool {
         let scheduler = Scheduler::Saturating(limits);
-        let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
+        let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
         let lexpr = &L::instantiate(&rule.lhs);
         let rexpr = &L::instantiate(&rule.rhs);
 
         let cond = &L::instantiate(&rule.cond.clone().unwrap());
 
         egraph.add_expr(&format!("(istrue {})", cond).parse().unwrap());
-
-        println!("added condition: {}", format!("(istrue {})", cond));
 
         match derive_type {
             DeriveType::Lhs => {
@@ -664,8 +663,6 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
-        println!("cond prop rules: {:?}", condition_propagation_rules);
-
         // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
         // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
         // but maybe eventually we should just have a single Scheduler that can run both?
@@ -675,21 +672,49 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let egraph = runner.egraph;
 
-        println!("cond: {}", cond);
+        // println!("# eclasses in the egraph: {}", egraph.number_of_classes());
+
+        // println!("cond: {}", cond);
 
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
-        println!("lexpr: {}", lexpr);
-        println!("rexpr: {}", rexpr);
+
+        // println!("lexpr: {}", lexpr);
+        // println!("rexpr: {}", rexpr);
+
+        // println!(
+        //     "# eclasses in the egraph after rules: {}",
+        //     out_egraph.number_of_classes()
+        // );
+
+        let serialized = egg_to_serialized_egraph(&out_egraph);
+
+        // save it to egraph.json
+
+        let mut file = std::fs::File::create("egraph.json")
+            .unwrap_or_else(|_| panic!("Failed to open 'egraph.json'"));
+
+        let serialized = serde_json::to_string_pretty(&serialized).unwrap();
+
+        file.write_all(serialized.as_bytes())
+            .expect("Unable to write");
 
         let l_id = out_egraph
             .lookup_expr(lexpr)
             .unwrap_or_else(|| panic!("Did not find {}", lexpr));
         let r_id = out_egraph.lookup_expr(rexpr);
+        println!("finished deriving {}", rule.name);
         if let Some(r_id) = r_id {
             if l_id == r_id {
-                println!(
-                    "# eclasses in the egraph: {}",
-                    out_egraph.number_of_classes()
+                for node in out_egraph[l_id].nodes.iter() {
+                    println!("node: {}", node);
+                }
+                // this should never happen.
+                // this means that an `istrue` node merged
+                // with the lhs or rhs of the rule.
+                assert_ne!(
+                    out_egraph.number_of_classes(),
+                    1,
+                    "an istrue node merged with somethin else!"
                 );
             }
             l_id == r_id
@@ -763,15 +788,45 @@ impl<L: SynthLanguage> Ruleset<L> {
         let r2: Ruleset<L> = Ruleset::from_file(two);
 
         let (can, cannot) = r1.derive(derive_type, &r2, Limits::deriving(), None);
-        println!(
-            "Using {} ({}) to derive {} ({}).\nCan derive {}, cannot derive {}. Missing:",
-            one,
-            r1.len(),
-            two,
-            r2.len(),
-            can.len(),
-            cannot.len()
-        );
+        {
+            // std::io::_print(std::format_args_nl!(
+            //     "Using {} ({}) to derive {} ({}).\nCan derive {}, cannot derive {}. Missing:",
+            //     one,
+            //     r1.len(),
+            //     two,
+            //     r2.len(),
+            //     can.len(),
+            //     cannot.len()
+            // ));
+        };
         cannot.pretty_print();
     }
+}
+
+pub fn egg_to_serialized_egraph<L, A>(egraph: &EGraph<L, A>) -> egraph_serialize::EGraph
+where
+    L: Language + Display,
+    A: Analysis<L>,
+{
+    use egraph_serialize::*;
+    let mut out = EGraph::default();
+    for class in egraph.classes() {
+        for (i, node) in class.nodes.iter().enumerate() {
+            out.add_node(
+                format!("{}.{}", class.id, i),
+                Node {
+                    op: node.to_string(),
+                    children: node
+                        .children()
+                        .iter()
+                        .map(|id| NodeId::from(format!("{}.0", id)))
+                        .collect(),
+                    subsumed: false,
+                    eclass: ClassId::from(format!("{}", class.id)),
+                    cost: Cost::new(1.0).unwrap(),
+                },
+            )
+        }
+    }
+    out
 }

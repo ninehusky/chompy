@@ -176,7 +176,11 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
         eclass: egg::Id,
         subst: &Subst,
     ) -> bool {
-        lookup_pattern(&self.cond, egraph, subst)
+        let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
+
+        // println!("checking if (istrue {}) exists", self.cond);
+        // println!("result: {}", lookup_pattern(&is_true_pat, egraph, subst));
+        lookup_pattern(&is_true_pat, egraph, subst)
     }
 }
 
