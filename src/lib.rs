@@ -136,8 +136,8 @@ pub struct Recipe {
 
 pub fn json_to_recipe(path: &str) -> Vec<Recipe> {
     let contents = std::fs::read_to_string(path).unwrap();
-    let recipe_contents = serde_json::from_str(&contents).unwrap();
-    recipe_contents
+    
+    serde_json::from_str(&contents).unwrap()
 }
 
 /// Used for interval analysis and constant folding

@@ -224,7 +224,7 @@ pub fn soup_to_workload(soup: Vec<String>) -> Result<Workload, Box<dyn std::erro
 pub mod tests {
     #[allow(unused_imports)]
     use super::*;
-    use crate::ConditionRecipe;
+    
 
 
     #[tokio::test]
