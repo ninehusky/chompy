@@ -4,6 +4,7 @@ use ruler::enumo::Ruleset;
 use ruler::json_to_recipe;
 
 use ruler::halide::recipe_to_rules;
+use ruler::halide::{og_recipe, og_recipe_no_conditions};
 use ruler::{ConditionRecipe, Recipe};
 
 use std::fs::File;
@@ -32,14 +33,36 @@ impl FromStr for ChompyMode {
     }
 }
 
+#[derive(Debug)]
+pub enum RecipeType {
+    // what we used to run: the default recipe with added nesting
+    // that we can't express in the JSON format.
+    OgRecipe,
+    OgRecipeNoConditions,
+}
+
+impl FromStr for RecipeType {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "og_recipe" => Ok(Self::OgRecipe),
+            "og_recipe_no_conditions" => Ok(Self::OgRecipeNoConditions),
+            _ => Err("Invalid recipe type.".to_string()),
+        }
+    }
+}
+
+
 #[derive(Parser, Debug)]
 struct ChompyArgs {
-    #[clap(short, long)]
+    #[clap(long)]
     mode: ChompyMode,
-    #[clap(short, long)]
+    #[clap(long)]
     output_path: PathBuf,
-    #[clap(short, long)]
+    #[clap(long)]
     recipe_path: Option<PathBuf>,
+    #[clap(long)]
+    old_recipe_type: Option<String>,
 }
 
 #[tokio::main]
@@ -54,12 +77,24 @@ pub async fn main() {
     }
     let rules = match mode {
         ChompyMode::HandwrittenRecipe => {
-            // make this path relative to this file.
-            let recipe_path = args.recipe_path.unwrap_or_else(|| {
-                panic!("No recipe path provided.");
-            });
-            let recipe = json_to_recipe(recipe_path.to_str().unwrap());
-            recipe_to_rules(&recipe)
+            let old_recipe_type = args.old_recipe_type;
+            let recipe_path = args.recipe_path;
+            match (old_recipe_type, recipe_path) {
+                (Some(recipe_type), None) => {
+                    let recipe: RecipeType = recipe_type.parse().unwrap();
+                    match recipe {
+                        RecipeType::OgRecipe => og_recipe(),
+                        RecipeType::OgRecipeNoConditions => og_recipe_no_conditions(),
+                    }
+                },
+                (None, Some(recipe_path)) => {
+                    let recipe = json_to_recipe(recipe_path.to_str().unwrap());
+                    recipe_to_rules(&recipe)
+                }
+                (Some(_), Some(_)) => panic!("both recipe types provided."),
+                (None, None) => panic!("no recipe type provided.")
+
+            }
         }
         ChompyMode::LLMAlphabetSoup => {
             run_gpt_eval().await
