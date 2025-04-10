@@ -783,7 +783,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let r1: Ruleset<L> = Ruleset::from_file(one);
         let r2: Ruleset<L> = Ruleset::from_file(two);
 
-        let (can, cannot) = r1.derive(derive_type, &r2, Limits::deriving(), None);
+        let (_can, cannot) = r1.derive(derive_type, &r2, Limits::deriving(), None);
         {
             // std::io::_print(std::format_args_nl!(
             //     "Using {} ({}) to derive {} ({}).\nCan derive {}, cannot derive {}. Missing:",
