@@ -114,10 +114,7 @@ impl SynthLanguage for Pred {
                 } else {
                     let is_neg = (*x < zero) ^ (*y < zero);
                     if is_neg {
-                        match x.abs().checked_div(y.abs()) {
-                            Some(v) => Some(-v),
-                            None => None
-                        }
+                        x.abs().checked_div(y.abs()).map(|v| -v)
                     } else {
                         x.checked_div(*y)
                     }
@@ -129,10 +126,7 @@ impl SynthLanguage for Pred {
                 } else {
                     let is_neg = (*x < zero) ^ (*y < zero);
                     if is_neg {
-                        match x.abs().checked_rem(y.abs()) {
-                            Some(v) => Some(-v),
-                            None => None
-                        }
+                        x.abs().checked_rem(y.abs()).map(|v| -v)
                     } else {
                         x.checked_rem(*y)
                     }
@@ -439,11 +433,11 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
 
                 let zero = z3::ast::Int::from_i64(ctx, 0);
 
-                let l_neg = z3::ast::Int::lt(&l, &zero);
-                let r_neg = z3::ast::Int::lt(&r, &zero);
+                let l_neg = z3::ast::Int::lt(l, &zero);
+                let r_neg = z3::ast::Int::lt(r, &zero);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(&l), &l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(&r), &r);
+                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
+                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
                 let div = z3::ast::Int::div(&l_abs, &r_abs);
 
                 let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
@@ -460,11 +454,11 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
 
                 let zero = z3::ast::Int::from_i64(ctx, 0);
 
-                let l_neg = z3::ast::Int::lt(&l, &zero);
-                let r_neg = z3::ast::Int::lt(&r, &zero);
+                let l_neg = z3::ast::Int::lt(l, &zero);
+                let r_neg = z3::ast::Int::lt(r, &zero);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(&l), &l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(&r), &r);
+                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
+                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
                 let modulo = z3::ast::Int::modulo(&l_abs, &r_abs);
 
                 let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
@@ -962,7 +956,7 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     // for op in &["==", "<", "<=", ">", ">=", "||", "&&"] {
     for op in &["<", "<=", ">", ">="] {
-        let mut big_wkld = Workload::new(&["0", "1"]).append(
+        let big_wkld = Workload::new(&["0", "1"]).append(
             Workload::new(&["(OP V V)"])
                 // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
                 // thing where we have to basically feed in these operators one at a time.

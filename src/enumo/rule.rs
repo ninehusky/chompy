@@ -1,6 +1,5 @@
 use egg::{
-    Analysis, Applier, AstSize, Condition, ConditionEqual, ConditionalApplier, ENodeOrVar,
-    Extractor, Language, MultiPattern, PatternAst, Rewrite, Subst,
+    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite, Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;

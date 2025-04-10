@@ -4,10 +4,10 @@ use std::{
 };
 
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language,
     PatternAst, RecExpr, Rewrite, Subst,
 };
-use enumo::{lookup_pattern, Rule, Workload};
+use enumo::{lookup_pattern, Workload};
 
 use crate::*;
 
@@ -67,11 +67,11 @@ where
         // it better be the case that the parent condition exists in the e-graph.
 
         let is_true_parent_pattern: Pattern<L> =
-            format!("(istrue {})", self.parent_cond.to_string())
+            format!("(istrue {})", self.parent_cond)
                 .parse()
                 .unwrap();
 
-        let is_true_my_pattern: Pattern<L> = format!("(istrue {})", self.my_cond.to_string())
+        let is_true_my_pattern: Pattern<L> = format!("(istrue {})", self.my_cond)
             .parse()
             .unwrap();
 
@@ -88,7 +88,7 @@ where
         }
 
         let new_id = apply_pat(
-            &is_true_my_pattern.ast.as_ref().iter().as_slice(),
+            is_true_my_pattern.ast.as_ref().iter().as_slice(),
             egraph,
             subst,
         );
@@ -110,7 +110,7 @@ impl<L: SynthLanguage> ImplicationSwitch<L> {
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
         // uhh okay so the searcher is just gonna be a simple searcher for
         // the expression `(IsTrue <parent_cond>)`.
-        let searcher: Pattern<L> = format!("(istrue {})", self.parent_cond.to_string())
+        let searcher: Pattern<L> = format!("(istrue {})", self.parent_cond)
             .parse()
             .unwrap();
 
