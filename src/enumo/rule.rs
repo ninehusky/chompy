@@ -1,5 +1,6 @@
 use egg::{
-    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite, Subst,
+    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite,
+    Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -172,13 +173,10 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
     fn check(
         &self,
         egraph: &mut egg::EGraph<L, SynthAnalysis>,
-        eclass: egg::Id,
+        _eclass: egg::Id,
         subst: &Subst,
     ) -> bool {
         let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
-
-        // println!("checking if (istrue {}) exists", self.cond);
-        // println!("result: {}", lookup_pattern(&is_true_pat, egraph, subst));
         lookup_pattern(&is_true_pat, egraph, subst)
     }
 }
@@ -186,8 +184,6 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
 impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
-
-        let cond_pat_ast: PatternAst<L> = cond_pat.clone().ast;
 
         let rewrite = Rewrite::new(
             name.clone(),
