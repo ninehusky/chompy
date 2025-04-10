@@ -173,7 +173,7 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
     let mut prior_ruleset: Ruleset<Pred> = Ruleset::default();
 
     for recipe in recipe_list {
-        let cond_recipe = recipe.conditions.as_ref().map(|cond| cond.clone());
+        let cond_recipe = recipe.conditions.clone();
         let (workload, cond_r) = llm::generate_alphabet_soup(&recipe, cond_recipe.as_ref()).await;
         let ruleset = halide::soup_to_rules(
             &workload,
