@@ -702,12 +702,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             .lookup_expr(lexpr)
             .unwrap_or_else(|| panic!("Did not find {}", lexpr));
         let r_id = out_egraph.lookup_expr(rexpr);
-        println!("finished deriving {}", rule.name);
         if let Some(r_id) = r_id {
             if l_id == r_id {
-                for node in out_egraph[l_id].nodes.iter() {
-                    println!("node: {}", node);
-                }
                 // this should never happen.
                 // this means that an `istrue` node merged
                 // with the lhs or rhs of the rule.
