@@ -829,10 +829,6 @@ pub fn soup_to_rules(
     prior_rules: &Ruleset<Pred>,
     n: usize,
 ) -> Ruleset<Pred> {
-    for t in soup.force() {
-        println!("{:?}", t.to_string());
-    }
-
     let (pvec_to_terms, cond_prop_ruleset) = if let Some(conditions) = conditions {
         // If we have a workload of conditions, compute the conditional structures
         // to help with rule inference.
@@ -859,7 +855,66 @@ pub fn soup_to_rules(
     ruleset
 }
 
-pub fn handwritten_recipes() -> Ruleset<Pred> {
+pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
+    let mut ruleset: Ruleset<Pred> = Ruleset::default();
+    for r in recipes {
+        let rules = match &r.conditions {
+            Some(c) => {
+                let cond_lang = Lang {
+                    vars: r.vars.clone(),
+                    vals: c.vals.clone(),
+                    ops: c.ops.clone(),
+                };
+
+                let base_lang = if cond_lang.ops.len() == 2 {
+                    base_lang(2)
+                } else {
+                    base_lang(3)
+                };
+
+                let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+                    .filter(Filter::Contains("VAR".parse().unwrap()))
+                    .plug("VAR", &Workload::new(cond_lang.vars))
+                    .plug("VAL", &Workload::new(cond_lang.vals));
+                for (i, ops) in cond_lang.ops.iter().enumerate() {
+                    wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+                }
+
+                // only want conditions greater than size 2
+                wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
+
+                let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
+
+                recursive_rules_cond(
+                    Metric::Atoms,
+                    r.max_size,
+                    Lang {
+                        vars: r.vars.clone(),
+                        vals: r.vals.clone(),
+                        ops: r.ops.clone(),
+                    },
+                    ruleset.clone(),
+                    &pvec_to_terms,
+                    &cond_prop_ruleset,
+                )
+            }
+            None => recursive_rules(
+                Metric::Atoms,
+                r.max_size,
+                Lang {
+                    vars: r.vars.clone(),
+                    vals: r.vals.clone(),
+                    ops: r.ops.clone(),
+                },
+                ruleset.clone(),
+            ),
+        };
+        ruleset.extend(rules);
+    }
+    ruleset
+}
+
+pub fn og_recipe() -> Ruleset<Pred> {
     let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
 
     let base_lang = if cond_lang.ops.len() == 2 {
@@ -925,10 +980,6 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     all_rules.extend(arith_basic.clone());
 
-    // turn this knob back to 7 (for min/max size 6)
-    // to derive the following rules (changed to 5 for local testing):
-    // "(min (max ?x ?y) (max ?x ?z)) ==> (max (min ?y ?z) ?x)"
-    // "(min (max (min ?x ?y) ?z) ?y) ==> (min (max ?x ?z) ?y)"
     let min_max = recursive_rules(
         Metric::Atoms,
         7,
@@ -985,11 +1036,102 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
     all_rules
 }
 
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-    #[test]
-    fn ruleset_cannot_derive() {
-        let ruleset: Ruleset<Pred> = Ruleset::default();
+pub fn og_recipe_no_conditions() -> Ruleset<Pred> {
+    let mut all_rules = Ruleset::default();
+
+    let equality = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(equality);
+
+    let comparisons = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(comparisons);
+
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(bool_only);
+
+    // corresponds to "mul/div with constants + mul/div with constants and other arith"
+    let arith_basic = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["+", "-", "*", "/", "%"]],
+        ),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(arith_basic.clone());
+
+    let min_max = recursive_rules(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(min_max);
+
+    // the special workloads, which mostly revolve around
+    // composing int2boolop(int_term, int_term) or things like that
+    // together.
+    //
+    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "min", "max"]]);
+
+    let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
+        .filter(Filter::Contains("VAR".parse().unwrap()))
+        .plug("VAR", &Workload::new(int_lang.vars))
+        .plug("VAL", &Workload::new(int_lang.vals))
+        .append(Workload::new(&["0", "1"]));
+    // let ops = vec![lang.uops, lang.bops, lang.tops];
+    for (i, ops) in int_lang.ops.iter().enumerate() {
+        int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
+
+    // for op in &["==", "<", "<=", ">", ">=", "||", "&&"] {
+    for op in &["<", "<=", ">", ">="] {
+        let big_wkld = Workload::new(&["0", "1"]).append(
+            Workload::new(&["(OP V V)"])
+                // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
+                // thing where we have to basically feed in these operators one at a time.
+                .plug("OP", &Workload::new(&[op]))
+                .plug("V", &int_wkld)
+                .filter(Filter::MetricLt(Metric::Atoms, 8)),
+        );
+
+        let wrapped_rules = run_workload(
+            big_wkld,
+            arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
+            Limits::synthesis(),
+            Limits {
+                iter: 1,
+                node: 100_000,
+                match_: 100_000,
+            },
+            true,
+            None,
+            None,
+        );
+
+        all_rules.extend(wrapped_rules);
+    }
+
+    all_rules
 }

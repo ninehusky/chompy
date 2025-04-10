@@ -4,8 +4,8 @@ use std::{
 };
 
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language,
-    PatternAst, RecExpr, Rewrite, Subst,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, PatternAst,
+    RecExpr, Rewrite, Subst,
 };
 use enumo::{lookup_pattern, Workload};
 
@@ -59,21 +59,17 @@ where
     fn apply_one(
         &self,
         egraph: &mut egg::EGraph<L, SynthAnalysis>,
-        eclass: egg::Id,
+        _eclass: egg::Id,
         subst: &egg::Subst,
-        searcher_ast: Option<&PatternAst<L>>,
-        rule_name: egg::Symbol,
+        _searcher_ast: Option<&PatternAst<L>>,
+        _rule_name: egg::Symbol,
     ) -> Vec<egg::Id> {
         // it better be the case that the parent condition exists in the e-graph.
 
         let is_true_parent_pattern: Pattern<L> =
-            format!("(istrue {})", self.parent_cond)
-                .parse()
-                .unwrap();
+            format!("(istrue {})", self.parent_cond).parse().unwrap();
 
-        let is_true_my_pattern: Pattern<L> = format!("(istrue {})", self.my_cond)
-            .parse()
-            .unwrap();
+        let is_true_my_pattern: Pattern<L> = format!("(istrue {})", self.my_cond).parse().unwrap();
 
         if !lookup_pattern(&is_true_parent_pattern, egraph, subst) {
             panic!(
@@ -110,9 +106,7 @@ impl<L: SynthLanguage> ImplicationSwitch<L> {
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
         // uhh okay so the searcher is just gonna be a simple searcher for
         // the expression `(IsTrue <parent_cond>)`.
-        let searcher: Pattern<L> = format!("(istrue {})", self.parent_cond)
-            .parse()
-            .unwrap();
+        let searcher: Pattern<L> = format!("(istrue {})", self.parent_cond).parse().unwrap();
 
         let applier: ImplicationApplier<L> = ImplicationApplier {
             parent_cond: self.parent_cond.clone(),
