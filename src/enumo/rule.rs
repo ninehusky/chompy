@@ -1,6 +1,6 @@
 use egg::{
-    Analysis, Applier, ConditionEqual, ConditionalApplier, ENodeOrVar, Language, PatternAst,
-    Rewrite, Subst,
+    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite,
+    Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -55,26 +55,7 @@ impl<L: SynthLanguage> Rule<L> {
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
             let forwards = if cond.is_some() {
-                let rewrite = Rewrite::new(
-                    name.clone(),
-                    l_pat.clone(),
-                    ConditionalApplier {
-                        condition: ConditionEqual::new(
-                            cond.clone().unwrap(),
-                            "TRUE".parse().unwrap(),
-                        ),
-                        applier: Rhs { rhs: r_pat.clone() },
-                    },
-                )
-                .unwrap();
-
-                Self {
-                    name: name.clone().into(),
-                    lhs: l_pat.clone(),
-                    rhs: r_pat.clone(),
-                    cond: cond.clone(),
-                    rewrite,
-                }
+                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap()).unwrap()
             } else {
                 Self {
                     name: name.clone().into(),
@@ -146,14 +127,76 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
     }
 }
 
+pub struct ConditionChecker<L: SynthLanguage> {
+    cond: Pattern<L>,
+}
+
+// thank you Cole.
+pub fn lookup_pattern<L, N>(pattern: &Pattern<L>, egraph: &EGraph<L, N>, subst: &Subst) -> bool
+where
+    L: Language,
+    N: Analysis<L>,
+{
+    let mut ids: Vec<Option<Id>> = vec![None; pattern.ast.as_ref().len()];
+    for (i, enode_or_var) in pattern.ast.as_ref().iter().enumerate() {
+        match enode_or_var {
+            ENodeOrVar::Var(v) => {
+                ids[i] = subst.get(*v).copied();
+            }
+            ENodeOrVar::ENode(e) => {
+                let mut resolved_enode: L = e.clone();
+                for child in resolved_enode.children_mut() {
+                    match ids[usize::from(*child)] {
+                        None => {
+                            return false;
+                        }
+                        Some(id) => {
+                            *child = id;
+                        }
+                    }
+                }
+                match egraph.lookup(resolved_enode) {
+                    None => {
+                        return false;
+                    }
+                    Some(id) => {
+                        ids[i] = Some(id);
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
+impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
+    fn check(
+        &self,
+        egraph: &mut egg::EGraph<L, SynthAnalysis>,
+        _eclass: egg::Id,
+        subst: &Subst,
+    ) -> bool {
+        let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
+        lookup_pattern(&is_true_pat, egraph, subst)
+    }
+}
+
 impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
-        let rhs = ConditionalApplier {
-            condition: ConditionEqual::new(cond_pat.clone(), "TRUE".parse().unwrap()),
-            applier: Rhs { rhs: r_pat.clone() },
-        };
-        let rewrite = Rewrite::new(name.clone(), l_pat.clone(), rhs).ok();
+
+        let rewrite = Rewrite::new(
+            name.clone(),
+            l_pat.clone(),
+            ConditionalApplier {
+                condition: ConditionChecker {
+                    cond: cond_pat.clone(),
+                },
+                applier: r_pat.clone(),
+            },
+        )
+        .ok();
+
         rewrite.map(|rw| Rule {
             name: name.into(),
             lhs: l_pat.clone(),
@@ -233,7 +276,14 @@ fn apply_pat<L: Language, A: Analysis<L>>(
 
 #[cfg(test)]
 mod test {
-    use crate::enumo::Rule;
+    use egg::{EGraph, Runner};
+
+    use crate::enumo::{Rule, Ruleset};
+
+    use crate::language::{SynthAnalysis, SynthLanguage};
+
+    use super::halide::Pred;
+    use super::ImplicationSwitch;
 
     #[test]
     fn parse() {
@@ -273,5 +323,107 @@ mod test {
         assert_eq!(forwards.name.to_string(), "(* a b) ==> (* c d) if (+ e f)");
         assert!(forwards.cond.is_some());
         assert_eq!(forwards.cond.unwrap().to_string(), "(+ e f)");
+    }
+
+    #[test]
+    fn cond_rewrite_fires() {
+        let rule: Rule<Pred> = Rule::from_string("(/ x x) ==> 1 if (!= x 0)").unwrap().0;
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule.clone());
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+        egraph.add_expr(&"(/ x x)".parse().unwrap());
+        egraph.add_expr(&"1".parse().unwrap());
+
+        egraph.add_expr(&"(istrue (!= x 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph)
+            .run(&[rule.rewrite]);
+
+        let result = runner.egraph;
+
+        assert_eq!(
+            result.lookup_expr(&"1".parse().unwrap()),
+            result.lookup_expr(&"(/ x x)".parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn cond_rewrite_does_not_fire() {
+        let rule: Rule<Pred> = Rule::from_string("(/ x x) ==> 1 if (!= x 0)").unwrap().0;
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule.clone());
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+        egraph.add_expr(&"(/ x x)".parse().unwrap());
+        egraph.add_expr(&"1".parse().unwrap());
+
+        egraph.add_expr(&"(istrue (== x 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph)
+            .run(&[rule.rewrite]);
+
+        let result = runner.egraph;
+
+        assert_ne!(
+            result.lookup_expr(&"1".parse().unwrap()),
+            result.lookup_expr(&"(/ x x)".parse().unwrap())
+        );
+    }
+
+    // kind of an end-to-end-ish test.
+    // 1. add the following implication rules:
+    //    x > 5 implies x > 0
+    //    x > 0 implies x != 0
+    // 2. add the following conditional rule:
+    // (/ x x) ==> 1 if (!= x 0)
+    // 3. see if (/ a a) rewrites to 1
+    #[test]
+    fn cond_rewrite_fires_eventually() {
+        let rule: Rule<Pred> = Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0;
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule.clone());
+
+        let x_gt_5_imp_x_gt_0 =
+            ImplicationSwitch::new(&"(> x 5)".parse().unwrap(), &"(> x 0)".parse().unwrap())
+                .rewrite();
+
+        let x_gt_0_imp_x_not_0 =
+            ImplicationSwitch::new(&"(> x 0)".parse().unwrap(), &"(!= x 0)".parse().unwrap())
+                .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue (> x 5))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[x_gt_5_imp_x_gt_0, x_gt_0_imp_x_not_0]);
+
+        let mut result = runner.egraph.clone();
+        assert!(result
+            .lookup_expr(&"(istrue (!= x 0))".parse().unwrap())
+            .is_some());
+
+        result.add_expr(&"(/ x x)".parse().unwrap());
+        result.add_expr(&"(/ y y)".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(result)
+            .run(&[rule.rewrite]);
+
+        let result = runner.egraph;
+
+        assert_eq!(
+            result.lookup_expr(&"1".parse().unwrap()).unwrap(),
+            result.lookup_expr(&"(/ x x)".parse().unwrap()).unwrap()
+        );
+
+        assert_ne!(
+            result.lookup_expr(&"1".parse().unwrap()).unwrap(),
+            result.lookup_expr(&"(/ y y)".parse().unwrap()).unwrap()
+        )
     }
 }
