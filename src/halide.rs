@@ -1,6 +1,6 @@
 use crate::*;
 
-use egg::RecExpr;
+use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
 use recipe_utils::{
@@ -34,6 +34,7 @@ egg::define_language! {
     "min" = Min([Id; 2]),
     "max" = Max([Id; 2]),
     "select" = Select([Id; 3]),
+    "istrue" = IsTrue(Id),
     Var(Symbol),
   }
 }
@@ -111,14 +112,24 @@ impl SynthLanguage for Pred {
                 if *y == zero {
                     Some(zero)
                 } else {
-                    x.checked_div(*y)
+                    let is_neg = (*x < zero) ^ (*y < zero);
+                    if is_neg {
+                        x.abs().checked_div(y.abs()).map(|v| -v)
+                    } else {
+                        x.checked_div(*y)
+                    }
                 }
             }),
             Pred::Mod([x, y]) => map!(get_cvec, x, y => {
                 if *y == zero {
                     Some(zero)
                 } else {
-                    x.checked_rem(*y)
+                    let is_neg = (*x < zero) ^ (*y < zero);
+                    if is_neg {
+                        x.abs().checked_rem(y.abs()).map(|v| -v)
+                    } else {
+                        x.checked_rem(*y)
+                    }
                 }
             }),
             Pred::Min([x, y]) => map!(get_cvec, x, y => Some(*x.min(y))),
@@ -128,6 +139,14 @@ impl SynthLanguage for Pred {
               if xbool {Some(*y)} else {Some(*z)}
             }),
             Pred::Var(_) => vec![],
+            Pred::IsTrue(_) => {
+                // TODO: @ninehusky - I actually kind of want to panic here, because
+                // cvec matching on `istrue` is just a bad thing waiting to happen.
+                // I'm actually not sure what a more principled fix would be, however,
+                // so leaving it as is for now. Maybe we can kick the can to later --
+                // if a rule is generated with `istrue`, we can panic then?
+                vec![None, None, None]
+            }
         }
     }
 
@@ -241,6 +260,19 @@ impl SynthLanguage for Pred {
         let lexpr = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref());
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&lexpr._eq(&rexpr).not());
+        // if matches!(solver.check(), z3::SatResult::Sat) {
+        //     let model = solver.get_model().unwrap();
+        //     println!(
+        //         "Rule {} ==> {} is invalid.\nthe model is:\n{:?}eval({}) = {:?}\neval({}) = {:?}\n",
+        //         lhs,
+        //         rhs,
+        //         model,
+        //         lhs,
+        //         model.eval(&lexpr),
+        //         rhs,
+        //         model.eval(&rexpr)
+        //     );
+        // }
         match solver.check() {
             z3::SatResult::Unsat => ValidationResult::Valid,
             z3::SatResult::Unknown => ValidationResult::Unknown,
@@ -265,6 +297,21 @@ impl SynthLanguage for Pred {
         let lexpr = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref());
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&z3::ast::Bool::implies(&cexpr, &lexpr._eq(&rexpr)).not());
+
+        // if matches!(solver.check(), z3::SatResult::Sat) {
+        //     let model = solver.get_model().unwrap();
+        //     println!(
+        //         "Rule if {} then {} ==> {} is invalid.\nthe model is:\n{:?}eval({}) = {:?}\neval({}) = {:?}\n",
+        //         cond,
+        //         lhs,
+        //         rhs,
+        //         model,
+        //         lhs,
+        //         model.eval(&lexpr),
+        //         rhs,
+        //         model.eval(&rexpr)
+        //     );
+        // }
 
         match solver.check() {
             z3::SatResult::Unsat => ValidationResult::Valid,
@@ -383,20 +430,48 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
             Pred::Div([x, y]) => {
                 let l = &buf[usize::from(*x)];
                 let r = &buf[usize::from(*y)];
+
+                let zero = z3::ast::Int::from_i64(ctx, 0);
+
+                let l_neg = z3::ast::Int::lt(l, &zero);
+                let r_neg = z3::ast::Int::lt(r, &zero);
+
+                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
+                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
+                let div = z3::ast::Int::div(&l_abs, &r_abs);
+
+                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+
                 buf.push(z3::ast::Bool::ite(
                     &r._eq(&zero),
                     &zero,
-                    &z3::ast::Int::div(l, r),
-                ))
+                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&div), &div),
+                ));
             }
             Pred::Mod([x, y]) => {
                 let l = &buf[usize::from(*x)];
                 let r = &buf[usize::from(*y)];
+
+                let zero = z3::ast::Int::from_i64(ctx, 0);
+
+                let l_neg = z3::ast::Int::lt(l, &zero);
+                let r_neg = z3::ast::Int::lt(r, &zero);
+
+                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
+                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
+                let modulo = z3::ast::Int::modulo(&l_abs, &r_abs);
+
+                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+
                 buf.push(z3::ast::Bool::ite(
                     &r._eq(&zero),
                     &zero,
-                    &z3::ast::Int::rem(l, r),
-                ))
+                    &z3::ast::Bool::ite(
+                        &signs_differ,
+                        &z3::ast::Int::unary_minus(&modulo),
+                        &modulo,
+                    ),
+                ));
             }
             Pred::Min([x, y]) => {
                 let l = &buf[usize::from(*x)];
@@ -417,6 +492,9 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ))
             }
             Pred::Var(v) => buf.push(z3::ast::Int::new_const(ctx, v.to_string())),
+            Pred::IsTrue(_) => {
+                panic!("IsTrue should not be used in egg_to_z3");
+            }
         }
     }
     buf.pop().unwrap()
@@ -605,16 +683,56 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
                         z3::ast::Int::mul(ctx, &[&x, &y])
                     }
                     "/" => {
-                        let x = sexpr_to_z3(ctx, tail[0]);
-                        let y = sexpr_to_z3(ctx, tail[1]);
-                        let zero = z3::ast::Int::from_i64(&ctx, 0);
-                        z3::ast::Bool::ite(&y._eq(&zero), &zero, &z3::ast::Int::div(&x, &y))
+                        let l = sexpr_to_z3(ctx, tail[0]);
+                        let r = sexpr_to_z3(ctx, tail[1]);
+                        let zero = z3::ast::Int::from_i64(ctx, 0);
+
+                        let l_neg = z3::ast::Int::lt(&l, &zero);
+                        let r_neg = z3::ast::Int::lt(&r, &zero);
+
+                        let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(&l), &l);
+                        let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(&r), &r);
+                        let div = z3::ast::Int::div(&l_abs, &r_abs);
+
+                        let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+
+                        z3::ast::Bool::ite(
+                            &r._eq(&zero),
+                            &zero,
+                            &z3::ast::Bool::ite(
+                                &signs_differ,
+                                &z3::ast::Int::unary_minus(&div),
+                                &div,
+                            ),
+                        )
                     }
                     "%" => {
-                        let x = sexpr_to_z3(ctx, tail[0]);
-                        let y = sexpr_to_z3(ctx, tail[1]);
-                        let zero = z3::ast::Int::from_i64(&ctx, 0);
-                        z3::ast::Bool::ite(&y._eq(&zero), &zero, &z3::ast::Int::modulo(&x, &y))
+                        let l = sexpr_to_z3(ctx, tail[0]);
+                        let r = sexpr_to_z3(ctx, tail[1]);
+                        let zero = z3::ast::Int::from_i64(ctx, 0);
+                        z3::ast::Bool::ite(
+                            &r._eq(&zero),
+                            &zero,
+                            &z3::ast::Bool::ite(
+                                &z3::ast::Bool::xor(
+                                    &z3::ast::Int::lt(&l, &zero),
+                                    &z3::ast::Int::lt(&r, &zero),
+                                ),
+                                &z3::ast::Int::unary_minus(&z3::ast::Int::div(
+                                    &z3::ast::Bool::ite(
+                                        &z3::ast::Int::lt(&l, &zero),
+                                        &z3::ast::Int::unary_minus(&l),
+                                        &l,
+                                    ),
+                                    &z3::ast::Bool::ite(
+                                        &z3::ast::Int::lt(&r, &zero),
+                                        &z3::ast::Int::unary_minus(&r),
+                                        &r,
+                                    ),
+                                )),
+                                &z3::ast::Int::modulo(&l, &r),
+                            ),
+                        )
                     }
                     "min" => {
                         let x = sexpr_to_z3(ctx, tail[0]);
@@ -667,16 +785,14 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
 
 pub fn compute_conditional_structures(
     conditional_soup: &Workload,
-) -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, Ruleset<Pred>) {
+) -> (
+    HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
+    Vec<Rewrite<Pred, SynthAnalysis>>,
+) {
     let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
     let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
     let cond_prop_ruleset = Pred::get_condition_propogation_rules(conditional_soup);
-
-    println!("cond prop rules: {}", cond_prop_ruleset.len());
-    for rule in &cond_prop_ruleset {
-        println!("{}", rule.0);
-    }
 
     for cond in conditional_soup.force() {
         let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
@@ -822,38 +938,12 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
 
     all_rules.extend(min_max);
 
-    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]);
-
-    let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
-        .filter(Filter::Contains("VAR".parse().unwrap()))
-        .plug("VAR", &Workload::new(int_lang.vars))
-        .plug("VAL", &Workload::new(int_lang.vals))
-        .append(Workload::new(&["0", "1"]));
-    // let ops = vec![lang.uops, lang.bops, lang.tops];
-    for (i, ops) in int_lang.ops.iter().enumerate() {
-        int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    }
-
-    let mut big_wkld = Workload::new(&["0", "1"]).append(
-        Workload::new(&["(OP V V)"])
-            // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-            // thing where we have to basically feed in these operators one at a time.
-            .plug(
-                "OP",
-                &Workload::new(&["==", "<", "<=", ">", ">=", "||", "&&"]),
-            )
-            .plug("V", &int_wkld)
-            .filter(Filter::MetricLt(Metric::Atoms, 8)),
-    );
-
     // the special workloads, which mostly revolve around
     // composing int2boolop(int_term, int_term) or things like that
     // together.
     //
     let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "min", "max"]]);
 
-    let bool_lang = Lang::new(&[], &[], &[&[], &["=="]]);
-
     let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
         .filter(Filter::Contains("VAR".parse().unwrap()))
         .plug("VAR", &Workload::new(int_lang.vars))
@@ -864,34 +954,33 @@ pub fn handwritten_recipes() -> Ruleset<Pred> {
         int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
 
-    let mut big_wkld = Workload::new(&["0", "1"]).append(
-        Workload::new(&["(OP V V)"])
-            // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-            // thing where we have to basically feed in these operators one at a time.
-            .plug("OP", &Workload::new(&["=="]))
-            .plug("V", &int_wkld)
-            .filter(Filter::MetricLt(Metric::Atoms, 8)),
-    );
+    // for op in &["==", "<", "<=", ">", ">=", "||", "&&"] {
+    for op in &["<", "<=", ">", ">="] {
+        let big_wkld = Workload::new(&["0", "1"]).append(
+            Workload::new(&["(OP V V)"])
+                // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
+                // thing where we have to basically feed in these operators one at a time.
+                .plug("OP", &Workload::new(&[op]))
+                .plug("V", &int_wkld)
+                .filter(Filter::MetricLt(Metric::Atoms, 8)),
+        );
 
-    for t in big_wkld.force() {
-        println!("t: {}", t.to_string());
+        let wrapped_rules = run_workload(
+            big_wkld,
+            arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
+            Limits::synthesis(),
+            Limits {
+                iter: 1,
+                node: 100_000,
+                match_: 100_000,
+            },
+            true,
+            Some(pvec_to_terms.clone()),
+            Some(cond_prop_ruleset.clone()),
+        );
+
+        all_rules.extend(wrapped_rules);
     }
-
-    let wrapped_rules = run_workload(
-        big_wkld,
-        arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
-        Limits::synthesis(),
-        Limits {
-            iter: 1,
-            node: 100_000,
-            match_: 100_000,
-        },
-        true,
-        Some(pvec_to_terms.clone()),
-        Some(cond_prop_ruleset.clone()),
-    );
-
-    all_rules.extend(wrapped_rules);
 
     all_rules
 }

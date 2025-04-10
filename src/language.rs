@@ -4,12 +4,131 @@ use std::{
 };
 
 use egg::{
-    Analysis, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, PatternAst, RecExpr,
-    Rewrite,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language,
+    PatternAst, RecExpr, Rewrite, Subst,
 };
-use enumo::{Rule, Workload};
+use enumo::{lookup_pattern, Workload};
 
 use crate::*;
+
+// An `ImplicationSwitch` models the implication of one condition to another.
+//
+// For example, given conditions `c`, `c'`, if that `c` implies `c'`,
+// then an `ImplicationSwitch` will model the implication `c => c'`.
+// In practice, the user is responsible for setting up the fact that `c` is true
+// in the e-graph through adding the term `(IsTrue c)`.
+//
+// When the corresponding `ImplicationSwitch` is run (i.e., when it's run as a rule),
+// then it will add `(IsTrue c')` to the e-graph, paving the way for conditional rewrite
+// rules. See `ConditionalRewrite` for more details.
+pub struct ImplicationSwitch<L: SynthLanguage> {
+    parent_cond: Pattern<L>,
+    my_cond: Pattern<L>,
+}
+
+struct ImplicationApplier<L: SynthLanguage> {
+    parent_cond: Pattern<L>,
+    my_cond: Pattern<L>,
+}
+
+fn apply_pat<L: Language, A: Analysis<L>>(
+    pat: &[ENodeOrVar<L>],
+    egraph: &mut EGraph<L, A>,
+    subst: &Subst,
+) -> Id {
+    let mut ids = vec![0.into(); pat.len()];
+
+    for (i, pat_node) in pat.iter().enumerate() {
+        let id = match pat_node {
+            ENodeOrVar::Var(w) => subst[*w],
+            ENodeOrVar::ENode(e) => {
+                let n = e.clone().map_children(|child| ids[usize::from(child)]);
+                egraph.add(n)
+            }
+        };
+        ids[i] = id;
+    }
+
+    *ids.last().unwrap()
+}
+
+impl<L> Applier<L, SynthAnalysis> for ImplicationApplier<L>
+where
+    L: SynthLanguage,
+{
+    fn apply_one(
+        &self,
+        egraph: &mut egg::EGraph<L, SynthAnalysis>,
+        eclass: egg::Id,
+        subst: &egg::Subst,
+        searcher_ast: Option<&PatternAst<L>>,
+        rule_name: egg::Symbol,
+    ) -> Vec<egg::Id> {
+        // it better be the case that the parent condition exists in the e-graph.
+
+        let is_true_parent_pattern: Pattern<L> =
+            format!("(istrue {})", self.parent_cond)
+                .parse()
+                .unwrap();
+
+        let is_true_my_pattern: Pattern<L> = format!("(istrue {})", self.my_cond)
+            .parse()
+            .unwrap();
+
+        if !lookup_pattern(&is_true_parent_pattern, egraph, subst) {
+            panic!(
+                "Parent condition {} not found in egraph for {}",
+                self.parent_cond, self.my_cond
+            );
+        }
+
+        if lookup_pattern(&is_true_my_pattern, egraph, subst) {
+            // we already have the condition in the egraph, so no need to add it.
+            return vec![];
+        }
+
+        let new_id = apply_pat(
+            is_true_my_pattern.ast.as_ref().iter().as_slice(),
+            egraph,
+            subst,
+        );
+
+        // extract egraph[new_id]
+
+        vec![new_id]
+    }
+}
+
+impl<L: SynthLanguage> ImplicationSwitch<L> {
+    pub fn new(parent_cond: &Pattern<L>, my_cond: &Pattern<L>) -> Self {
+        Self {
+            parent_cond: parent_cond.clone(),
+            my_cond: my_cond.clone(),
+        }
+    }
+
+    pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
+        // uhh okay so the searcher is just gonna be a simple searcher for
+        // the expression `(IsTrue <parent_cond>)`.
+        let searcher: Pattern<L> = format!("(istrue {})", self.parent_cond)
+            .parse()
+            .unwrap();
+
+        let applier: ImplicationApplier<L> = ImplicationApplier {
+            parent_cond: self.parent_cond.clone(),
+            my_cond: self.my_cond.clone(),
+        };
+
+        // NOTE @ninehusky: I made the string like this so that we don't confuse it with
+        // a rewrite rule.
+        Rewrite::new(
+            format!("{} implies {}", self.parent_cond, self.my_cond),
+            searcher,
+            applier,
+        )
+        .unwrap()
+    }
+}
 
 #[derive(Clone)]
 pub struct SynthAnalysis {
@@ -93,7 +212,11 @@ impl<L: SynthLanguage> Analysis<L> for SynthAnalysis {
                     (Some(_), None) => {
                         merge_b = true;
                     }
-                    (Some(x), Some(y)) => assert_eq!(x, y, "cvecs do not match!!"),
+                    (Some(x), Some(y)) => assert_eq!(
+                        x, y,
+                        "cvecs do not match!!: to is {:?}\n, from is {:?}",
+                        to, from
+                    ),
                     _ => (),
                 }
             }
@@ -247,41 +370,41 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         true
     }
 
-    fn get_condition_propogation_rules(conditions: &Workload) -> Ruleset<Self> {
+    fn get_condition_propogation_rules(conditions: &Workload) -> Vec<Rewrite<Self, SynthAnalysis>> {
         let forced = conditions.force();
-        let mut result = Ruleset::default();
+        let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
         let mut cache: HashMap<(String, String), bool> = Default::default();
-        let true_recexpr: RecExpr<Self> = "TRUE".parse().unwrap();
         for c in &forced {
             let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
             let c_pat = Pattern::from(&c_recexpr.clone());
+            // pairwise checking implication of all conditions
             for c2 in &forced {
+                if c == c2 {
+                    continue;
+                }
                 let c2_recexpr: RecExpr<Self> = c2.to_string().parse().unwrap();
                 let c2_pat = Pattern::from(&c2_recexpr.clone());
+                let rw = ImplicationSwitch {
+                    parent_cond: c_pat.clone(),
+                    my_cond: c2_pat.clone(),
+                }
+                .rewrite();
                 if Self::condition_implies(
                     &c.to_string().parse().unwrap(),
                     &c2.to_string().parse().unwrap(),
                     &mut cache,
-                ) {
-                    // c => c2
-                    let rw_name = format!("{} => {} if {} == true", c, c2, c);
-                    let rw: Rewrite<Self, SynthAnalysis> = Rewrite::new(
-                        rw_name.clone(),
-                        Pattern::from(&true_recexpr.clone()),
-                        c2_pat.clone(),
-                    )
-                    .unwrap();
-                    let rule: Rule<Self> = Rule {
-                        name: rw_name.into(),
-                        lhs: Pattern::from(&true_recexpr.clone()),
-                        rhs: c2_pat.clone(),
-                        // if cond1 is true, then cond1 -> cond2.
-                        cond: Some(c_pat.clone()),
-                        rewrite: rw,
-                    };
-                    let mut dummy = Ruleset::default();
-                    dummy.add(rule);
-                    result = result.union(&dummy);
+                ) && !result.iter().any(|r| r.name == rw.name)
+                // avoid duplicates
+                {
+                    // TODO: more principled approach -- variables on the right must
+                    // be bound to the left.
+                    if c_pat.to_string() == "(<= ?c1 (- 0 (abs (+ ?c0 1))))"
+                        && c2_pat.to_string() == "(<= ?c1 (abs ?x))"
+                    {
+                        println!("skipping {} ==> {}", c_pat, c2_pat);
+                        continue;
+                    }
+                    result.push(rw);
                 }
             }
         }
@@ -452,5 +575,254 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         _cond: &Pattern<Self>,
     ) -> ValidationResult {
         ValidationResult::Valid
+    }
+}
+
+// run these tests with `cargo test --test implication`
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::halide::Pred;
+    use egg::{EGraph, Id, Runner};
+
+    #[test]
+    // in previous step, we have (IsTrue foo)
+    // now let's see if we can add (IsTrue bar)
+    // given foo implies bar.
+    pub fn implication_toggle_one_step() {
+        let implication: ImplicationSwitch<Pred> = ImplicationSwitch {
+            parent_cond: "foo".parse().unwrap(),
+            my_cond: "bar".parse().unwrap(),
+        };
+
+        let rewrite: Rewrite<Pred, SynthAnalysis> = implication.rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[rewrite]);
+
+        let result = runner.egraph.clone();
+
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_some());
+
+        assert_ne!(
+            result
+                .lookup_expr(&"(istrue bar)".parse().unwrap())
+                .unwrap(),
+            result
+                .lookup_expr(&"(istrue foo)".parse().unwrap())
+                .unwrap()
+        );
+    }
+
+    // foo ==> bar
+    // bar ==> baz
+    // istrue foo. do we see istrue bar and istrue baz?
+    #[test]
+    pub fn implication_toggle_multi_step() {
+        let foo_imp_bar = ImplicationSwitch {
+            parent_cond: "foo".parse().unwrap(),
+            my_cond: "bar".parse().unwrap(),
+        }
+        .rewrite();
+
+        let bar_imp_baz = ImplicationSwitch {
+            parent_cond: "bar".parse().unwrap(),
+            my_cond: "baz".parse().unwrap(),
+        }
+        .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[foo_imp_bar, bar_imp_baz]);
+
+        let result = runner.egraph.clone();
+
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_some());
+    }
+
+    #[test]
+    pub fn implication_no_toggle_simple() {
+        let bar_imp_baz = ImplicationSwitch {
+            parent_cond: "bar".parse().unwrap(),
+            my_cond: "baz".parse().unwrap(),
+        }
+        .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[bar_imp_baz]);
+
+        let result = runner.egraph.clone();
+
+        // nothing should have changed.
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(result
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+    }
+
+    #[test]
+    // foo ==> bar
+    // bar ==> baz
+    // bar ==> qux
+    pub fn implication_toggle_more_complex() {
+        let foo_imp_bar = ImplicationSwitch {
+            parent_cond: "foo".parse().unwrap(),
+            my_cond: "bar".parse().unwrap(),
+        }
+        .rewrite();
+
+        let bar_imp_baz = ImplicationSwitch {
+            parent_cond: "bar".parse().unwrap(),
+            my_cond: "baz".parse().unwrap(),
+        }
+        .rewrite();
+
+        let baz_imp_qux = ImplicationSwitch {
+            parent_cond: "baz".parse().unwrap(),
+            my_cond: "qux".parse().unwrap(),
+        }
+        .rewrite();
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
+
+        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_none());
+
+        assert!(egraph
+            .lookup_expr(&"(istrue qux)".parse().unwrap())
+            .is_none());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[foo_imp_bar, bar_imp_baz, baz_imp_qux]);
+
+        let result = runner.egraph.clone();
+
+        assert!(result
+            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .is_some());
+
+        assert!(result
+            .lookup_expr(&"(istrue qux)".parse().unwrap())
+            .is_some());
+
+        assert_ne!(
+            result
+                .lookup_expr(&"(istrue bar)".parse().unwrap())
+                .unwrap(),
+            result
+                .lookup_expr(&"(istrue foo)".parse().unwrap())
+                .unwrap()
+        );
+
+        assert_ne!(
+            result
+                .lookup_expr(&"(istrue baz)".parse().unwrap())
+                .unwrap(),
+            result
+                .lookup_expr(&"(istrue bar)".parse().unwrap())
+                .unwrap()
+        );
+
+        assert_ne!(
+            result
+                .lookup_expr(&"(istrue qux)".parse().unwrap())
+                .unwrap(),
+            result
+                .lookup_expr(&"(istrue baz)".parse().unwrap())
+                .unwrap()
+        );
     }
 }

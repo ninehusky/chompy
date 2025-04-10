@@ -1,10 +1,10 @@
 use std::time::Instant;
 
-use egg::Pattern;
+use egg::{Pattern, Rewrite};
 
 use crate::{
     enumo::{Filter, Metric, Ruleset, Scheduler, Workload},
-    HashMap, Limits, SynthLanguage,
+    HashMap, Limits, SynthAnalysis, SynthLanguage,
 };
 
 /// Iterate a grammar (represented as a workload) up to a certain size metric
@@ -38,7 +38,7 @@ fn run_workload_internal<L: SynthLanguage>(
     // pvec -> list of conditions with that pvec
     conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
     // rules for how other conditions become true from other conditions which are true
-    propogation_rules: Option<Ruleset<L>>,
+    propogation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
     let t = Instant::now();
     let num_prior = prior.len();
@@ -110,7 +110,7 @@ pub fn run_workload<L: SynthLanguage>(
     // pvec -> list of conditions with that pvec
     conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
     // rules for how other conditions become true from other conditions which are true
-    propogation_rules: Option<Ruleset<L>>,
+    propogation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
     run_workload_internal(
         workload,
@@ -207,7 +207,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     lang: Lang,
     prior: Ruleset<L>,
     conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
-    propogation_rules: &Ruleset<L>,
+    propogation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
