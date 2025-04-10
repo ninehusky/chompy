@@ -1,5 +1,6 @@
 use egg::{Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
+use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
 use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
