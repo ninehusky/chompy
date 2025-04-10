@@ -196,8 +196,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         F: Fn(&Rule<L>) -> bool + std::marker::Sync,
     {
         let rules: Vec<&Rule<L>> = self.0.values().collect();
-        // let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_par_iter().partition(|rule| f(rule));
-        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_iter().partition(|rule| f(rule));
+        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_par_iter().partition(|rule| f(rule));
         let mut yes = Ruleset::default();
         let mut no = Ruleset::default();
         yes.add_all(yeses);
