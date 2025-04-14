@@ -5,10 +5,15 @@ version = "0.1.0"
 authors = ["Andrew Cheung <a7cheung@ucsd.edu>"]
 edition = "2018"
 
+[[bin]]
+name = "ruler"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "3.0.7", features = ["derive"] }
 log = "0.4"
 env_logger = { version = "0.7", default-features = false }
+egraph-serialize = "0.2.0"
 rand_pcg = "0.2"
 rand = { version = "0.7", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
@@ -28,6 +33,8 @@ rustc-hash = "1"
 symbolic_expressions = "5"
 rayon = "1"
 smallstr = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
 [dependencies.egg]
 version = "0.9"
 # git = "https://github.com/egraphs-good/egg"

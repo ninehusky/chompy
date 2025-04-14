@@ -79,6 +79,7 @@ impl Scheduler {
                     .with_node_limit(limits.node)
                     .run(rewrites);
                 runner.egraph.rebuild();
+
                 runner.egraph
             }
             Scheduler::Saturating(limits) => {
@@ -116,6 +117,7 @@ impl Scheduler {
                     .run(&other);
                 }
                 let mut runner = get_runner(runner.egraph, max_limits).run(&sat);
+
                 runner.egraph.rebuild();
                 runner.egraph
             }

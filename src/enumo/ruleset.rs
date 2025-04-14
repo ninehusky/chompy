@@ -1,7 +1,8 @@
-use egg::{AstSize, EClass, Extractor, Pattern, RecExpr};
+use egg::{Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use std::{collections::HashSet, io::Write, str::FromStr, sync::Arc};
+use rayon::iter::IntoParallelIterator;
+use rayon::prelude::ParallelIterator;
+use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
 use crate::{
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature,
@@ -292,7 +293,6 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn conditional_cvec_match(
         egraph: &EGraph<L, SynthAnalysis>,
         conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
-        restrict: bool,
     ) -> Self {
         let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::default();
 
@@ -307,6 +307,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let mut i = 0;
         for cvec1 in by_cvec.keys() {
+            assert_eq!(cvec1.len(), conditions.keys().next().unwrap().len());
             i += 1;
             for cvec2 in by_cvec.keys().skip(i) {
                 let pvec: Vec<bool> = cvec1
@@ -316,21 +317,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                     .collect();
 
                 if pvec.iter().all(|x| *x) || pvec.iter().all(|x| !*x) {
-                    continue;
-                }
-
-                // now, let's vet the cvecs and make sure that they're good.
-                let mut unique_vals: HashSet<L::Constant> = HashSet::default();
-                for i in 0..pvec.len() {
-                    if pvec[i] {
-                        unique_vals.insert(cvec1[i].clone().unwrap());
-                        unique_vals.insert(cvec2[i].clone().unwrap());
-                    }
-                }
-
-                // we don't want to consider conditional rules which rewrite true ~> true, false ~>
-                // false
-                if restrict && unique_vals.len() < 2 {
                     continue;
                 }
 
@@ -353,6 +339,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 }
             }
         }
+
         candidates
     }
 
@@ -440,6 +427,18 @@ impl<L: SynthLanguage> Ruleset<L> {
         for ids in by_cvec.values() {
             let exprs: Vec<_> = ids.iter().map(|&id| extract.find_best(id).1).collect();
 
+            // if !exprs
+            //     .iter()
+            //     .filter(|e| e.to_string() == "a".to_string())
+            //     .collect::<Vec<_>>()
+            //     .is_empty()
+            // {
+            //     println!("exprs:");
+            //     for e in &exprs {
+            //         println!("{}", e);
+            //     }
+            // }
+
             for (idx, e1) in exprs.iter().enumerate() {
                 for e2 in exprs[(idx + 1)..].iter() {
                     candidates.add_from_recexprs(e1, e2);
@@ -488,7 +487,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         &mut self,
         chosen: &Self,
         scheduler: Scheduler,
-        prop_rules: &Self,
+        prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         added_rule: &Rule<L>,
     ) {
         let mut will_choose: Self = Default::default();
@@ -505,16 +504,16 @@ impl<L: SynthLanguage> Ruleset<L> {
             initial.push((lhs, rhs, rule.clone()));
         }
 
-        let true_term = egraph.add_expr(&"TRUE".parse().unwrap());
         let cond_ast = &L::instantiate(&added_rule.cond.clone().unwrap());
-        let cond = egraph.add_expr(&cond_ast.clone());
-        egraph.union(cond, true_term);
+        egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
 
         // 2.5: do condition propogation
-        let egraph = scheduler.run(&egraph, prop_rules);
+        let runner: Runner<L, SynthAnalysis> = Runner::default()
+            .with_egraph(egraph.clone())
+            .run(prop_rules);
 
         // 3. compress with the rules we've chosen so far
-        let egraph = scheduler.run(&egraph, chosen);
+        let egraph = scheduler.run(&runner.egraph, chosen);
 
         let mut cache: HashMap<(String, String), bool> = Default::default();
 
@@ -536,13 +535,11 @@ impl<L: SynthLanguage> Ruleset<L> {
                 &mut Default::default(),
             );
 
-            let implication = cache
-                .entry((new_cond.clone().to_string(), added_cond.clone().to_string()))
-                .or_insert_with(|| L::condition_implies(&new_cond, &added_cond));
+            let implication = L::condition_implies(&new_cond, &added_cond, &mut cache);
 
             // TODO: @ninehusky: let's use the existing rules to check implications rather than rely on Z3.
             // See #7.
-            if egraph.find(l_id) == egraph.find(r_id) && *implication {
+            if egraph.find(l_id) == egraph.find(r_id) && implication {
                 continue;
             } else {
                 will_choose.add(rule);
@@ -585,12 +582,11 @@ impl<L: SynthLanguage> Ruleset<L> {
         &mut self,
         prior: Ruleset<L>,
         scheduler: Scheduler,
-        prop_rules: &Self,
+        prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> (Self, Self) {
         let mut invalid: Ruleset<L> = Default::default();
         let mut chosen = prior.clone();
         let step_size = 1;
-        println!("candidates : {}", self.len());
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
             // TODO: why do I need this here? what does it mean when `self.select` returns nothing?
@@ -632,6 +628,97 @@ impl<L: SynthLanguage> Ruleset<L> {
         (chosen, invalid)
     }
 
+    /// Whether a given conditional rule can be derived by the ruleset with given resource limits
+    ///     1. Initialize an e-graph with the rule (lhs => rhs) being tested.
+    ///         If derive_type is Lhs, the e-graph is initialized with only lhs
+    ///         If derive_type is LhsAndRhs, the e-graph is initialized with lhs and rhs
+    ///     2. Add "TRUE" into the e-graph, and union it with the condition.
+    ///     3. Run the condition propogation rules, i.e., set every condition which follows from
+    ///        the given rule's condition to "TRUE".
+    ///     4. Run the ruleset
+    ///     5. Return true if the lhs and rhs are equivalent, false otherwise.
+    pub fn can_derive_cond(
+        &self,
+        derive_type: DeriveType,
+        rule: &Rule<L>,
+        limits: Limits,
+        condition_propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
+    ) -> bool {
+        let scheduler = Scheduler::Saturating(limits);
+        let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+        let lexpr = &L::instantiate(&rule.lhs);
+        let rexpr = &L::instantiate(&rule.rhs);
+
+        let cond = &L::instantiate(&rule.cond.clone().unwrap());
+
+        egraph.add_expr(&format!("(istrue {})", cond).parse().unwrap());
+
+        match derive_type {
+            DeriveType::Lhs => {
+                egraph.add_expr(lexpr);
+            }
+            DeriveType::LhsAndRhs => {
+                egraph.add_expr(lexpr);
+                egraph.add_expr(rexpr);
+            }
+        }
+
+        // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
+        // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
+        // but maybe eventually we should just have a single Scheduler that can run both?
+        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(condition_propagation_rules);
+
+        let egraph = runner.egraph;
+
+        // println!("# eclasses in the egraph: {}", egraph.number_of_classes());
+
+        // println!("cond: {}", cond);
+
+        let out_egraph = scheduler.run_derive(&egraph, self, rule);
+
+        // println!("lexpr: {}", lexpr);
+        // println!("rexpr: {}", rexpr);
+
+        // println!(
+        //     "# eclasses in the egraph after rules: {}",
+        //     out_egraph.number_of_classes()
+        // );
+
+        let serialized = egg_to_serialized_egraph(&out_egraph);
+
+        // save it to egraph.json
+
+        let mut file = std::fs::File::create("egraph.json")
+            .unwrap_or_else(|_| panic!("Failed to open 'egraph.json'"));
+
+        let serialized = serde_json::to_string_pretty(&serialized).unwrap();
+
+        file.write_all(serialized.as_bytes())
+            .expect("Unable to write");
+
+        let l_id = out_egraph
+            .lookup_expr(lexpr)
+            .unwrap_or_else(|| panic!("Did not find {}", lexpr));
+        let r_id = out_egraph.lookup_expr(rexpr);
+        if let Some(r_id) = r_id {
+            if l_id == r_id {
+                // this should never happen.
+                // this means that an `istrue` node merged
+                // with the lhs or rhs of the rule.
+                assert_ne!(
+                    out_egraph.number_of_classes(),
+                    1,
+                    "an istrue node merged with somethin else!"
+                );
+            }
+            l_id == r_id
+        } else {
+            false
+        }
+    }
+
     /// Whether a given rule can be derived by the ruleset with given resource limits
     ///     1. Initialize an e-graph with the rule (lhs => rhs) being tested.
     ///         If derive_type is Lhs, the e-graph is initialized with only lhs
@@ -668,24 +755,74 @@ impl<L: SynthLanguage> Ruleset<L> {
     }
 
     /// Partition a ruleset into derivable / not-derivable with respect to this ruleset.
-    pub fn derive(&self, derive_type: DeriveType, against: &Self, limits: Limits) -> (Self, Self) {
-        against.partition(|rule| self.can_derive(derive_type, rule, limits))
+    pub fn derive(
+        &self,
+        derive_type: DeriveType,
+        against: &Self,
+        limits: Limits,
+        condition_propogation_rules: Option<&Vec<Rewrite<L, SynthAnalysis>>>,
+    ) -> (Self, Self) {
+        against.partition(|rule| {
+            if rule.cond.is_some() {
+                if condition_propogation_rules.is_none() {
+                    panic!("Condition propogation rules required for conditional rules. You gave me: {:?}", rule);
+                }
+                self.can_derive_cond(
+                    derive_type,
+                    rule,
+                    limits,
+                    condition_propogation_rules.as_ref().unwrap(),
+                )
+            } else {
+                self.can_derive(derive_type, rule, limits)
+            }
+        })
     }
 
     pub fn print_derive(derive_type: DeriveType, one: &str, two: &str) {
         let r1: Ruleset<L> = Ruleset::from_file(one);
         let r2: Ruleset<L> = Ruleset::from_file(two);
 
-        let (can, cannot) = r1.derive(derive_type, &r2, Limits::deriving());
-        println!(
-            "Using {} ({}) to derive {} ({}).\nCan derive {}, cannot derive {}. Missing:",
-            one,
-            r1.len(),
-            two,
-            r2.len(),
-            can.len(),
-            cannot.len()
-        );
+        let (_can, cannot) = r1.derive(derive_type, &r2, Limits::deriving(), None);
+        {
+            // std::io::_print(std::format_args_nl!(
+            //     "Using {} ({}) to derive {} ({}).\nCan derive {}, cannot derive {}. Missing:",
+            //     one,
+            //     r1.len(),
+            //     two,
+            //     r2.len(),
+            //     can.len(),
+            //     cannot.len()
+            // ));
+        };
         cannot.pretty_print();
     }
+}
+
+pub fn egg_to_serialized_egraph<L, A>(egraph: &EGraph<L, A>) -> egraph_serialize::EGraph
+where
+    L: Language + Display,
+    A: Analysis<L>,
+{
+    use egraph_serialize::*;
+    let mut out = EGraph::default();
+    for class in egraph.classes() {
+        for (i, node) in class.nodes.iter().enumerate() {
+            out.add_node(
+                format!("{}.{}", class.id, i),
+                Node {
+                    op: node.to_string(),
+                    children: node
+                        .children()
+                        .iter()
+                        .map(|id| NodeId::from(format!("{}.0", id)))
+                        .collect(),
+                    subsumed: false,
+                    eclass: ClassId::from(format!("{}", class.id)),
+                    cost: Cost::new(1.0).unwrap(),
+                },
+            )
+        }
+    }
+    out
 }
