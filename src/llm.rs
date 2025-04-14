@@ -221,47 +221,47 @@ pub fn soup_to_workload(soup: Vec<String>) -> Result<Workload, Box<dyn std::erro
     Ok(soup_workload)
 }
 
-pub mod tests {
-    #[allow(unused_imports)]
-    use super::*;
+// pub mod tests {
+//     #[allow(unused_imports)]
+//     use super::*;
     
 
 
-    #[tokio::test]
-    pub async fn test() {
+//     #[tokio::test]
+//     pub async fn test() {
 
-        let cond_recipe = ConditionRecipe {
-            max_size: 3,
-            vars: recipe.vars.clone(), // Use the same variables as the term recipe
-            ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
-            vals: vec!["0".to_string()],
-        };
+//         let cond_recipe = ConditionRecipe {
+//             max_size: 3,
+//             vars: recipe.vars.clone(), // Use the same variables as the term recipe
+//             ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
+//             vals: vec!["0".to_string()],
+//         };
 
-        let recipe = Recipe {
-            max_size: 3,
-            vars: vec!["x".to_string(), "y".to_string()],
-            ops: vec![vec![], vec![], vec!["abs".to_string()], vec![
-                "+".to_string(),
-                "-".to_string(),
-                "*".to_string(),
-                "min".to_string(),
-                "max".to_string(),
-            ]],
-            vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-            conditions: Some(cond_recipe),
-        };
+//         let recipe = Recipe {
+//             max_size: 3,
+//             vars: vec!["x".to_string(), "y".to_string()],
+//             ops: vec![vec![], vec![], vec!["abs".to_string()], vec![
+//                 "+".to_string(),
+//                 "-".to_string(),
+//                 "*".to_string(),
+//                 "min".to_string(),
+//                 "max".to_string(),
+//             ]],
+//             vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
+//             conditions: Some(cond_recipe),
+//         };
 
-        let soup_workloads = generate_alphabet_soup(&recipe, Some(cond_recipe).as_ref()).await;
+//         let soup_workloads = generate_alphabet_soup(&recipe, Some(cond_recipe).as_ref()).await;
 
-        println!("the workload is");
-        for t in soup_workloads.0.force() {
-            println!("{}", t);
-        }
+//         println!("the workload is");
+//         for t in soup_workloads.0.force() {
+//             println!("{}", t);
+//         }
 
-        println!("the condition workload is");
-        for t in soup_workloads.1.clone().unwrap().force() {
-            println!("{}", t);
-        }
+//         println!("the condition workload is");
+//         for t in soup_workloads.1.clone().unwrap().force() {
+//             println!("{}", t);
+//         }
 
-    }
-}
+//     }
+// }

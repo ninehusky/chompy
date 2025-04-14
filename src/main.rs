@@ -1,11 +1,11 @@
-use ruler::{halide, llm};
-use ruler::halide::Pred;
-use ruler::enumo::Ruleset;
-use ruler::json_to_recipe;
+use chompy::{halide, llm};
+use chompy::halide::Pred;
+use chompy::enumo::Ruleset;
+use chompy::json_to_recipe;
 
-use ruler::halide::recipe_to_rules;
-use ruler::halide::{og_recipe, og_recipe_no_conditions};
-use ruler::{ConditionRecipe, Recipe};
+use chompy::halide::recipe_to_rules;
+use chompy::halide::{og_recipe, og_recipe_no_conditions};
+use chompy::{ConditionRecipe, Recipe};
 
 use std::fs::File;
 use std::path::PathBuf;

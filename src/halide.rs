@@ -1,6 +1,6 @@
 use crate::*;
 
-use egg::{RecExpr, Rewrite};
+use egg::{Extractor, RecExpr, Rewrite, Runner};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
 use recipe_utils::{
@@ -319,6 +319,62 @@ impl SynthLanguage for Pred {
             z3::SatResult::Sat => ValidationResult::Invalid,
         }
     }
+}
+
+// given a lang, generates a workload comprised of all the implications
+// between terms in that language.
+pub fn generate_implications() -> Workload {
+    let cond_lang: Lang = Lang {
+        // true and false,
+        vals: vec!["0".into(), "1".into()],
+        // variables
+        vars: vec!["a".into(), "b".into(), "c".into()],
+        // operators
+        ops: vec![
+            vec!["!".to_string()],
+            vec!["&&".to_string(), "||".to_string(), "->".to_string(), "<".to_string(), "<=".to_string(), "!=".to_string()],
+        ],
+    };
+
+    let rules: Ruleset<Pred> = recursive_rules(
+        Metric::Atoms,
+        5,
+        cond_lang,
+        Ruleset::default(),
+    );
+
+    for r in rules.clone() {
+        println!("r: {}", r.0);
+    }
+
+    let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
+
+    egraph.add_expr(
+        &"(-> (> a b) (> a b))".parse().unwrap(),
+    );
+
+    let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+        .with_egraph(egraph)
+        .with_node_limit(1000)
+        .with_time_limit(std::time::Duration::from_secs(10))
+        .run(rules.iter().map(|r| &r.rewrite).collect::<Vec<_>>());
+
+    let extractor = Extractor::new(&runner.egraph, egg::AstSize);
+
+    let (best_cost, best_expr) = extractor.find_best(
+        runner.egraph.lookup_expr(&"(-> (> a b) (> a b))".parse().unwrap()).unwrap()
+    );
+
+    println!("best expr: {}", best_expr);
+
+
+
+    Workload::empty()
+}
+
+#[test]
+fn generate_implication_test() {
+    generate_implications();
 }
 
 pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
@@ -933,6 +989,17 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
+
+    wkld = wkld.clone().append(Workload::new(&["(OP V V)"])
+        .plug("OP", &Workload::new(&["&&", "||"]))
+        .plug("V", &wkld.clone()));
+
+    let forced = wkld.force();
+    println!("forced: {:?}", forced.len());
+
+    for i in 0..50 {
+        println!("iter: {}", forced[i]);
+    }
 
     let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
     let mut all_rules = Ruleset::default();
