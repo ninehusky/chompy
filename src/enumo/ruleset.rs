@@ -507,7 +507,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let cond_ast = &L::instantiate(&added_rule.cond.clone().unwrap());
         egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
 
-        // 2.5: do condition propogation
+        // 2.5: do condition propagation
         let runner: Runner<L, SynthAnalysis> = Runner::default()
             .with_egraph(egraph.clone())
             .run(prop_rules);
@@ -633,7 +633,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     ///         If derive_type is Lhs, the e-graph is initialized with only lhs
     ///         If derive_type is LhsAndRhs, the e-graph is initialized with lhs and rhs
     ///     2. Add "TRUE" into the e-graph, and union it with the condition.
-    ///     3. Run the condition propogation rules, i.e., set every condition which follows from
+    ///     3. Run the condition propagation rules, i.e., set every condition which follows from
     ///        the given rule's condition to "TRUE".
     ///     4. Run the ruleset
     ///     5. Return true if the lhs and rhs are equivalent, false otherwise.
@@ -760,18 +760,18 @@ impl<L: SynthLanguage> Ruleset<L> {
         derive_type: DeriveType,
         against: &Self,
         limits: Limits,
-        condition_propogation_rules: Option<&Vec<Rewrite<L, SynthAnalysis>>>,
+        condition_propagation_rules: Option<&Vec<Rewrite<L, SynthAnalysis>>>,
     ) -> (Self, Self) {
         against.partition(|rule| {
             if rule.cond.is_some() {
-                if condition_propogation_rules.is_none() {
-                    panic!("Condition propogation rules required for conditional rules. You gave me: {:?}", rule);
+                if condition_propagation_rules.is_none() {
+                    panic!("Condition propagation rules required for conditional rules. You gave me: {:?}", rule);
                 }
                 self.can_derive_cond(
                     derive_type,
                     rule,
                     limits,
-                    condition_propogation_rules.as_ref().unwrap(),
+                    condition_propagation_rules.as_ref().unwrap(),
                 )
             } else {
                 self.can_derive(derive_type, rule, limits)
