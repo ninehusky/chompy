@@ -364,7 +364,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         true
     }
 
-    fn get_condition_propogation_rules(conditions: &Workload) -> Vec<Rewrite<Self, SynthAnalysis>> {
+    fn get_condition_propagation_rules(conditions: &Workload) -> Vec<Rewrite<Self, SynthAnalysis>> {
         let forced = conditions.force();
         let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
         let mut cache: HashMap<(String, String), bool> = Default::default();
@@ -378,6 +378,15 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                 }
                 let c2_recexpr: RecExpr<Self> = c2.to_string().parse().unwrap();
                 let c2_pat = Pattern::from(&c2_recexpr.clone());
+                let c_vars = c_pat.vars();
+                let c2_vars = c2_pat.vars();
+
+                if c2_vars.iter().any(|v| !c_vars.contains(v)) {
+                    // can't have variables on the right that are not on the left.
+                    continue;
+                }
+
+
                 let rw = ImplicationSwitch {
                     parent_cond: c_pat.clone(),
                     my_cond: c2_pat.clone(),
@@ -390,14 +399,6 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                 ) && !result.iter().any(|r| r.name == rw.name)
                 // avoid duplicates
                 {
-                    // TODO: more principled approach -- variables on the right must
-                    // be bound to the left.
-                    if c_pat.to_string() == "(<= ?c1 (- 0 (abs (+ ?c0 1))))"
-                        && c2_pat.to_string() == "(<= ?c1 (abs ?x))"
-                    {
-                        println!("skipping {} ==> {}", c_pat, c2_pat);
-                        continue;
-                    }
                     result.push(rw);
                 }
             }

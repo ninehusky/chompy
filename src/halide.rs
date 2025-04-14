@@ -792,7 +792,7 @@ pub fn compute_conditional_structures(
     let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
     let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
-    let cond_prop_ruleset = Pred::get_condition_propogation_rules(conditional_soup);
+    let cond_prop_ruleset = Pred::get_condition_propagation_rules(conditional_soup);
 
     for cond in conditional_soup.force() {
         let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
