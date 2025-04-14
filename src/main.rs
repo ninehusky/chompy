@@ -7,6 +7,8 @@ use ruler::halide::recipe_to_rules;
 use ruler::halide::{og_recipe, og_recipe_no_conditions};
 use ruler::{ConditionRecipe, Recipe};
 
+use ruler::llvm::*;
+
 use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr;

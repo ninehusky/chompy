@@ -14,6 +14,7 @@ pub mod enumo;
 pub mod halide;
 mod language;
 pub mod llm;
+pub mod llvm;
 pub mod logger;
 pub mod recipe_utils;
 mod util;
@@ -136,7 +137,7 @@ pub struct Recipe {
 
 pub fn json_to_recipe(path: &str) -> Vec<Recipe> {
     let contents = std::fs::read_to_string(path).unwrap();
-    
+
     serde_json::from_str(&contents).unwrap()
 }
 

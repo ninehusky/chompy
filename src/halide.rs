@@ -794,6 +794,7 @@ pub fn compute_conditional_structures(
 
     let cond_prop_ruleset = Pred::get_condition_propogation_rules(conditional_soup);
 
+    println!("made it to compute_conditional_structures");
     for cond in conditional_soup.force() {
         let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
         let cond_pat = Pattern::from(&cond);
@@ -931,8 +932,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
         wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
 
+
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
+
+    wkld = wkld.clone().append(Workload::new(&["(OP V V)"]).plug("OP", &Workload::new(&["&&", "||"])).plug("V", &wkld.clone()));
 
     let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
     let mut all_rules = Ruleset::default();
