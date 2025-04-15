@@ -230,16 +230,18 @@ pub mod tests {
     #[tokio::test]
     pub async fn test() {
 
+        let vars = vec!["x".to_string(), "y".to_string()];
+
         let cond_recipe = ConditionRecipe {
             max_size: 3,
-            vars: recipe.vars.clone(), // Use the same variables as the term recipe
             ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
             vals: vec!["0".to_string()],
         };
 
         let recipe = Recipe {
+            name: "the recipe".into(),
             max_size: 3,
-            vars: vec!["x".to_string(), "y".to_string()],
+            vars,
             ops: vec![vec![], vec![], vec!["abs".to_string()], vec![
                 "+".to_string(),
                 "-".to_string(),
@@ -248,7 +250,7 @@ pub mod tests {
                 "max".to_string(),
             ]],
             vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-            conditions: Some(cond_recipe),
+            conditions: Some(cond_recipe.clone()),
         };
 
         let soup_workloads = generate_alphabet_soup(&recipe, Some(cond_recipe).as_ref()).await;
