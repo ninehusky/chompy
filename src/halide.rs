@@ -151,6 +151,7 @@ impl SynthLanguage for Pred {
     }
 
     fn initialize_vars(egraph: &mut EGraph<Self, SynthAnalysis>, vars: &[String]) {
+        println!("vars: {:?}", vars);
         let consts = vec![
             Some((-10).to_i64().unwrap()),
             Some((-1).to_i64().unwrap()),
@@ -826,27 +827,6 @@ pub fn compute_conditional_structures(
     (pvec_to_terms, cond_prop_ruleset)
 }
 
-fn filter_out_gpt_junk(
-    workload: &Workload,
-) -> Workload {
-    let mut good_expressions: Vec<String> = vec![];
-
-    for t in workload.force() {
-        let t: Result<RecExpr<Pred>, _> = t.to_string().parse();
-        match t {
-            Ok(t) => {
-                good_expressions.push(t.to_string());
-            }
-            Err(_) => {
-                // If we can't parse the expression, skip it.
-                continue;
-            }
-        }
-    }
-
-    Workload::new(good_expressions)
-}
-
 /// Incrementally construct a ruleset by running rule inference up to a size bound,
 /// using previously-learned rules at each step.
 /// Importantly, this function is different from `recursive_rules_cond` in that it does not
@@ -860,8 +840,7 @@ pub fn soup_to_rules(
     let (pvec_to_terms, cond_prop_ruleset) = if let Some(conditions) = conditions {
         // If we have a workload of conditions, compute the conditional structures
         // to help with rule inference.
-        let good_conditions = filter_out_gpt_junk(conditions);
-        let (fst, snd) = compute_conditional_structures(&good_conditions);
+        let (fst, snd) = compute_conditional_structures(&conditions);
         (Some(fst), Some(snd))
     } else {
         (None, None)
@@ -871,10 +850,9 @@ pub fn soup_to_rules(
     for i in 1..n {
         let workload = soup.clone().filter(Filter::MetricLt(Metric::Atoms, i + 1));
 
-        // ugh.. we do a manual pass here to get rid of any GPT junk that arises.
-
-        let workload = filter_out_gpt_junk(&workload);
-
+        if workload.force().is_empty() {
+            continue;
+        }
 
         let rules = run_workload(
             workload,
