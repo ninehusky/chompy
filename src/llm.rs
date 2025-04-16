@@ -1,7 +1,8 @@
+use egg::RecExpr;
 use reqwest::Client;
 use serde_json::json;
 
-use crate::enumo::Workload;
+use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
 use std::str::FromStr;
 
@@ -110,14 +111,14 @@ pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&Condit
     let soup = alphabet_soup(&client, term_recipe).await.unwrap();
 
     // Convert the generated soup into a workload
-    let term_workload = soup_to_workload(soup.clone()).unwrap();
+    let term_workload = soup_to_workload::<Pred>(soup.clone()).unwrap();
 
     if let Some(cond_recipe) = cond_r {
         // If a condition recipe is provided, generate conditions based on the previous workload.
         let condition_workload = condition_soup(&client, &soup, &term_recipe.vars, cond_recipe).await.unwrap();
 
         // Convert the generated conditions into a workload
-        let cond_workload = soup_to_workload(condition_workload).unwrap();
+        let cond_workload = soup_to_workload::<Pred>(condition_workload).unwrap();
 
         (term_workload, Some(cond_workload))
     } else {
@@ -147,6 +148,7 @@ pub async fn condition_soup(client: &Client, term_workload_as_vec: &Vec<String>,
             },
         ],
         "seed": 0xbeef,
+        "temperature": 0.0,
     });
 
     let response = client
@@ -185,6 +187,7 @@ pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, r
             },
         ],
         "seed": 0xbeef,
+        "temperature": 0.0,
     });
 
     println!("SENDING REQUEST TO: {}", url);
@@ -205,18 +208,22 @@ pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, r
     Ok(result)
 }
 
-pub fn soup_to_workload(soup: Vec<String>) -> Result<Workload, Box<dyn std::error::Error>> {
+pub fn soup_to_workload<L: SynthLanguage>(soup: Vec<String>) -> Result<Workload, Box<dyn std::error::Error>> {
+    let mut good_expressions = vec![];
     for r in &soup {
-        // TODO: should have check here which asserts that this is a valid expression in Halide.
-        match crate::enumo::Sexp::from_str(r) {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(format!("Error parsing expression: {}", e).into());
+        let t: Result<RecExpr<L>, _> = r.parse();
+        match t {
+            Ok(t) => {
+                good_expressions.push(t.to_string());
+            }
+            Err(_) => {
+                // If we can't parse the expression, skip it.
+                continue;
             }
         }
     }
 
-    let soup_workload = Workload::new(soup);
+    let soup_workload = Workload::new(good_expressions);
 
     Ok(soup_workload)
 }
@@ -230,16 +237,18 @@ pub mod tests {
     #[tokio::test]
     pub async fn test() {
 
+        let vars = vec!["x".to_string(), "y".to_string()];
+
         let cond_recipe = ConditionRecipe {
             max_size: 3,
-            vars: recipe.vars.clone(), // Use the same variables as the term recipe
             ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
             vals: vec!["0".to_string()],
         };
 
         let recipe = Recipe {
+            name: "the recipe".into(),
             max_size: 3,
-            vars: vec!["x".to_string(), "y".to_string()],
+            vars,
             ops: vec![vec![], vec![], vec!["abs".to_string()], vec![
                 "+".to_string(),
                 "-".to_string(),
@@ -248,20 +257,9 @@ pub mod tests {
                 "max".to_string(),
             ]],
             vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-            conditions: Some(cond_recipe),
+            conditions: Some(cond_recipe.clone()),
         };
 
         let soup_workloads = generate_alphabet_soup(&recipe, Some(cond_recipe).as_ref()).await;
-
-        println!("the workload is");
-        for t in soup_workloads.0.force() {
-            println!("{}", t);
-        }
-
-        println!("the condition workload is");
-        for t in soup_workloads.1.clone().unwrap().force() {
-            println!("{}", t);
-        }
-
     }
 }

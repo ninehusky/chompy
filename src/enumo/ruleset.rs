@@ -332,6 +332,13 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     continue;
                                 }
 
+                                // kind of hacky, i'm sorry.
+                                // essentially, here we want to avoid adding single
+                                // atom conditions like `a` or `b` as valid conditions.
+                                if e1.to_string().len() < 2 || e2.to_string().len() < 2 {
+                                    continue;
+                                }
+
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
                             }
                         }
