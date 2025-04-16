@@ -141,7 +141,7 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
         vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
         vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
         ops: vec![
-            vec!["abs".to_string()],
+            vec![],
             vec!["+".to_string(), "-".to_string(), "*".to_string(), "/".to_string()],
         ],
         conditions: Some(
