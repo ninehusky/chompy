@@ -790,13 +790,6 @@ pub fn compute_conditional_structures(
     HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
     Vec<Rewrite<Pred, SynthAnalysis>>,
 ) {
-
-    println!("conditions:");
-    for cond in conditional_soup.force() {
-        println!("{}", cond);
-    }
-
-
     let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
     let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 

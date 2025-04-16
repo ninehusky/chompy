@@ -212,7 +212,6 @@ pub fn soup_to_workload<L: SynthLanguage>(soup: Vec<String>) -> Result<Workload,
     let mut good_expressions = vec![];
     for r in &soup {
         let t: Result<RecExpr<L>, _> = r.parse();
-        println!("parsing: {}", r);
         match t {
             Ok(t) => {
                 good_expressions.push(t.to_string());
@@ -262,16 +261,5 @@ pub mod tests {
         };
 
         let soup_workloads = generate_alphabet_soup(&recipe, Some(cond_recipe).as_ref()).await;
-
-        println!("the workload is");
-        for t in soup_workloads.0.force() {
-            println!("{}", t);
-        }
-
-        println!("the condition workload is");
-        for t in soup_workloads.1.clone().unwrap().force() {
-            println!("{}", t);
-        }
-
     }
 }

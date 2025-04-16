@@ -177,10 +177,6 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
         let cond_recipe = recipe.conditions.clone();
         let (workload, mut cond_r) = llm::generate_alphabet_soup(&recipe, cond_recipe.as_ref()).await;
         if let Some(c) = cond_r {
-            println!("conditions:");
-            for t in c.force() {
-                println!("{}", t);
-            }
             // we append `vars` here because without them, we don't get the correct cvec length.
             cond_r = Some(c.append(Workload::new(vars.clone())));
         }
