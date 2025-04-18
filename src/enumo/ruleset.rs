@@ -161,7 +161,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     /// reuse the same generalized patterns for both directions.
     /// That is, this function *is not* equivalent to calling
     /// add(Rule::from_recexprs(e1, e2)); add(Rule::from_recexprs(e2, e1))
-    fn add_from_recexprs(&mut self, e1: &RecExpr<L>, e2: &RecExpr<L>) {
+    pub fn add_from_recexprs(&mut self, e1: &RecExpr<L>, e2: &RecExpr<L>) {
         let map = &mut HashMap::default();
         let l_pat = L::generalize(e1, map);
         let r_pat = L::generalize(e2, map);
@@ -448,7 +448,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         candidates
     }
 
-    fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
+    pub fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
         let mut chosen = Self::default();
         self.0
             .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));

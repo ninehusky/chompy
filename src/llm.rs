@@ -232,12 +232,12 @@ pub mod tests {
 
         let cond_recipe = ConditionRecipe {
             max_size: 3,
-            vars: recipe.vars.clone(), // Use the same variables as the term recipe
             ops: vec![vec![], vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string()]],
             vals: vec!["0".to_string()],
         };
 
         let recipe = Recipe {
+            name: "minmax-and-rat".to_string(),
             max_size: 3,
             vars: vec!["x".to_string(), "y".to_string()],
             ops: vec![vec![], vec![], vec!["abs".to_string()], vec![
@@ -251,7 +251,7 @@ pub mod tests {
             conditions: Some(cond_recipe),
         };
 
-        let soup_workloads = generate_alphabet_soup(&recipe, Some(cond_recipe).as_ref()).await;
+        let soup_workloads = generate_alphabet_soup(&recipe, recipe.conditions.as_ref()).await;
 
         println!("the workload is");
         for t in soup_workloads.0.force() {

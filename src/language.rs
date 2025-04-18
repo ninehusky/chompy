@@ -9,7 +9,7 @@ use egg::{
 };
 use enumo::{lookup_pattern, Workload};
 
-use crate::*;
+use crate::{recipe_utils::Lang, *};
 
 // An `ImplicationSwitch` models the implication of one condition to another.
 //
