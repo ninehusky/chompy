@@ -804,8 +804,11 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
 
     // Check if expr == 0 is unsat (i.e., expr can never be false)
     solver.assert(&expr._eq(&zero));
-    if matches!(solver.check(), z3::SatResult::Unsat) {
-        return ValidationResult::Valid; // AlwaysTrue
+    let result = solver.check();
+    if matches!(result, z3::SatResult::Unsat) {
+        return ValidationResult::Invalid; // AlwaysFalse
+    } else if matches!(result, z3::SatResult::Unknown) {
+        return ValidationResult::Unknown;
     }
     solver.reset();
 
