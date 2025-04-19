@@ -45,9 +45,9 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
 
     println!("candidates: {}", candidates.len());
 
-    for c in &candidates {
-        println!("{}", c.0);
-    }
+    // for c in &candidates {
+    //     println!("{}", c.0);
+    // }
 
     println!("step 3 done");
 
@@ -81,22 +81,29 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
     let zero = z3::ast::Int::from_i64(&ctx, 0);
     let one = z3::ast::Int::from_i64(&ctx, 1);
 
-    // make sure that the LHS is not equal to 0.
-    solver.assert(&zero._eq(&lexpr).not());
+    // ask the solver to find a model where the LHS is true.
+    solver.assert(&lexpr._eq(&zero).not());
 
-    if !matches!(solver.check(), z3::SatResult::Sat) {
+    // if it can't, then the LHS is trivially false
+    if matches!(solver.check(), z3::SatResult::Unsat) {
         // it's "invalid" in the sense that we want to ditch this implication because it's
         // trivially true.
+        panic!("{} is trivially false", imp.lhs.to_string());
         return ValidationResult::Invalid;
     }
 
     solver.reset();
 
-    // make sure the RHS is not equal to 1.
+    // ask the solver to find a model where the RHS is false.
     solver.assert(&one._eq(&rexpr).not());
-    if !matches!(solver.check(), z3::SatResult::Sat) {
+
+    // if it can't, then the RHS is trivially true.
+    if matches!(solver.check(), z3::SatResult::Unsat) {
+        panic!("{} is trivially true", imp.rhs.to_string());
         return ValidationResult::Invalid;
     }
+
+
 
     solver.reset();
 
@@ -300,6 +307,13 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                     let map = &mut HashMap::default();
                     let l_pat = Pred::generalize(&e1, map);
                     let r_pat = Pred::generalize(&e2, map);
+
+                    // if the right hand side refers to variables which are not in the left hand side,
+                    // then skip.
+
+                    if r_pat.vars().iter().any(|v| !l_pat.vars().contains(v)) {
+                        continue;
+                    }
 
                     candidates.add(Rule {
                         name: format!("{} -> {}", e1, e2).into(),
