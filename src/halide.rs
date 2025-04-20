@@ -151,6 +151,7 @@ impl SynthLanguage for Pred {
     }
 
     fn initialize_vars(egraph: &mut EGraph<Self, SynthAnalysis>, vars: &[String]) {
+        println!("vars: {:?}", vars);
         let consts = vec![
             Some((-10).to_i64().unwrap()),
             Some((-1).to_i64().unwrap()),
@@ -833,7 +834,7 @@ pub fn soup_to_rules(
     let (pvec_to_terms, cond_prop_ruleset) = if let Some(conditions) = conditions {
         // If we have a workload of conditions, compute the conditional structures
         // to help with rule inference.
-        let (fst, snd) = compute_conditional_structures(conditions);
+        let (fst, snd) = compute_conditional_structures(&conditions);
         (Some(fst), Some(snd))
     } else {
         (None, None)
@@ -842,6 +843,11 @@ pub fn soup_to_rules(
     let mut ruleset = Ruleset::<Pred>::default();
     for i in 1..n {
         let workload = soup.clone().filter(Filter::MetricLt(Metric::Atoms, i + 1));
+
+        if workload.force().is_empty() {
+            continue;
+        }
+
         let rules = run_workload(
             workload,
             prior_rules.clone(),
