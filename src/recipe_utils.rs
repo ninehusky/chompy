@@ -38,7 +38,7 @@ fn run_workload_internal<L: SynthLanguage>(
     // pvec -> list of conditions with that pvec
     conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
     // rules for how other conditions become true from other conditions which are true
-    propogation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
+    propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
     let t = Instant::now();
     let num_prior = prior.len();
@@ -70,7 +70,7 @@ fn run_workload_internal<L: SynthLanguage>(
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
             chosen.clone(),
             Scheduler::Compress(minimize_limits),
-            &propogation_rules.unwrap(),
+            &propagation_rules.unwrap(),
         );
         chosen.extend(chosen_cond.clone());
     }
@@ -110,7 +110,7 @@ pub fn run_workload<L: SynthLanguage>(
     // pvec -> list of conditions with that pvec
     conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
     // rules for how other conditions become true from other conditions which are true
-    propogation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
+    propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
     run_workload_internal(
         workload,
@@ -122,7 +122,7 @@ pub fn run_workload<L: SynthLanguage>(
         true,
         // false,
         conditions,
-        propogation_rules,
+        propagation_rules,
     )
 }
 
@@ -207,7 +207,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     lang: Lang,
     prior: Ruleset<L>,
     conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
-    propogation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
+    propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
@@ -218,7 +218,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             lang.clone(),
             prior.clone(),
             conditions,
-            propogation_rules,
+            propagation_rules,
         );
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
@@ -245,7 +245,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             true,
             allow_empty,
             Some(conditions.clone()),
-            Some(propogation_rules.clone()),
+            Some(propagation_rules.clone()),
         );
         let mut all = new;
         all.extend(rec);
