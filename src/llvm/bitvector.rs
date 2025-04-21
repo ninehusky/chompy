@@ -8,7 +8,7 @@
 // byeah
 
 
-use std::{f32::consts::E, fmt::{Debug, Display}, ops::BitAnd, str::FromStr};
+use std::{f32::consts::E, fmt::{Debug, Display}, ops::{BitAnd, BitXor}, str::FromStr};
 
 use symbolic_expressions::{parser::parse_str, Sexp};
 
@@ -106,6 +106,18 @@ impl BitAnd for LlvmBitvector {
     }
 }
 
+impl BitXor for LlvmBitvector {
+    type Output = Self;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        assert_eq!(self.width, rhs.width);
+        LlvmBitvector {
+            value: self.value ^ rhs.value,
+            width: self.width,
+        }
+    }
+}
+
 pub mod tests {
     use super::*;
 
@@ -128,5 +140,13 @@ pub mod tests {
         let a = LlvmBitvector::new(3, 2);
         let b = LlvmBitvector::new(1, 2);
         assert_eq!(a & b, LlvmBitvector::new(1, 2));
+    }
+
+    #[test]
+    fn test_bitxor() {
+        let a = LlvmBitvector::new(0b0011, 4);
+        let b = LlvmBitvector::new(0b1010, 4);
+        assert_eq!(a ^ b, LlvmBitvector::new(0b1001, 4));
+        assert_eq!(a ^ a, LlvmBitvector::new(0b0000, 4));
     }
 }
