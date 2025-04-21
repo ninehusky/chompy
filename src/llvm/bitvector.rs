@@ -8,30 +8,31 @@
 // byeah
 
 
-use std::{fmt::Debug, ops::BitAnd};
+use std::{f32::consts::E, fmt::{Debug, Display}, ops::BitAnd, str::FromStr};
 
+use symbolic_expressions::{parser::parse_str, Sexp};
 
 #[derive(Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
-pub struct LLVMBitvector {
+pub struct LlvmBitvector {
     pub value: u64,
     pub width: u64,
 }
 
-impl LLVMBitvector {
+impl LlvmBitvector {
     pub fn new(value: u64, width: u64) -> Self {
         assert!(width <= 64);
         assert!(value < (1 << width));
 
-        LLVMBitvector {
+        LlvmBitvector {
             value,
             width,
-        } & LLVMBitvector::all_ones(width)
+        } & LlvmBitvector::all_ones(width)
     }
 
     pub fn all_ones(width: u64) -> Self {
         let width = width.into();
         let one: u64 = 1;
-        LLVMBitvector {
+        LlvmBitvector {
             value: (one << width) - 1,
             width,
         }
@@ -42,7 +43,7 @@ impl LLVMBitvector {
         let width = self.width;
         // the following line looks suspicious.
         let value = (self.value as u128).wrapping_mul(rhs.value as u128) as u64;
-        LLVMBitvector {
+        LlvmBitvector {
             value: value & ((1 << width) - 1),
             width,
         }
@@ -50,18 +51,55 @@ impl LLVMBitvector {
 
 }
 
-impl Debug for LLVMBitvector {
+impl Debug for LlvmBitvector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "(bv {:?} {})", self.value, self.width)
     }
 }
 
-impl BitAnd for LLVMBitvector {
+impl Display for LlvmBitvector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(bv {:?} {})", self.value, self.width)
+    }
+}
+
+impl FromStr for LlvmBitvector {
+    type Err = ();
+
+    /// ```
+    /// use ruler::llvm::bitvector::LlvmBitvector;
+    /// let bv: LlvmBitvector = "(bv 1 2)".parse().unwrap();
+    /// assert_eq!(bv.value, 1);
+    /// assert_eq!(bv.width, 2);
+    /// ```
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // match on `(bv value width)`
+        match parse_str(s) {
+            Ok(Sexp::List(l)) => {
+                if l.len() != 3 || l[0] != Sexp::String("bv".to_string()) {
+                    return Err(());
+                }
+                let value = match l[1] {
+                    Sexp::String(ref s) => s.parse::<u64>().map_err(|_| ())?,
+                    _ => return Err(()),
+                };
+                let width = match l[2] {
+                    Sexp::String(ref s) => s.parse::<u64>().map_err(|_| ())?,
+                    _ => return Err(()),
+                };
+                Ok(LlvmBitvector::new(value, width))
+            }
+            _ => return Err(())
+        }
+    }
+}
+
+impl BitAnd for LlvmBitvector {
     type Output = Self;
 
     fn bitand(self, rhs: Self) -> Self::Output {
         assert_eq!(self.width, rhs.width);
-        LLVMBitvector {
+        LlvmBitvector {
             value: self.value & rhs.value,
             width: self.width,
         }
@@ -73,22 +111,22 @@ pub mod tests {
 
     #[test]
     fn test_widening_mul() {
-        let a = LLVMBitvector::new(1, 2);
-        let b = LLVMBitvector::new(2, 2);
-        assert_eq!(a.wrapping_mul(b), LLVMBitvector::new(2, 2));
+        let a = LlvmBitvector::new(1, 2);
+        let b = LlvmBitvector::new(2, 2);
+        assert_eq!(a.wrapping_mul(b), LlvmBitvector::new(2, 2));
     }
 
     #[test]
     fn test_overflow_mul() {
-        let a = LLVMBitvector::new(3, 2);
-        let b = LLVMBitvector::new(2, 2);
-        assert_eq!(a.wrapping_mul(b), LLVMBitvector::new(2, 2));
+        let a = LlvmBitvector::new(3, 2);
+        let b = LlvmBitvector::new(2, 2);
+        assert_eq!(a.wrapping_mul(b), LlvmBitvector::new(2, 2));
     }
 
     #[test]
     fn test_bitand() {
-        let a = LLVMBitvector::new(3, 2);
-        let b = LLVMBitvector::new(1, 2);
-        assert_eq!(a & b, LLVMBitvector::new(1, 2));
+        let a = LlvmBitvector::new(3, 2);
+        let b = LlvmBitvector::new(1, 2);
+        assert_eq!(a & b, LlvmBitvector::new(1, 2));
     }
 }
