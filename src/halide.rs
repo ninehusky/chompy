@@ -830,7 +830,8 @@ pub fn compute_conditional_structures(
     let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
     let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
-    let cond_prop_ruleset = Pred::get_condition_propagation_rules(conditional_soup);
+    // let cond_prop_ruleset = Pred::get_condition_propagation_rules(conditional_soup);
+    let cond_prop_ruleset = vec![];
 
     for cond in conditional_soup.force() {
         let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
@@ -953,26 +954,30 @@ pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
 }
 
 pub fn og_recipe() -> Ruleset<Pred> {
-    let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
+    // let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
 
-    let base_lang = if cond_lang.ops.len() == 2 {
-        base_lang(2)
-    } else {
-        base_lang(3)
-    };
+    // let base_lang = if cond_lang.ops.len() == 2 {
+    //     base_lang(2)
+    // } else {
+    //     base_lang(3)
+    // };
 
-    let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
-        .filter(Filter::Contains("VAR".parse().unwrap()))
-        .plug("VAR", &Workload::new(cond_lang.vars))
-        .plug("VAL", &Workload::new(cond_lang.vals));
-    for (i, ops) in cond_lang.ops.iter().enumerate() {
-        wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    }
+    // let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
+    //     .filter(Filter::Contains("VAR".parse().unwrap()))
+    //     .plug("VAR", &Workload::new(cond_lang.vars))
+    //     .plug("VAL", &Workload::new(cond_lang.vals));
+    // for (i, ops) in cond_lang.ops.iter().enumerate() {
+    //     wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    // }
+
+    let mut wkld = conditions::get_condition_workload();
 
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
-    let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
+    let (pvec_to_terms, _) = compute_conditional_structures(&wkld);
+
+    let cond_prop_ruleset = conditions::get_condition_propagation_rules_halide();
     let mut all_rules = Ruleset::default();
 
     let equality = recursive_rules(

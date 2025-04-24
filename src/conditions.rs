@@ -1,7 +1,7 @@
 use egg::{AstSize, EClass, Extractor, Id, RecExpr, Rewrite, Runner};
 use z3::ast::Ast;
 
-use crate::{enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload}, halide::{egg_to_z3, Pred}, recipe_utils::{recursive_rules, run_workload, Lang}, CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis, ValidationResult};
+use crate::{enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload}, halide::{egg_to_z3, Pred}, recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang}, CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis, ValidationResult};
 use crate::language::SynthLanguage;
 
 #[test]
@@ -17,6 +17,10 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
 
     println!("step 1 done");
 
+    for t in wkld.force() {
+        println!("{}", t);
+    }
+
     // 2. put it in an e-graph.
     let egraph: EGraph<Pred, SynthAnalysis> = wkld.to_egraph();
 
@@ -29,15 +33,23 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
 
     let mut names = HashSet::default();
 
+    // a really janky filtering pass.
     for c in candidates {
         if names.contains(&c.1.rewrite.name.to_string()) {
-            continue;
+            
         } else {
             names.insert(c.1.rewrite.name.to_string());
         }
-        if !c.1.rewrite.name.to_string().contains("implies 1") {
-            good_candidates.add(c.1);
+        let rw = c.1.clone();
 
+        let filter_rw = |term: String| -> bool {
+            !(term.starts_with("(<") || term.starts_with("(<=") || term.starts_with("(>") || term.starts_with("(>="))
+        };
+
+        if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) {
+            good_candidates.add(c.1);
+        } else {
+            println!("throwing away rule: {}", c.1);
         }
     }
 
@@ -45,9 +57,9 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
 
     println!("candidates: {}", candidates.len());
 
-    // for c in &candidates {
-    //     println!("{}", c.0);
-    // }
+    for c in &candidates {
+        println!("{}", c.0);
+    }
 
     println!("step 3 done");
 
@@ -56,12 +68,34 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
 
     println!("step 4 done");
 
+    println!("final rules:");
+
     for r in result.0 {
         println!("{}", r.1);
     }
 
     vec![]
 }
+
+#[test]
+fn test_validate_implication() {
+    let rule: Rule<Pred> = Rule {
+        name: "test".into(),
+        lhs: "(> x 0)".parse().unwrap(),
+        rhs: "(> (abs x) 0)".parse().unwrap(),
+        rewrite: ImplicationSwitch::new(
+            &"(> x 0)".parse().unwrap(),
+            &"(> (abs x) 0)".parse().unwrap(),
+        ).rewrite(),
+        cond: None,
+    };
+
+    let result = validate_implication(rule.clone());
+
+    println!("result: {:?}", result);
+
+}
+
 
 fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
     let mut cfg = z3::Config::new();
@@ -88,7 +122,7 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
     if matches!(solver.check(), z3::SatResult::Unsat) {
         // it's "invalid" in the sense that we want to ditch this implication because it's
         // trivially true.
-        panic!("{} is trivially false", imp.lhs.to_string());
+        println!("{} is trivially false", imp.lhs.to_string());
         return ValidationResult::Invalid;
     }
 
@@ -99,11 +133,9 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
 
     // if it can't, then the RHS is trivially true.
     if matches!(solver.check(), z3::SatResult::Unsat) {
-        panic!("{} is trivially true", imp.rhs.to_string());
+        println!("{} is trivially true", imp.rhs.to_string());
         return ValidationResult::Invalid;
     }
-
-
 
     solver.reset();
 
@@ -248,12 +280,10 @@ fn get_roots(selected: &Ruleset<Pred>) -> Vec<RecExpr<Pred>> {
 }
 
 /// Find candidates by CVec matching
-/// Pairs of e-classes with equivalent CVecs are rule candidates.
 /// (this returns a Ruleset for now, even though these are not actually rewrite rules.)
 pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
     let time_start = std::time::Instant::now();
-    // cvecs [𝑎1, . . . , 𝑎𝑛] and [𝑏1, . . . , 𝑏𝑛] match iff:
-    // ∀𝑖. 𝑎𝑖 = 𝑏𝑖 ∨ 𝑎𝑖 = null ∨ 𝑏𝑖 = null and ∃𝑖. 𝑎𝑖 = 𝑏𝑖 ∧ 𝑎𝑖 ≠ null ∧ 𝑏𝑖 ≠ null
+
 
     println!(
         "starting cvec match with {} eclasses",
@@ -265,20 +295,23 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
         .filter(|x| x.data.cvec.iter().any(|v| v.is_some()))
         .collect();
 
+    println!("not all none: {}", not_all_none.len());
+
     let compare = |cvec1: &CVec<Pred>, cvec2: &CVec<Pred>| -> bool {
         for tup in cvec1.iter().zip(cvec2) {
             match tup {
                 // if not a -> b == if not (not a or b) == if not a and b
-                // if not (not a or q)
-                (Some(a), Some(b)) if !((*a != 0) && (*b != 0)) => return false,
+                (Some(a), Some(b)) if (*a != 0) && (*b == 0) => return false,
                 _ => (),
             }
         }
         true
     };
+
     let extract = Extractor::new(egraph, AstSize);
     let mut by_first: IndexMap<Option<i64>, Vec<Id>> = IndexMap::default();
     for class in &not_all_none {
+        // println!("cvec: {:?}", class.data.cvec[0].clone());
         by_first
             .entry(class.data.cvec[0].clone())
             .or_insert_with(Vec::new)
@@ -287,33 +320,50 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
 
     let empty = vec![];
     let first_none = by_first.get(&None).cloned().unwrap_or(empty);
-
     let mut candidates: Ruleset<Pred> = Ruleset::default();
 
+    // let one_id = egraph.lookup_expr(&"1".parse().unwrap()).unwrap();
+    // let zero_id = egraph.lookup_expr(&"0".parse().unwrap()).unwrap();
+
     for (value, classes) in by_first {
+
         let mut all_classes = classes.clone();
         if value.is_some() {
             all_classes.extend(first_none.clone());
         }
 
-        for i in 0..all_classes.len() {
-            for j in i + 1..all_classes.len() {
-                let class1 = &egraph[all_classes[i]];
-                let class2 = &egraph[all_classes[j]];
+
+        for (i, class1) in egraph.classes().enumerate() {
+            // let class1 = &egraph[all_classes[i]];
+            for class2 in egraph.classes() {
+                if class1.id == class2.id {
+                    continue;
+                }
+                // if class1.id == class2.id || one_id == class1.id || zero_id == class1.id ||
+                //     one_id == class2.id || zero_id == class2.id {
+                //         // do nothing.
+                //     // continue;
+                // }
+
+                let (_, e1) = extract.find_best(class1.id);
+                let (_, e2) = extract.find_best(class2.id);
                 if compare(&class1.data.cvec, &class2.data.cvec) {
-                    let (_, e1) = extract.find_best(class1.id);
-                    let (_, e2) = extract.find_best(class2.id);
                     // create the implication rule.
                     let map = &mut HashMap::default();
                     let l_pat = Pred::generalize(&e1, map);
                     let r_pat = Pred::generalize(&e2, map);
 
+                    // println!("l_pat: {}", l_pat);
+                    // println!("r_pat: {}", r_pat);
+
                     // if the right hand side refers to variables which are not in the left hand side,
                     // then skip.
 
                     if r_pat.vars().iter().any(|v| !l_pat.vars().contains(v)) {
+                        // println!("skipping rule because RHS has vars not in LHS: {} -> {}", e1, e2);
                         continue;
                     }
+
 
                     candidates.add(Rule {
                         name: format!("{} -> {}", e1, e2).into(),
@@ -325,7 +375,6 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                         ).rewrite(),
                         cond: None,
                     });
-
 
                     candidates.add_from_recexprs(&e1, &e2);
                 }
@@ -342,11 +391,75 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
 
 }
 
-fn get_condition_workload() -> Workload {
-    let ints = Workload::new(&["(OP1 V)", "(OP2 V V)"])
-        .plug("V", &Workload::new(&["a", "b","c", "0", "1"]))
+pub fn get_condition_workload() -> Workload {
+    // we're going to do conjunctions of ==, != with
+    // variables and 0.
+
+    let leaves= Workload::new(&["(OP2 V V)"])
+        .plug("V", &Workload::new(&["a", "b", "c", "0"]))
+        .plug("OP2", &Workload::new(&["<", "<="]));
+
+    let branches = Workload::new(&["(OP2 V V)"])
+        .plug("V", &leaves)
+        .plug("OP2", &Workload::new(&["&&", "||"]))
+        .append(Workload::new(&["(OP2 V V)"])
+            .plug("V", &Workload::new(&["a", "b", "c", "0"]))
+            .plug("OP2", &Workload::new(&["==", "!="]))
+        );
+
+
+    let eq_rules = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["<", "<=", "==", "!="]]
+        ),
+        Ruleset::default(),
+    );
+
+    let rules = run_workload(
+        branches.clone(),
+        eq_rules,
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+        None,
+        None
+    );
+
+    println!("size before: {}", branches.force().len());
+
+    let branches_better = compress(&branches, rules.clone());
+
+    let branches_forced = branches_better.force();
+
+    println!("size after: {}", branches_forced.len());
+
+    branches_better
+}
+
+fn get_condition_workload_old() -> Workload {
+
+    // let mut ints = iter_metric( base_lang(2),
+    //     "EXPR",
+    //     Metric::Atoms,
+    //     5);
+
+    // ints = ints.plug("VAL", &Workload::new(&["a", "b", "c"]))
+    //     .plug("OP1", &Workload::new(&["abs"]))
+    //     .plug("OP2", &Workload::new(&["+", "-", "*", "/", "min", "max"]));
+
+    // for t in ints.force() {
+    //     println!("{}", t);
+    // }
+
+    let ints = Workload::new(&["V", "(OP1 V)", "(OP2 V V)"])
+        .plug("V", &Workload::new(&["a", "b", "c"]))
         .plug("OP1", &Workload::new(&["abs"]))
-        .plug("OP2", &Workload::new(&["+", "-", "*", "/", "min", "max"]));
+        // .plug("OP2", &Workload::new(&["+", "-", "*", "/", "min", "max"]));
+        .plug("OP2", &Workload::new(&["+", "min", "max"]));
 
     let rules: Ruleset<Pred> = run_workload(
         ints.clone(),
@@ -366,13 +479,13 @@ fn get_condition_workload() -> Workload {
 
     let int2bools = Workload::new(&["(OP2 V V)", "0", "1"])
         .plug("V", &ints_better)
-        .plug("OP2", &Workload::new(&["<", "<=", ">", ">="]));
+        .plug("OP2", &Workload::new(&["<", "<=", ">", ">=", "==", "!="]));
 
     let rules: Ruleset<Pred> = recursive_rules(Metric::Atoms, 5,
         Lang::new(
             &["0", "1"],
             &["a", "b", "c"],
-            &[&[], &["<", "<=", ">", ">="]]
+            &[&[], &["<", "<=", ">", ">=", "==", "!="]]
         ),
         Ruleset::default(),
     );

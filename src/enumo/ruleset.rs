@@ -526,20 +526,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 continue;
             }
 
-            let new_cond = L::generalize(
-                &RecExpr::from_str(&rule.cond.clone().unwrap().to_string()).unwrap(),
-                &mut Default::default(),
-            );
-            let added_cond = L::generalize(
-                &RecExpr::from_str(&cond_ast.to_string()).unwrap(),
-                &mut Default::default(),
-            );
-
-            let implication = L::condition_implies(&new_cond, &added_cond, &mut cache);
-
-            // TODO: @ninehusky: let's use the existing rules to check implications rather than rely on Z3.
-            // See #7.
-            if egraph.find(l_id) == egraph.find(r_id) && implication {
+            if egraph.find(l_id) == egraph.find(r_id) {
                 continue;
             } else {
                 will_choose.add(rule);
