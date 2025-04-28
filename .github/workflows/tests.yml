@@ -67,6 +67,7 @@ jobs:
 
   run_chompy:
     name: "Run Chompy"
+    environment: nightly
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@main
