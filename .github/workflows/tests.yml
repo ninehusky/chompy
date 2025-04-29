@@ -6,61 +6,84 @@ env:
   RUST_BACKTRACE: full
 
 jobs:
-  fmt:
-    name: Rustfmt
+  # fmt:
+  #   name: Rustfmt
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: 1.66
+  #         override: true
+  #     - run: rustup component add rustfmt
+
+  #     - uses: actions-rs/cargo@v1
+  #       with:
+  #         command: fmt
+  #         args: --all -- --check
+
+  # clippy:
+  #   name: Clippy
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         toolchain: 1.66
+  #         override: true
+  #     - run: rustup component add clippy
+
+  #     - uses: actions-rs/cargo@v1
+  #       with:
+  #         command: clippy
+  #         args: -- -D warnings
+
+  # unit:
+  #   name: "Unit Tests"
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     SKIP_RECIPES: 1
+  #   steps:
+  #     - uses: actions/checkout@main
+
+  #     - name: Install Rust compiler
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         toolchain: 1.66
+  #         default: true
+  #         override: true
+  #         components: rustfmt, clippy
+
+  #     - name: "Build"
+  #       run: cargo build --release
+
+  #     - name: "Setup tests"
+  #       run: mkdir -p out/
+
+  #     - name: "Unit tests"
+  #       run: cargo test --release
+
+  run_chompy:
+    name: "Run Chompy"
+    environment: nightly
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.66
-          override: true
-      - run: rustup component add rustfmt
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.66
-          override: true
-      - run: rustup component add clippy
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
-
-  unit:
-    name: "Unit Tests"
-    runs-on: ubuntu-latest
-    env:
-      SKIP_RECIPES: 1
     steps:
       - uses: actions/checkout@main
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Rust compiler
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.66
-          default: true
-          override: true
-          components: rustfmt, clippy
 
       - name: "Build"
         run: cargo build --release
 
-      - name: "Setup tests"
-        run: mkdir -p out/
+      - name: "Run Chompy"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: cargo run -- --mode llm_alphabet_soup --output-path chompy.rules
 
-      - name: "Unit tests"
-        run: cargo test --release
+      - name: "Upload rules"
+        uses: actions/upload-artifact@v4
+        with:
+          name: chompy.rules
+          path: chompy.rules
