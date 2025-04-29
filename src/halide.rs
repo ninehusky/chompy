@@ -970,14 +970,14 @@ pub fn og_recipe() -> Ruleset<Pred> {
     //     wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     // }
 
-    let mut wkld = conditions::get_condition_workload();
+    let mut wkld = conditions::generate::get_condition_workload();
 
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
     let (pvec_to_terms, _) = compute_conditional_structures(&wkld);
 
-    let cond_prop_ruleset = conditions::get_condition_propagation_rules_halide();
+    let cond_prop_ruleset = conditions::generate::get_condition_propagation_rules_halide();
     let mut all_rules = Ruleset::default();
 
     let equality = recursive_rules(

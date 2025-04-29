@@ -4,6 +4,8 @@ use z3::ast::Ast;
 use crate::{enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload}, halide::{egg_to_z3, Pred}, recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang}, CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis, ValidationResult};
 use crate::language::SynthLanguage;
 
+use egglog::EGraph as EgglogEGraph;
+
 #[test]
 fn test_it() {
     get_condition_propagation_rules_halide();
@@ -440,21 +442,20 @@ pub fn get_condition_workload() -> Workload {
     branches_better
 }
 
+fn prune_rules(rules: Vec<Rewrite<Pred, SynthAnalysis>>) -> Vec<Rewrite<Pred, SynthAnalysis>> {
+    let mut result = vec![];
+    let mut seen = HashSet::default();
+    for rule in rules {
+        if !seen.contains(&rule.name) {
+            seen.insert(rule.name.clone());
+            result.push(rule);
+        }
+    }
+    result
+
+}
+
 fn get_condition_workload_old() -> Workload {
-
-    // let mut ints = iter_metric( base_lang(2),
-    //     "EXPR",
-    //     Metric::Atoms,
-    //     5);
-
-    // ints = ints.plug("VAL", &Workload::new(&["a", "b", "c"]))
-    //     .plug("OP1", &Workload::new(&["abs"]))
-    //     .plug("OP2", &Workload::new(&["+", "-", "*", "/", "min", "max"]));
-
-    // for t in ints.force() {
-    //     println!("{}", t);
-    // }
-
     let ints = Workload::new(&["V", "(OP1 V)", "(OP2 V V)"])
         .plug("V", &Workload::new(&["a", "b", "c"]))
         .plug("OP1", &Workload::new(&["abs"]))
