@@ -1,7 +1,7 @@
 use egg::{AstSize, EClass, Extractor, Id, RecExpr, Rewrite, Runner};
 use z3::ast::Ast;
 
-use crate::{enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload}, halide::{egg_to_z3, Pred}, recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang}, CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis, ValidationResult};
+use crate::{conditions::{derive::minimize_implications, Implication}, enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload}, halide::{egg_to_z3, Pred}, recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang}, CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis, ValidationResult};
 use crate::language::SynthLanguage;
 
 use egglog::EGraph as EgglogEGraph;
@@ -45,7 +45,9 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
         let rw = c.1.clone();
 
         let filter_rw = |term: String| -> bool {
-            !(term.starts_with("(<") || term.starts_with("(<=") || term.starts_with("(>") || term.starts_with("(>="))
+            !(term.starts_with("(<") || term.starts_with("(<=") || term.starts_with("(>") || term.starts_with("(>=") ||
+              term.starts_with("(&&") || term.starts_with("(||") || term.starts_with("(==") || term.starts_with("(!="))
+
         };
 
         if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) {
@@ -59,13 +61,34 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
 
     println!("candidates: {}", candidates.len());
 
+    let mut candidate_imps: Vec<Implication<Pred>> = candidates
+        .0
+        .iter()
+        .map(|(_, rule)| Implication {
+            name: rule.name.clone(),
+            lhs: rule.lhs.clone(),
+            rhs: rule.rhs.clone(),
+        })
+        .collect();
+
     for c in &candidates {
         println!("{}", c.0);
     }
 
     println!("step 3 done");
 
+    println!("candidate implications: {}", candidate_imps.len());
+
     // 4. minimization.
+    let result = minimize_implications(&mut candidate_imps, &mut vec![]);
+
+    println!("result:");
+    for r in result.0 {
+        println!("{}", r.name);
+    }
+
+    panic!();
+
     let result = minimize(&mut candidates, Ruleset::default(), Scheduler::Compress(Limits::minimize()));
 
     println!("step 4 done");

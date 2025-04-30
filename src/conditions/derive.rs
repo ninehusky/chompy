@@ -38,6 +38,7 @@ pub fn minimize_implications(imps: &Vec<Implication<Pred>>, prior: &Vec<Implicat
     let mut chosen = prior.clone();
     let step_size = 1;
     let mut mut_imps = imps.clone();
+    let mut egraph = new_impl_egraph();
     while !mut_imps.is_empty() {
         let selected = select_implications(&mut mut_imps, step_size, &mut invalid);
         chosen.extend(selected.clone());
