@@ -1,4 +1,4 @@
-use egg::{AstSize, EClass, Extractor, Id, RecExpr, Rewrite, Runner};
+use egg::{AstSize, EClass, Extractor, Id, Pattern, RecExpr, Rewrite, Runner};
 use z3::ast::Ast;
 
 use crate::language::SynthLanguage;
@@ -18,7 +18,7 @@ fn test_it() {
     get_condition_propagation_rules_halide();
 }
 
-pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalysis>> {
+pub fn get_condition_propagation_rules_halide() -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, Vec<Rewrite<Pred, SynthAnalysis>>) {
     // 1. enumerate the condition workload.
     // we can discuss further about if this needs to be a separate step, or if
     // there's some clever reusing of the "term workload" that we can do.
@@ -62,9 +62,7 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
                 || term.starts_with("(!="))
         };
 
-        if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) {
-            good_candidates.add(c.1);
-        } else {
+        if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) { good_candidates.add(c.1); } else {
             println!("throwing away rule: {}", c.1);
         }
     }
@@ -95,7 +93,7 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
     let result = minimize_implications(&mut candidate_imps, &mut vec![]);
 
     println!("result:");
-    for r in result.0 {
+    for r in result.0.clone() {
         println!("{}", r.name);
     }
 
@@ -103,17 +101,36 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
 
     // let's use the workload to get the best candidates for each eclass.
 
-    let mut pvec_to_terms: HashMap<CVec<Pred>, Vec<RecExpr<Pred>>> = HashMap::default();
+    let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
     let extract = Extractor::new(&egraph, AstSize);
 
     for (i, class) in egraph.classes().enumerate() {
         let (_, expr) = extract.find_best(class.id);
-        let cvec = class.data.cvec.clone();
+        let pattern: Pattern<Pred> = expr.to_string().parse().unwrap();
+
+        let filter_rw = |term: String| -> bool {
+            !(term.starts_with("(<")
+                || term.starts_with("(<=")
+                || term.starts_with("(>")
+                || term.starts_with("(>=")
+                || term.starts_with("(&&")
+                || term.starts_with("(||")
+                || term.starts_with("(==")
+                || term.starts_with("(!="))
+        };
+
+        if filter_rw(pattern.to_string()) {
+            println!("skipping rule: {}", pattern);
+            continue;
+        }
+
+
+        let cvec = class.data.cvec.clone().iter().map(|x| x.unwrap_or(0) != 0).collect::<Vec<bool>>();
         pvec_to_terms
             .entry(cvec)
             .or_insert_with(Vec::new)
-            .push(expr.clone());
+            .push(pattern.clone());
     }
 
     for (k, v) in pvec_to_terms.iter() {
@@ -123,8 +140,32 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
         }
     }
 
-    panic!("end");
-    vec![]
+    // result.0.iter().map(|x| {
+    //     let mut rule = x.clone();
+    //     let mut cache = Default::default();
+    //     let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
+    //     let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
+
+    //     ImplicationSwitch::new(&parent, &child).rewrite()
+    // }).collect();
+
+    // for r in &prop_rules {
+    //     println!("prop rule: {}", r.name);
+    // }
+
+
+
+    (pvec_to_terms, result.0.clone().iter().map(|x| {
+        let mut rule = x.clone();
+        let mut cache = Default::default();
+        let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
+        let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
+
+        ImplicationSwitch::new(&parent, &child).rewrite()
+    }).collect()
+    
+    )
+
 }
 
 #[test]
