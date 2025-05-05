@@ -1,10 +1,17 @@
 use egg::{AstSize, EClass, Extractor, Id, RecExpr, Rewrite, Runner};
 use z3::ast::Ast;
 
-use crate::{conditions::{derive::minimize_implications, Implication}, enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload}, halide::{egg_to_z3, Pred}, recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang}, CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis, ValidationResult};
 use crate::language::SynthLanguage;
+use crate::{
+    conditions::{derive::minimize_implications, Implication},
+    enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload},
+    halide::{egg_to_z3, Pred},
+    recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang},
+    CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis,
+    ValidationResult,
+};
 
-use egglog::EGraph as EgglogEGraph;
+use egglog::{extract, EGraph as EgglogEGraph};
 
 #[test]
 fn test_it() {
@@ -38,16 +45,21 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
     // a really janky filtering pass.
     for c in candidates {
         if names.contains(&c.1.rewrite.name.to_string()) {
-            
         } else {
             names.insert(c.1.rewrite.name.to_string());
         }
         let rw = c.1.clone();
 
+        // TODO (@ninehusky): how should we deal with rules that match on everything? e.g. `?a ==> (&& ?a 1)`
         let filter_rw = |term: String| -> bool {
-            !(term.starts_with("(<") || term.starts_with("(<=") || term.starts_with("(>") || term.starts_with("(>=") ||
-              term.starts_with("(&&") || term.starts_with("(||") || term.starts_with("(==") || term.starts_with("(!="))
-
+            !(term.starts_with("(<")
+                || term.starts_with("(<=")
+                || term.starts_with("(>")
+                || term.starts_with("(>=")
+                || term.starts_with("(&&")
+                || term.starts_with("(||")
+                || term.starts_with("(==")
+                || term.starts_with("(!="))
         };
 
         if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) {
@@ -87,18 +99,31 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
         println!("{}", r.name);
     }
 
-    panic!();
-
-    let result = minimize(&mut candidates, Ruleset::default(), Scheduler::Compress(Limits::minimize()));
-
     println!("step 4 done");
 
-    println!("final rules:");
+    // let's use the workload to get the best candidates for each eclass.
 
-    for r in result.0 {
-        println!("{}", r.1);
+    let mut pvec_to_terms: HashMap<CVec<Pred>, Vec<RecExpr<Pred>>> = HashMap::default();
+
+    let extract = Extractor::new(&egraph, AstSize);
+
+    for (i, class) in egraph.classes().enumerate() {
+        let (_, expr) = extract.find_best(class.id);
+        let cvec = class.data.cvec.clone();
+        pvec_to_terms
+            .entry(cvec)
+            .or_insert_with(Vec::new)
+            .push(expr.clone());
     }
 
+    for (k, v) in pvec_to_terms.iter() {
+        println!("key length: {:?}", k.len());
+        for v in v {
+            println!("value: {}", v);
+        }
+    }
+
+    panic!("end");
     vec![]
 }
 
@@ -111,16 +136,15 @@ fn test_validate_implication() {
         rewrite: ImplicationSwitch::new(
             &"(> x 0)".parse().unwrap(),
             &"(> (abs x) 0)".parse().unwrap(),
-        ).rewrite(),
+        )
+        .rewrite(),
         cond: None,
     };
 
     let result = validate_implication(rule.clone());
 
     println!("result: {:?}", result);
-
 }
-
 
 fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
     let mut cfg = z3::Config::new();
@@ -131,12 +155,11 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
     let rexpr = egg_to_z3(&ctx, Pred::instantiate(&imp.rhs).as_ref());
     // assert that lexpr --> rexpr.
 
-
     // 1. we want to get rid of trivial implications
     // because p -> q == !p or q, we can just check if
     // - the LHS is not equal to 0, and
     // - the RHS is not equal to 1.
-    
+
     let zero = z3::ast::Int::from_i64(&ctx, 0);
     let one = z3::ast::Int::from_i64(&ctx, 1);
 
@@ -172,143 +195,143 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
     let result = solver.check();
     println!("result: {:?}", result);
 
-
     match result {
         z3::SatResult::Unsat => ValidationResult::Valid,
         z3::SatResult::Unknown => ValidationResult::Unknown,
         z3::SatResult::Sat => ValidationResult::Invalid,
     }
-
-
 }
 
-pub fn select(implications: &mut Ruleset<Pred>, step_size: usize, invalid: &mut Ruleset<Pred>) -> Ruleset<Pred> {
-        let mut chosen = Ruleset::default();
-        implications.0
-            .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));
-
-        // 2. insert step_size best candidates into self.new_rws
-        let mut selected: Ruleset<Pred> = Default::default();
-        while selected.len() < step_size {
-            let popped = implications.0.pop();
-            if let Some((_, rule)) = popped {
-
-                if matches!(validate_implication(rule.clone()), ValidationResult::Valid) {
-                    println!("{} is valid", rule);
-                    selected.add(rule.clone());
-                } else {
-                    invalid.add(rule.clone());
-                }
-
-            } else {
-                break;
-            }
-        }
-        chosen.extend(selected);
-
-        // 3. return chosen candidates
-        chosen
-    }
-
-
-    fn shrink(roots: &Vec<RecExpr<Pred>>, implications: &Ruleset<Pred>, chosen: &Ruleset<Pred>, scheduler: Scheduler) -> Ruleset<Pred> {
-
-        println!("candidates left: {}", implications.len());
-        // 1. make new egraph
-        let mut egraph = EGraph::default();
-
-        // 2. add all the roots to the e-graph.
-        for root in roots {
-            println!("adding (istrue {})", root);
-            egraph.add_expr(&format!("(istrue {})", root).parse().unwrap());
-        }
-
-        // 3. compress with the rules we've chosen so far
-        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-            .with_egraph(egraph)
-            .with_iter_limit(Limits::minimize().iter)
-            .with_node_limit(Limits::minimize().node);
-
-        let runner = runner.run(&ruleset_to_rewrites(chosen));
-
-        let egraph = runner.egraph.clone();
-
-        let mut keep = Ruleset::default();
-
-
-        // 4. go through candidates and for a candidate (l --> r),
-        // if (istrue l) and (istrue r) is in the e-graph, then it 
-        // is no longer a candidate.
-        for (_, rule) in implications {
-            let l = Pred::instantiate(&rule.lhs);
-            let r = Pred::instantiate(&rule.rhs);
-
-            if egraph.lookup_expr(&l).is_some() &&
-                egraph.lookup_expr(&r).is_some() {
-                continue;
-            } else {
-                keep.add(rule.clone())
-            }
-        }
-
-        keep
-    }
-
-/// Minimization algorithm for rule selection
-///     while there are still candidates to choose:
-///         1. select the best rule candidate
-///         2. filter out candidates that are redundant given the addition of the selected rule
-pub fn minimize(implications: &mut Ruleset<Pred>, prior: Ruleset<Pred>, scheduler: Scheduler) -> (Ruleset<Pred>, Ruleset<Pred>) {
-    let mut invalid: Ruleset<Pred> = Default::default();
-    let mut chosen = prior.clone();
-    let step_size = 1;
-    while !implications.is_empty() {
-        let selected = select(implications, step_size, &mut invalid);
-        println!("done selecting");
-        // assert_eq!(selected.len(), 1); <-- wasn't this here in ruler?
-        chosen.extend(selected.clone());
-
-        let roots = get_roots(&chosen);
-
-        println!("roots: {}", roots.len());
-
-        for root in &roots {
-            println!("root: {}", root);
-        }
-
-        shrink(&get_roots(&chosen), implications, &chosen, scheduler);
-    }
-    // Return only the new rules
-    chosen.remove_all(prior);
-
-    (chosen, invalid)
-}
-
-fn get_roots(selected: &Ruleset<Pred>) -> Vec<RecExpr<Pred>> {
-    let mut lhss = selected
+pub fn select(
+    implications: &mut Ruleset<Pred>,
+    step_size: usize,
+    invalid: &mut Ruleset<Pred>,
+) -> Ruleset<Pred> {
+    let mut chosen = Ruleset::default();
+    implications
         .0
-        .iter()
-        .map(|(_, rule)| Pred::instantiate(&rule.lhs))
-        .collect::<HashSet<_>>();
+        .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));
 
-    let mut rhss = selected
-        .0
-        .iter()
-        .map(|(_, rule)| Pred::instantiate(&rule.rhs))
-        .collect::<HashSet<_>>();
+    // 2. insert step_size best candidates into self.new_rws
+    let mut selected: Ruleset<Pred> = Default::default();
+    while selected.len() < step_size {
+        let popped = implications.0.pop();
+        if let Some((_, rule)) = popped {
+            if matches!(validate_implication(rule.clone()), ValidationResult::Valid) {
+                println!("{} is valid", rule);
+                selected.add(rule.clone());
+            } else {
+                invalid.add(rule.clone());
+            }
+        } else {
+            break;
+        }
+    }
+    chosen.extend(selected);
 
-    // the roots are all left hand sides which are not in the right hand sides.
-
-    lhss.retain(|x| !rhss.contains(x));
-
-    lhss.into_iter().collect()
+    // 3. return chosen candidates
+    chosen
 }
+
+fn shrink(
+    roots: &Vec<RecExpr<Pred>>,
+    implications: &Ruleset<Pred>,
+    chosen: &Ruleset<Pred>,
+    scheduler: Scheduler,
+) -> Ruleset<Pred> {
+    println!("candidates left: {}", implications.len());
+    // 1. make new egraph
+    let mut egraph = EGraph::default();
+
+    // 2. add all the roots to the e-graph.
+    for root in roots {
+        println!("adding (istrue {})", root);
+        egraph.add_expr(&format!("(istrue {})", root).parse().unwrap());
+    }
+
+    // 3. compress with the rules we've chosen so far
+    let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+        .with_egraph(egraph)
+        .with_iter_limit(Limits::minimize().iter)
+        .with_node_limit(Limits::minimize().node);
+
+    let runner = runner.run(&ruleset_to_rewrites(chosen));
+
+    let egraph = runner.egraph.clone();
+
+    let mut keep = Ruleset::default();
+
+    // 4. go through candidates and for a candidate (l --> r),
+    // if (istrue l) and (istrue r) is in the e-graph, then it
+    // is no longer a candidate.
+    for (_, rule) in implications {
+        let l = Pred::instantiate(&rule.lhs);
+        let r = Pred::instantiate(&rule.rhs);
+
+        if egraph.lookup_expr(&l).is_some() && egraph.lookup_expr(&r).is_some() {
+            continue;
+        } else {
+            keep.add(rule.clone())
+        }
+    }
+
+    keep
+}
+
+// /// Minimization algorithm for rule selection
+// ///     while there are still candidates to choose:
+// ///         1. select the best rule candidate
+// ///         2. filter out candidates that are redundant given the addition of the selected rule
+// pub fn minimize(implications: &mut Ruleset<Pred>, prior: Ruleset<Pred>, scheduler: Scheduler) -> (Ruleset<Pred>, Ruleset<Pred>) {
+//     let mut invalid: Ruleset<Pred> = Default::default();
+//     let mut chosen = prior.clone();
+//     let step_size = 1;
+//     while !implications.is_empty() {
+//         let selected = select(implications, step_size, &mut invalid);
+//         println!("done selecting");
+//         // assert_eq!(selected.len(), 1); <-- wasn't this here in ruler?
+//         chosen.extend(selected.clone());
+
+//         let roots = get_roots(&chosen);
+
+//         println!("roots: {}", roots.len());
+
+//         for root in &roots {
+//             println!("root: {}", root);
+//         }
+
+//         shrink(&get_roots(&chosen), implications, &chosen, scheduler);
+//     }
+//     // Return only the new rules
+//     chosen.remove_all(prior);
+
+//     (chosen, invalid)
+// }
+
+// fn get_roots(selected: &Ruleset<Pred>) -> Vec<RecExpr<Pred>> {
+//     let mut lhss = selected
+//         .0
+//         .iter()
+//         .map(|(_, rule)| Pred::instantiate(&rule.lhs))
+//         .collect::<HashSet<_>>();
+
+//     let mut rhss = selected
+//         .0
+//         .iter()
+//         .map(|(_, rule)| Pred::instantiate(&rule.rhs))
+//         .collect::<HashSet<_>>();
+
+//     // the roots are all left hand sides which are not in the right hand sides.
+
+//     lhss.retain(|x| !rhss.contains(x));
+
+//     lhss.into_iter().collect()
+// }
 
 /// Find candidates by CVec matching
 /// (this returns a Ruleset for now, even though these are not actually rewrite rules.)
 pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
     let time_start = std::time::Instant::now();
-
 
     println!(
         "starting cvec match with {} eclasses",
@@ -351,12 +374,10 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
     // let zero_id = egraph.lookup_expr(&"0".parse().unwrap()).unwrap();
 
     for (value, classes) in by_first {
-
         let mut all_classes = classes.clone();
         if value.is_some() {
             all_classes.extend(first_none.clone());
         }
-
 
         for (i, class1) in egraph.classes().enumerate() {
             // let class1 = &egraph[all_classes[i]];
@@ -389,15 +410,11 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                         continue;
                     }
 
-
                     candidates.add(Rule {
                         name: format!("{} -> {}", e1, e2).into(),
                         lhs: l_pat.clone(),
                         rhs: r_pat.clone(),
-                        rewrite: ImplicationSwitch::new(
-                            &l_pat,
-                            &r_pat,
-                        ).rewrite(),
+                        rewrite: ImplicationSwitch::new(&l_pat, &r_pat).rewrite(),
                         cond: None,
                     });
 
@@ -413,25 +430,25 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
     );
 
     candidates
-
 }
 
 pub fn get_condition_workload() -> Workload {
     // we're going to do conjunctions of ==, != with
     // variables and 0.
 
-    let leaves= Workload::new(&["(OP2 V V)"])
+    let leaves = Workload::new(&["(OP2 V V)"])
         .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-        .plug("OP2", &Workload::new(&["<", "<="]));
+        .plug("OP2", &Workload::new(&["<", "<=", ">", ">=", "==", "!="]));
 
-    let branches = Workload::new(&["(OP2 V V)"])
-        .plug("V", &leaves)
-        .plug("OP2", &Workload::new(&["&&", "||"]))
-        .append(Workload::new(&["(OP2 V V)"])
-            .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-            .plug("OP2", &Workload::new(&["==", "!="]))
-        );
+    // let branches = Workload::new(&["(OP2 V V)"])
+    //     .plug("V", &leaves)
+    //     .plug("OP2", &Workload::new(&["&&", "||"]))
+    //     .append(Workload::new(&["(OP2 V V)"])
+    //         .plug("V", &Workload::new(&["a", "b", "c", "0"]))
+    //         .plug("OP2", &Workload::new(&["==", "!="]))
+    //     );
 
+    let branches = leaves;
 
     let eq_rules = recursive_rules(
         Metric::Atoms,
@@ -439,7 +456,7 @@ pub fn get_condition_workload() -> Workload {
         Lang::new(
             &["0", "1"],
             &["a", "b", "c"],
-            &[&[], &["<", "<=", "==", "!="]]
+            &[&[], &["<", "<=", "==", "!="]],
         ),
         Ruleset::default(),
     );
@@ -451,7 +468,7 @@ pub fn get_condition_workload() -> Workload {
         Limits::minimize(),
         true,
         None,
-        None
+        None,
     );
 
     println!("size before: {}", branches.force().len());
@@ -475,51 +492,6 @@ fn prune_rules(rules: Vec<Rewrite<Pred, SynthAnalysis>>) -> Vec<Rewrite<Pred, Sy
         }
     }
     result
-
-}
-
-fn get_condition_workload_old() -> Workload {
-    let ints = Workload::new(&["V", "(OP1 V)", "(OP2 V V)"])
-        .plug("V", &Workload::new(&["a", "b", "c"]))
-        .plug("OP1", &Workload::new(&["abs"]))
-        // .plug("OP2", &Workload::new(&["+", "-", "*", "/", "min", "max"]));
-        .plug("OP2", &Workload::new(&["+", "min", "max"]));
-
-    let rules: Ruleset<Pred> = run_workload(
-        ints.clone(),
-        Ruleset::default(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true,
-        None,
-        None
-    );
-
-    println!("size before: {}", ints.force().len());
-    let ints_better = compress(&ints, rules.clone());
-
-    let ints_forced = ints_better.force();
-    println!("size after: {}", ints_forced.len());
-
-    let int2bools = Workload::new(&["(OP2 V V)", "0", "1"])
-        .plug("V", &ints_better)
-        .plug("OP2", &Workload::new(&["<", "<=", ">", ">=", "==", "!="]));
-
-    let rules: Ruleset<Pred> = recursive_rules(Metric::Atoms, 5,
-        Lang::new(
-            &["0", "1"],
-            &["a", "b", "c"],
-            &[&[], &["<", "<=", ">", ">=", "==", "!="]]
-        ),
-        Ruleset::default(),
-    );
-
-    println!("size before: {}", int2bools.force().len());
-
-    let int2bools_better = compress(&int2bools, rules);
-
-    println!("size after: {}", int2bools_better.force().len());
-    int2bools_better
 }
 
 fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {

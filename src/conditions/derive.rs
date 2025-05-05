@@ -12,10 +12,17 @@ use super::{validate_implication, Implication};
 // For now, this is just the AST size of lhs + rhs.
 // later, we can use 1 / |satisfying_lhs_envs| + |satisfying_rhs_envs| as a proxy
 // for weakness.
-fn score<L: SynthLanguage>(imp: &Implication<L>) -> usize {
-    fn size(sexp: &enumo::Sexp) -> usize {
+fn score<L: SynthLanguage>(imp: &Implication<L>) -> f64 {
+    fn size(sexp: &enumo::Sexp) -> f64 {
         match sexp {
-            enumo::Sexp::Atom(_) => 1,
+            enumo::Sexp::Atom(a) => {
+                if let Ok(_) = a.parse::<i64>() {
+                    // slight penalty for literals.
+                    return 1.1;
+                } else {
+                    return 1.0;
+                }
+            }
             enumo::Sexp::List(l) => l.iter().map(size).sum(),
         }
     }
@@ -260,7 +267,7 @@ fn validate() {
 
 pub fn select_implications(imps: &mut Vec<Implication<Pred>>, step_size: usize, invalid: &mut Vec<Implication<Pred>>) -> Vec<Implication<Pred>> {
     let mut chosen = vec![];
-    imps.sort_by(|a, b| score(b).cmp(&score(a)));
+    imps.sort_by(|a, b| score(b).partial_cmp(&score(a)).unwrap());
 
     let mut selected = vec![];
 
@@ -453,13 +460,13 @@ fn score_good() {
 
     let implications = vec![imp1, imp2];
     let mut sorted = implications.clone();
-    sorted.sort_by(|a, b| score(b).cmp(&score(a)));
+    sorted.sort_by(|a, b| score(b).partial_cmp(&score(a)).unwrap());
 
     let first = sorted.pop().unwrap();
     let second = sorted.pop().unwrap();
 
-    assert_eq!(score(&first), 2);
-    assert_eq!(score(&second), 4);
+    assert_eq!(score(&first), 2.0);
+    assert_eq!(score(&second), 4.0);
     assert_eq!(first.name, "a ==> b".into());
     assert_eq!(second.name, "(&& a c) ==> b".into());
 }
@@ -472,16 +479,16 @@ fn new_impl_egraph_compiles() {
 #[test]
 fn egraph_edge_relation_ok() {
     let mut egraph = new_impl_egraph();
-    egraph.parse_and_run_program(None, "(edge \"a\" \"b\")").unwrap();
-    egraph.parse_and_run_program(None, "(check (edge \"a\" \"b\"))").unwrap();
+    egraph.parse_and_run_program(None, "(edge (Var \"a\") (Var \"b\"))").unwrap();
+    egraph.parse_and_run_program(None, "(check (edge (Var \"a\") (Var \"b\")))").unwrap();
 }
 
 #[test]
 fn egraph_path_ok() {
     let mut egraph = new_impl_egraph();
-    egraph.parse_and_run_program(None, "(edge \"a\" \"b\")").unwrap();
-    egraph.parse_and_run_program(None, "(edge \"b\" \"c\")").unwrap();
+    egraph.parse_and_run_program(None, "(edge (Var \"a\") (Var \"b\"))").unwrap();
+    egraph.parse_and_run_program(None, "(edge (Var \"b\") (Var \"c\"))").unwrap();
     egraph.parse_and_run_program(None, "(run-schedule (saturate find-path))").unwrap();
-    egraph.parse_and_run_program(None, "(check (path \"a\" \"c\"))").unwrap();
-    egraph.parse_and_run_program(None, "(check (path \"a\" \"b\"))").unwrap();
+    egraph.parse_and_run_program(None, "(check (path (Var \"a\") (Var \"c\")))").unwrap();
+    egraph.parse_and_run_program(None, "(check (path (Var \"a\") (Var \"b\")))").unwrap();
 }
