@@ -151,6 +151,10 @@ impl SynthLanguage for Pred {
     }
 
     fn initialize_vars(egraph: &mut EGraph<Self, SynthAnalysis>, vars: &[String]) {
+        // sorted
+        let mut vars: Vec<_> = vars.into();
+        vars.sort();
+
         let consts = vec![
             Some((-10).to_i64().unwrap()),
             Some((-1).to_i64().unwrap()),
