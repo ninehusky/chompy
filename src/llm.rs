@@ -105,14 +105,21 @@ vars: {vars},
 ops: {ops},
 "#;
 
-
-pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&ConditionRecipe>) -> (Workload, Option<Workload>) {
+pub async fn generate_alphabet_soup(
+    term_recipe: &Recipe,
+    cond_r: Option<&ConditionRecipe>,
+) -> (Workload, Option<Workload>) {
     let client = Client::new();
 
     let soup = alphabet_soup(&client, term_recipe).await.unwrap();
 
     // Convert the generated soup into a workload
-    let term_workload = soup_to_workload::<Pred>(soup.clone(), term_recipe.vars.clone(), term_recipe.vals.clone()).unwrap();
+    let term_workload = soup_to_workload::<Pred>(
+        soup.clone(),
+        term_recipe.vars.clone(),
+        term_recipe.vals.clone(),
+    )
+    .unwrap();
 
     println!("term workload:");
     for t in &term_workload.clone().force() {
@@ -121,10 +128,17 @@ pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&Condit
 
     if let Some(cond_recipe) = cond_r {
         // If a condition recipe is provided, generate conditions based on the previous workload.
-        let condition_workload = condition_soup(&client, &soup, &term_recipe.vars, cond_recipe).await.unwrap();
+        let condition_workload = condition_soup(&client, &soup, &term_recipe.vars, cond_recipe)
+            .await
+            .unwrap();
 
         // Convert the generated conditions into a workload
-        let cond_workload = soup_to_workload::<Pred>(condition_workload, term_recipe.vars.clone(), cond_recipe.vals.clone()).unwrap();
+        let cond_workload = soup_to_workload::<Pred>(
+            condition_workload,
+            term_recipe.vars.clone(),
+            cond_recipe.vals.clone(),
+        )
+        .unwrap();
 
         println!("conditional workload:");
         for c in &cond_workload.clone().force() {
@@ -135,15 +149,21 @@ pub async fn generate_alphabet_soup(term_recipe: &Recipe, cond_r: Option<&Condit
     } else {
         (term_workload, None)
     }
-
 }
 
-pub async fn condition_soup(client: &Client, term_workload_as_vec: &Vec<String>, vars: &Vec<String>, r: &ConditionRecipe) -> Result<Vec<String>, reqwest::Error> {
+pub async fn condition_soup(
+    client: &Client,
+    term_workload_as_vec: &Vec<String>,
+    vars: &Vec<String>,
+    r: &ConditionRecipe,
+) -> Result<Vec<String>, reqwest::Error> {
     // TODO: @ninehusky -- check that term workload vars are superset of recipe vars.
     let content = PROMPT_DE_LA_SOPA_ALFABETO_CON_CONDICIONES
-        .replace("{last_step_workload}",
+        .replace(
+            "{last_step_workload}",
             // This will be the workload from the previous step, which is a list of terms.
-            &term_workload_as_vec.join("\n"))
+            &term_workload_as_vec.join("\n"),
+        )
         .replace("{max_size}", &r.max_size.to_string())
         .replace("{vals}", format!("{:?}", r.vals).as_str())
         .replace("{vars}", format!("{:?}", vars).as_str())
@@ -164,7 +184,13 @@ pub async fn condition_soup(client: &Client, term_workload_as_vec: &Vec<String>,
 
     let response = client
         .post("https://api.openai.com/v1/chat/completions") // <-- Using Responses API
-        .header("Authorization", format!("Bearer {}", std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")))
+        .header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
+            ),
+        )
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
@@ -172,12 +198,15 @@ pub async fn condition_soup(client: &Client, term_workload_as_vec: &Vec<String>,
 
     let response_json: serde_json::Value = response.json().await?;
 
-    let result = response_json["choices"][0]["message"]["content"].as_str().unwrap().lines().map(|s| s.to_string()).collect();
+    let result = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap()
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
 
     Ok(result)
 }
-
-
 
 // asks GPT to generate a list of terms which implement some bigass recipe.
 pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, reqwest::Error> {
@@ -205,7 +234,13 @@ pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, r
 
     let response = client
         .post("https://api.openai.com/v1/chat/completions") // <-- Using Responses API
-        .header("Authorization", format!("Bearer {}", std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")))
+        .header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
+            ),
+        )
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
@@ -214,12 +249,21 @@ pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, r
     println!("response status: {}", response.status());
     let response_json: serde_json::Value = response.json().await?;
 
-    let result = response_json["choices"][0]["message"]["content"].as_str().unwrap().lines().map(|s| s.to_string()).collect();
+    let result = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap()
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
 
     Ok(result)
 }
 
-pub fn soup_to_workload<L: SynthLanguage>(soup: Vec<String>, vars: Vec<String>, vals: Vec<String>) -> Result<Workload, Box<dyn std::error::Error>> {
+pub fn soup_to_workload<L: SynthLanguage>(
+    soup: Vec<String>,
+    vars: Vec<String>,
+    vals: Vec<String>,
+) -> Result<Workload, Box<dyn std::error::Error>> {
     println!("soup:");
     for s in &soup {
         println!("{}", s);
@@ -227,9 +271,27 @@ pub fn soup_to_workload<L: SynthLanguage>(soup: Vec<String>, vars: Vec<String>, 
     let mut good_expressions = vec![];
     for r in &soup {
         // if it has no parentheses, and it is not a variable/value, then skip it.
-        if !r.contains('(') && !r.contains(')') && !vals.contains(&r.to_string()) && !vars.contains(&r.to_string()) {
+        println!("checking expression: {}", r);
+        let r = r.trim();
+        println!("starts with )? {}", r.starts_with(')'));
+        println!("ends with (? {}", r.ends_with(')'));
+        println!("is a variable? {}", vars.contains(&r.to_string()));
+        println!("is a value? {}", vals.contains(&r.to_string()));
+
+        let starts_with_paren = r.starts_with('(');
+        let ends_with_paren = r.ends_with(')');
+
+        if starts_with_paren != ends_with_paren {
             println!("skipping expression: {}", r);
             continue;
+        }
+
+        if (!starts_with_paren || !ends_with_paren) && !vals.contains(&r.to_string())
+            && !vars.contains(&r.to_string())
+        {
+            println!("skipping expression: {}", r);
+            continue;
+
         }
 
         let t: Result<RecExpr<L>, _> = r.parse();
@@ -258,14 +320,109 @@ pub mod tests {
 
     #[test]
     fn soup_to_workload_throws_away_div() {
-        let soup = vec!["/".to_string(), "/ a b".to_string(), "55".to_string(), "a".to_string(), "b".to_string()];
+        let soup = vec![
+            "/".to_string(),
+            "/".to_string(),
+            "/".to_string(),
+            "/".to_string(),
+            "/ a b".to_string(),
+            "55".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+        ];
 
-        let result = soup_to_workload::<Pred>(soup, vec!["a".to_string(), "b".to_string()], vec!["1".to_string()]);
+        let result = soup_to_workload::<Pred>(
+            soup,
+            vec!["a".to_string(), "b".to_string()],
+            vec!["1".to_string()],
+        );
         assert!(result.is_ok());
 
-        let workload = result.unwrap().force().into_iter().map(|x| x.to_string()).collect::<Vec<String>>();
+        let workload = result
+            .unwrap()
+            .force()
+            .into_iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>();
         assert_eq!(workload.len(), 2);
         assert!(workload.contains(&"a".to_string()));
         assert!(workload.contains(&"b".to_string()));
+    }
+
+    #[test]
+    fn soup_to_workload_throws_away_more_bad() {
+        let soup = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "(+ a)".to_string(),
+            "(+ b)".to_string(),
+            "(+ c)".to_string(),
+            "(- a)".to_string(),
+            "(- b)".to_string(),
+            "(- c)".to_string(),
+            "(* a)".to_string(),
+            "(* b)".to_string(),
+            "(* c)".to_string(),
+            "/ a".to_string(),
+            "/ b".to_string(),
+            "/ c".to_string(),
+            "(+ a b)".to_string(),
+            "(+ a c)".to_string(),
+            "(+ b a)".to_string(),
+            "(+ b c)".to_string(),
+            "(+ c a)".to_string(),
+            "(+ c b)".to_string(),
+            "(- a b)".to_string(),
+            "(- a c)".to_string(),
+            "(- b a)".to_string(),
+            "(- b c)".to_string(),
+            "(- c a)".to_string(),
+            "(- c b)".to_string(),
+            "(* a b)".to_string(),
+            "(* a c)".to_string(),
+            "(* b a)".to_string(),
+            "(* b c)".to_string(),
+            "(* c a)".to_string(),
+            "(* c b)".to_string(),
+            "/ a b".to_string(),
+            "/ a c".to_string(),
+            "/ b a".to_string(),
+            "/ b c".to_string(),
+            "/ c a".to_string(),
+            "/ c b".to_string(),
+            "(+ a (+ b c))".to_string(),
+            "(+ a (- b c))".to_string(),
+            "(+ a (* b c))".to_string(),
+            "(+ a (/ b c))".to_string(),
+            "(- a (+ b c))".to_string(),
+            "(- a (- b c))".to_string(),
+            "(- a (* b c))".to_string(),
+            "(- a (/ b c))".to_string(),
+            "(* a (+ b c))".to_string(),
+            "(* a (- b c))".to_string(),
+            "(* a (* b c))".to_string(),
+            "(* a (/ b c))".to_string(),
+            "/ a (+ b c)".to_string(),
+            "/ a (- b c)".to_string(),
+            "/ a (* b c)".to_string(),
+            "/ a (/ b c)".to_string(),
+        ];
+
+        // remove the bad stuff, and add in variables.
+        let expected_length = soup.len() - 22 + 3;
+
+        let wkld = soup_to_workload::<Pred>(
+            soup,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            vec!["1".to_string()],
+        ).unwrap();
+
+        for t in &wkld.force() {
+            println!("{}", t);
+        }
+
+
+        assert_eq!(wkld.force().len(), expected_length);
     }
 }
