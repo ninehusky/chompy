@@ -96,7 +96,6 @@ pub fn get_condition_propagation_rules_halide() -> (
     // 4. minimization.
     let result = minimize_implications(&mut candidate_imps, &mut vec![]);
 
-    println!("result:");
     for r in result.0.clone() {
         println!("{}", r.name);
     }
@@ -196,7 +195,6 @@ fn test_validate_implication() {
 
     let result = validate_implication(rule.clone());
 
-    println!("result: {:?}", result);
 }
 
 fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
@@ -223,7 +221,6 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
     if matches!(solver.check(), z3::SatResult::Unsat) {
         // it's "invalid" in the sense that we want to ditch this implication because it's
         // trivially true.
-        println!("{} is trivially false", imp.lhs.to_string());
         return ValidationResult::Invalid;
     }
 
@@ -234,7 +231,6 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
 
     // if it can't, then the RHS is trivially true.
     if matches!(solver.check(), z3::SatResult::Unsat) {
-        println!("{} is trivially true", imp.rhs.to_string());
         return ValidationResult::Invalid;
     }
 
@@ -242,11 +238,10 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
 
     // with trivial implications out of the way, we can now check if the non-trivial implication is valid.
 
-    println!("checking implication: {} -> {}", lexpr, rexpr);
+    // println!("checking implication: {} -> {}", lexpr, rexpr);
     solver.assert(&z3::ast::Bool::implies(&lexpr._eq(&zero).not(), &rexpr._eq(&zero).not()).not());
 
     let result = solver.check();
-    println!("result: {:?}", result);
 
     match result {
         z3::SatResult::Unsat => ValidationResult::Valid,

@@ -42,7 +42,6 @@ pub fn validate_implication(imp: Implication<Pred>) -> ValidationResult {
     if matches!(solver.check(), z3::SatResult::Unsat) {
         // it's "invalid" in the sense that we want to ditch this implication because it's
         // trivially true.
-        println!("{} is trivially false", imp.lhs.to_string());
         return ValidationResult::Invalid;
     }
 
@@ -53,7 +52,6 @@ pub fn validate_implication(imp: Implication<Pred>) -> ValidationResult {
 
     // if it can't, then the RHS is trivially true.
     if matches!(solver.check(), z3::SatResult::Unsat) {
-        println!("{} is trivially true", imp.rhs.to_string());
         return ValidationResult::Invalid;
     }
 
@@ -61,11 +59,10 @@ pub fn validate_implication(imp: Implication<Pred>) -> ValidationResult {
 
     // with trivial implications out of the way, we can now check if the non-trivial implication is valid.
 
-    println!("checking implication: {} -> {}", lexpr, rexpr);
+    // println!("checking implication: {} -> {}", lexpr, rexpr);
     solver.assert(&z3::ast::Bool::implies(&lexpr._eq(&zero).not(), &rexpr._eq(&zero).not()).not());
 
     let result = solver.check();
-    println!("result: {:?}", result);
 
 
     match result {

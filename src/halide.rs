@@ -982,14 +982,16 @@ pub fn og_recipe() -> Ruleset<Pred> {
     let (pvec_to_terms, cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide();
     let mut all_rules = Ruleset::default();
 
-    // let equality = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&[], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-    //     all_rules.clone(),
-    // );
+    let equality = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
 
-    // all_rules.extend(equality);
+    all_rules.extend(equality);
 
     let comparisons = recursive_rules_cond(
         Metric::Atoms,
@@ -1002,14 +1004,16 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(comparisons);
 
-    // let bool_only = recursive_rules(
-    //     Metric::Atoms,
-    //     7,
-    //     Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-    //     all_rules.clone(),
-    // );
+    let bool_only = recursive_rules_cond(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset
+    );
 
-    // all_rules.extend(bool_only);
+    all_rules.extend(bool_only);
 
     // // corresponds to "mul/div with constants + mul/div with constants and other arith"
     let arith_basic = recursive_rules_cond(
@@ -1055,7 +1059,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     }
 
     for op in &["==", "<", "<=", ">", ">=", "||", "&&"] {
-    // for op in &["<", "<=", ">", ">="] {
         let big_wkld = Workload::new(&["0", "1"]).append(
             Workload::new(&["(OP V V)"])
                 // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe

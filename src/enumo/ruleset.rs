@@ -511,38 +511,12 @@ impl<L: SynthLanguage> Ruleset<L> {
         // 3. compress with the rules we've chosen so far
         let egraph = scheduler.run(&runner.egraph, chosen);
 
-        // serialize the egraph to json.
-
-        if added_rule.name == "(max ?b ?a) ==> ?b if (<= ?a ?b)".into() {
-            let serialized = egg_to_serialized_egraph(&egraph);
-
-            serialized.to_json_file("bugged_egraph.json").unwrap();
-            // panic!("saved");
-        }
-
         // 4. go through candidates. for each candidate `if c then l ~> r`, if
         // l and r have merged and this rule's condition implies the candidate's, then they are no longer candidates.
         for (l_id, r_id, rule) in initial {
-            // a conditional rule can never derive a total rule unless its condition
-            // is equivalent to "TRUE".
-            if rule.cond.is_none() {
-               continue;
-            }
-
-
             if egraph.find(l_id) == egraph.find(r_id) {
-                println!("we can derive {}!", rule);
                 continue;
             } else {
-                println!("we can't derive {}!", rule);
-                println!("no, we can't, because {} and {} are not in the same eclass", L::instantiate(&rule.lhs), L::instantiate(&rule.rhs));
-                let cond_ast = &L::instantiate(&rule.cond.clone().unwrap());
-                // is the cond_ast in the egraph?
-                if egraph.lookup_expr(&format!("(istrue {})", cond_ast).parse().unwrap()).is_none() {
-                    println!("condition {} is not in the egraph", cond_ast);
-                } else {
-                    println!("condition {} is in the egraph", cond_ast);
-                }
                 will_choose.add(rule);
             }
         }

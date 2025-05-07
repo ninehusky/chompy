@@ -141,7 +141,6 @@ pub fn shrink_implications(imps: &Vec<Implication<Pred>>, chosen: &Vec<Implicati
 
         // 2. add the prior implications as rules to the egraph.
         for imp in chosen {
-            println!("implication: {}", imp.name);
             // keep these as terms with meta-variables.
             let lhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.lhs.to_string()).unwrap());
             let rhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.rhs.to_string()).unwrap());
