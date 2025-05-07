@@ -161,7 +161,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     /// reuse the same generalized patterns for both directions.
     /// That is, this function *is not* equivalent to calling
     /// add(Rule::from_recexprs(e1, e2)); add(Rule::from_recexprs(e2, e1))
-    fn add_from_recexprs(&mut self, e1: &RecExpr<L>, e2: &RecExpr<L>) {
+    pub fn add_from_recexprs(&mut self, e1: &RecExpr<L>, e2: &RecExpr<L>) {
         let map = &mut HashMap::default();
         let l_pat = L::generalize(e1, map);
         let r_pat = L::generalize(e2, map);
@@ -332,12 +332,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     continue;
                                 }
 
-                                // kind of hacky, i'm sorry.
-                                // essentially, here we want to avoid adding single
-                                // atom conditions like `a` or `b` as valid conditions.
-                                if e1.to_string().len() < 2 || e2.to_string().len() < 2 {
-                                    continue;
-                                }
+                                println!("candidate: if {} then {} ~> {}", pred, e1, e2);
 
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
                             }
@@ -434,18 +429,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         for ids in by_cvec.values() {
             let exprs: Vec<_> = ids.iter().map(|&id| extract.find_best(id).1).collect();
 
-            // if !exprs
-            //     .iter()
-            //     .filter(|e| e.to_string() == "a".to_string())
-            //     .collect::<Vec<_>>()
-            //     .is_empty()
-            // {
-            //     println!("exprs:");
-            //     for e in &exprs {
-            //         println!("{}", e);
-            //     }
-            // }
-
             for (idx, e1) in exprs.iter().enumerate() {
                 for e2 in exprs[(idx + 1)..].iter() {
                     candidates.add_from_recexprs(e1, e2);
@@ -455,7 +438,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         candidates
     }
 
-    fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
+    pub fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
         let mut chosen = Self::default();
         self.0
             .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));
@@ -497,6 +480,11 @@ impl<L: SynthLanguage> Ruleset<L> {
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         added_rule: &Rule<L>,
     ) {
+        println!("rules:");
+        for r in chosen.clone() {
+            println!("{}", r.0);
+
+        }
         let mut will_choose: Self = Default::default();
 
         // 1. make new egraph
@@ -514,6 +502,8 @@ impl<L: SynthLanguage> Ruleset<L> {
         let cond_ast = &L::instantiate(&added_rule.cond.clone().unwrap());
         egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
 
+        println!("adding: {}", cond_ast);
+
         // 2.5: do condition propagation
         let runner: Runner<L, SynthAnalysis> = Runner::default()
             .with_egraph(egraph.clone())
@@ -522,31 +512,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         // 3. compress with the rules we've chosen so far
         let egraph = scheduler.run(&runner.egraph, chosen);
 
-        let mut cache: HashMap<(String, String), bool> = Default::default();
-
         // 4. go through candidates. for each candidate `if c then l ~> r`, if
         // l and r have merged and this rule's condition implies the candidate's, then they are no longer candidates.
         for (l_id, r_id, rule) in initial {
-            // a conditional rule can never derive a total rule unless its condition
-            // is equivalent to "TRUE".
-            if rule.cond.is_none() {
-                continue;
-            }
-
-            let new_cond = L::generalize(
-                &RecExpr::from_str(&rule.cond.clone().unwrap().to_string()).unwrap(),
-                &mut Default::default(),
-            );
-            let added_cond = L::generalize(
-                &RecExpr::from_str(&cond_ast.to_string()).unwrap(),
-                &mut Default::default(),
-            );
-
-            let implication = L::condition_implies(&new_cond, &added_cond, &mut cache);
-
-            // TODO: @ninehusky: let's use the existing rules to check implications rather than rely on Z3.
-            // See #7.
-            if egraph.find(l_id) == egraph.find(r_id) && implication {
+            if egraph.find(l_id) == egraph.find(r_id) {
                 continue;
             } else {
                 will_choose.add(rule);

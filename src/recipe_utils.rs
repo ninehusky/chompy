@@ -53,11 +53,17 @@ fn run_workload_internal<L: SynthLanguage>(
         Ruleset::cvec_match(&compressed)
     };
 
+    println!("cvec matching finished");
+
     let mut chosen: Ruleset<L> = prior.clone();
+
+    println!("num candidates: {}", candidates.len());
 
     // minimize the total candidates with respect to the prior rules
     let (chosen_total, _) =
         candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
+
+    println!("minimization finished");
 
     chosen.extend(chosen_total.clone());
 

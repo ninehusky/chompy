@@ -9,6 +9,8 @@ pub use language::*;
 use serde::Serialize;
 pub use util::*;
 
+mod conditions;
+
 mod bv;
 pub mod enumo;
 pub mod halide;
