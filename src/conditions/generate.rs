@@ -18,7 +18,10 @@ fn test_it() {
     get_condition_propagation_rules_halide();
 }
 
-pub fn get_condition_propagation_rules_halide() -> (HashMap<Vec<bool>, Vec<Pattern<Pred>>>, Vec<Rewrite<Pred, SynthAnalysis>>) {
+pub fn get_condition_propagation_rules_halide() -> (
+    HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
+    Vec<Rewrite<Pred, SynthAnalysis>>,
+) {
     // 1. enumerate the condition workload.
     // we can discuss further about if this needs to be a separate step, or if
     // there's some clever reusing of the "term workload" that we can do.
@@ -32,8 +35,6 @@ pub fn get_condition_propagation_rules_halide() -> (HashMap<Vec<bool>, Vec<Patte
 
     // 2. put it in an e-graph.
     let egraph: EGraph<Pred, SynthAnalysis> = wkld.to_egraph();
-
-    println!("step 2 done");
 
     // 3. cvec matching.
     let mut candidates = pvec_match(&egraph);
@@ -62,7 +63,9 @@ pub fn get_condition_propagation_rules_halide() -> (HashMap<Vec<bool>, Vec<Patte
                 || term.starts_with("(!="))
         };
 
-        if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) { good_candidates.add(c.1); } else {
+        if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) {
+            good_candidates.add(c.1);
+        } else {
             println!("throwing away rule: {}", c.1);
         }
     }
@@ -70,6 +73,7 @@ pub fn get_condition_propagation_rules_halide() -> (HashMap<Vec<bool>, Vec<Patte
     candidates = good_candidates.clone();
 
     println!("candidates: {}", candidates.len());
+
 
     let mut candidate_imps: Vec<Implication<Pred>> = candidates
         .0
@@ -125,20 +129,25 @@ pub fn get_condition_propagation_rules_halide() -> (HashMap<Vec<bool>, Vec<Patte
             continue;
         }
 
-
-        let cvec = class.data.cvec.clone().iter().map(|x| x.unwrap_or(0) != 0).collect::<Vec<bool>>();
+        let cvec = class
+            .data
+            .cvec
+            .clone()
+            .iter()
+            .map(|x| x.unwrap_or(0) != 0)
+            .collect::<Vec<bool>>();
         pvec_to_terms
             .entry(cvec)
             .or_insert_with(Vec::new)
             .push(pattern.clone());
     }
 
-    for (k, v) in pvec_to_terms.iter() {
-        println!("key length: {:?}", k.len());
-        for v in v {
-            println!("value: {}", v);
-        }
-    }
+    // for (k, v) in pvec_to_terms.iter() {
+    //     // println!("key: {:?}", k);
+    //     for v in v {
+    //         println!("value: {}", v);
+    //     }
+    // }
 
     // result.0.iter().map(|x| {
     //     let mut rule = x.clone();
@@ -153,19 +162,22 @@ pub fn get_condition_propagation_rules_halide() -> (HashMap<Vec<bool>, Vec<Patte
     //     println!("prop rule: {}", r.name);
     // }
 
+    (
+        pvec_to_terms,
+        result
+            .0
+            .clone()
+            .iter()
+            .map(|x| {
+                let mut rule = x.clone();
+                let mut cache = Default::default();
+                let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
+                let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
 
-
-    (pvec_to_terms, result.0.clone().iter().map(|x| {
-        let mut rule = x.clone();
-        let mut cache = Default::default();
-        let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
-        let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
-
-        ImplicationSwitch::new(&parent, &child).rewrite()
-    }).collect()
-    
+                ImplicationSwitch::new(&parent, &child).rewrite()
+            })
+            .collect(),
     )
-
 }
 
 #[test]
@@ -479,31 +491,30 @@ pub fn get_condition_workload() -> Workload {
 
     let leaves = Workload::new(&["(OP2 V V)"])
         .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-        .plug("OP2", &Workload::new(&["<", "<=", ">", ">=", "==", "!="]));
+        .plug("OP2", &Workload::new(&["<", "<=", ">", ">="]));
 
-    // let branches = Workload::new(&["(OP2 V V)"])
-    //     .plug("V", &leaves)
-    //     .plug("OP2", &Workload::new(&["&&", "||"]))
-    //     .append(Workload::new(&["(OP2 V V)"])
-    //         .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-    //         .plug("OP2", &Workload::new(&["==", "!="]))
-    //     );
-
-    let branches = leaves;
+    let branches = Workload::new(&["(OP2 V V)"])
+        .plug("V", &leaves)
+        .plug("OP2", &Workload::new(&["&&", "||"]))
+        .append(
+            Workload::new(&["(OP2 V V)"])
+                .plug("V", &Workload::new(&["a", "b", "c", "0"]))
+                .plug("OP2", &Workload::new(&["==", "!="])),
+        ).filter(Filter::Canon(vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]));
 
     let eq_rules = recursive_rules(
         Metric::Atoms,
         5,
-        Lang::new(
-            &["0", "1"],
-            &["a", "b", "c"],
-            &[&[], &["<", "<=", "==", "!="]],
-        ),
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", "==", "!="]]),
         Ruleset::default(),
     );
 
     let rules = run_workload(
-        branches.clone(),
+        leaves.clone(),
         eq_rules,
         Limits::synthesis(),
         Limits::minimize(),

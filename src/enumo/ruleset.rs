@@ -529,12 +529,12 @@ impl<L: SynthLanguage> Ruleset<L> {
                continue;
             }
 
-            println!("can we derive {}?", rule);
 
             if egraph.find(l_id) == egraph.find(r_id) {
-                println!("yes, we can!");
+                println!("we can derive {}!", rule);
                 continue;
             } else {
+                println!("we can't derive {}!", rule);
                 println!("no, we can't, because {} and {} are not in the same eclass", L::instantiate(&rule.lhs), L::instantiate(&rule.rhs));
                 let cond_ast = &L::instantiate(&rule.cond.clone().unwrap());
                 // is the cond_ast in the egraph?
