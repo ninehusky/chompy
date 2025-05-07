@@ -1,6 +1,6 @@
 use ruler::{halide, llm};
 use ruler::halide::Pred;
-use ruler::enumo::Ruleset;
+use ruler::enumo::{Ruleset, Workload};
 use ruler::json_to_recipe;
 
 use ruler::halide::recipe_to_rules;
@@ -112,12 +112,13 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
     // the handwritten recipe.
     let minmax_recipe = Recipe {
         name: "minmax".to_string(),
-        max_size: 5,
+        max_size: 7,
         vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
         vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
         ops: vec![
             vec!["!".to_string()],
-            vec!["==".to_string(), "!=".to_string(), "<".to_string(), ">".to_string(), "<=".to_string(), ">=".to_string(), "min".to_string(), "max".to_string()], // Conditional operators
+            vec!["==".to_string(), "!=".to_string(), "<".to_string(), ">".to_string(), "<=".to_string(), ">=".to_string(), "min".to_string(), "max".to_string(),
+                "&&".to_string(), "||".to_string()], // Conditional operators
         ],
         conditions: None,
     };
@@ -140,15 +141,14 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
         vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
         vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
         ops: vec![
-            vec!["abs".to_string()],
+            vec![],
             vec!["+".to_string(), "-".to_string(), "*".to_string(), "/".to_string()],
         ],
         conditions: Some(
             ConditionRecipe {
-                max_size: 3,
-                ops: vec![
-                    vec![],
-                    vec!["<".to_string(), "<=".to_string(), "!=".to_string()],
+                max_size: 7,
+                ops: vec![vec![],
+                    vec!["<".to_string(), "<=".to_string(), "!=".to_string(), "&&".to_string(), "||".to_string()],
                 ],
                 vals: vec!["0".to_string()],
             }
@@ -173,8 +173,13 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
     let mut prior_ruleset: Ruleset<Pred> = Ruleset::default();
 
     for recipe in recipe_list {
+        let vars = recipe.vars.clone();
         let cond_recipe = recipe.conditions.clone();
-        let (workload, cond_r) = llm::generate_alphabet_soup(&recipe, cond_recipe.as_ref()).await;
+        let (workload, mut cond_r) = llm::generate_alphabet_soup(&recipe, cond_recipe.as_ref()).await;
+        if let Some(c) = cond_r {
+            // we append `vars` here because without them, we don't get the correct cvec length.
+            cond_r = Some(c.append(Workload::new(vars.clone())));
+        }
         let ruleset = halide::soup_to_rules(
             &workload,
             cond_r.as_ref(),

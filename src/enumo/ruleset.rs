@@ -333,6 +333,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 }
 
                                 println!("candidate: if {} then {} ~> {}", pred, e1, e2);
+
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
                             }
                         }

@@ -366,6 +366,8 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
 
     fn get_condition_propagation_rules(conditions: &Workload) -> Vec<Rewrite<Self, SynthAnalysis>> {
         let forced = conditions.force();
+
+
         let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
         let mut cache: HashMap<(String, String), bool> = Default::default();
         for c in &forced {
