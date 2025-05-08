@@ -485,7 +485,7 @@ pub fn get_condition_workload() -> Workload {
     // variables and 0.
 
     let leaves = Workload::new(&["(OP2 V V)"])
-        .plug("V", &Workload::new(&["a", "b", "c", "0"]))
+        .plug("V", &Workload::new(&["a", "b", "c", "0", "1"]))
         .plug("OP2", &Workload::new(&["<", ">", "<=", "!="]));
 
     let branches = Workload::new(&["(OP2 V V)"])
@@ -502,16 +502,30 @@ pub fn get_condition_workload() -> Workload {
             "c".to_string(),
         ]));
 
-    let eq_rules = recursive_rules(
+    let mut implication_simplifiers = Ruleset::default();
+
+    let bool_only = recursive_rules(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", "==", "!="]]),
+        Lang::new(&["0", "1"], &["b1", "b2", "b3"], &[&["!"], &["&&", "||"]]),
         Ruleset::default(),
     );
 
+    implication_simplifiers.extend(bool_only.clone());
+
+    let eq_rules = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">=", "==", "!="]]),
+        Ruleset::default(),
+    );
+
+    implication_simplifiers.extend(eq_rules.clone());
+
+
     let rules = run_workload(
-        leaves.clone(),
-        eq_rules,
+        branches.clone(),
+        implication_simplifiers,
         Limits::synthesis(),
         Limits::minimize(),
         true,
@@ -526,6 +540,10 @@ pub fn get_condition_workload() -> Workload {
     let branches_forced = branches_better.force();
 
     println!("size after: {}", branches_forced.len());
+
+    for t in branches_forced.iter() {
+        println!("{}", t);
+    }
 
     branches_better
 }
