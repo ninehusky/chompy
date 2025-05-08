@@ -486,16 +486,17 @@ pub fn get_condition_workload() -> Workload {
 
     let leaves = Workload::new(&["(OP2 V V)"])
         .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-        .plug("OP2", &Workload::new(&["<", "<=", ">", ">="]));
+        .plug("OP2", &Workload::new(&["<", ">", "<=", "!="]));
 
     let branches = Workload::new(&["(OP2 V V)"])
         .plug("V", &leaves)
-        .plug("OP2", &Workload::new(&["&&", "||"]))
-        .append(
-            Workload::new(&["(OP2 V V)"])
-                .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-                .plug("OP2", &Workload::new(&["==", "!="])),
-        ).filter(Filter::Canon(vec![
+        .plug("OP2", &Workload::new(&["&&"]))
+        // .append(
+            // Workload::new(&["(OP2 V V)"])
+            //     .plug("V", &Workload::new(&["a", "b", "c", "0"]))
+            //     .plug("OP2", &Workload::new(&["==", "!="])),
+        // )
+        .filter(Filter::Canon(vec![
             "a".to_string(),
             "b".to_string(),
             "c".to_string(),

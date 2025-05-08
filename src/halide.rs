@@ -1062,7 +1062,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
 
-    for op in &["==", "<", "<=", ">", ">=", "||", "&&"] {
+    for op in &["<", "<=", ">", ">=", "&&"] {
         let big_wkld = Workload::new(&["0", "1"]).append(
             Workload::new(&["(OP V V)"])
                 // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
