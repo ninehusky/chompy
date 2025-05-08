@@ -234,6 +234,7 @@ pub fn shrink_implications(imps: &Vec<Implication<Pred>>, chosen: &Vec<Implicati
         let mut keep = vec![];
 
         // step 4
+        println!("implications to check: {}", imps.len());
         for imp in imps {
             let lhs = egg_to_egglog(&enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs).to_string()).unwrap());
             let rhs = egg_to_egglog(&enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs).to_string()).unwrap());
@@ -248,6 +249,8 @@ pub fn shrink_implications(imps: &Vec<Implication<Pred>>, chosen: &Vec<Implicati
             }
 
         }
+
+        println!("done");
 
     keep
 }
