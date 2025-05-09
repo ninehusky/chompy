@@ -484,33 +484,33 @@ pub fn get_condition_workload() -> Workload {
     // we're going to do conjunctions of ==, != with
     // variables and 0.
 
-    let leaves = Workload::new(&["(OP2 V V)"])
+    let leaves = Workload::new(&["0", "1", "(OP2 V V)"])
         .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-        .plug("OP2", &Workload::new(&["<", ">", "<=", "!="]));
+        .plug("OP2", &Workload::new(&["<", ">", "<=", "!=", "=="]));
 
     let branches = Workload::new(&["(OP2 V V)"])
         .plug("V", &leaves)
         .plug("OP2", &Workload::new(&["&&"]))
-        // .append(
-            // Workload::new(&["(OP2 V V)"])
-            //     .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-            //     .plug("OP2", &Workload::new(&["==", "!="])),
-        // )
         .filter(Filter::Canon(vec![
             "a".to_string(),
             "b".to_string(),
             "c".to_string(),
         ]));
 
-    let eq_rules = recursive_rules(
+    let mut eq_rules = Ruleset::default();
+    eq_rules.add(Rule::from_string("(&& (<= ?a ?b) (<= ?b ?a)) ==> (== ?a ?b)".into()).unwrap().0);
+
+    let new_rules = recursive_rules(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", "==", "!="]]),
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", "==", "!=", "&&"]]),
         Ruleset::default(),
     );
 
+    eq_rules.extend(new_rules);
+
     let rules = run_workload(
-        leaves.clone(),
+        branches.clone(),
         eq_rules,
         Limits::synthesis(),
         Limits::minimize(),
@@ -519,14 +519,24 @@ pub fn get_condition_workload() -> Workload {
         None,
     );
 
-    println!("size before: {}", branches.force().len());
+    println!("rules: {}", rules.len());
+    for r in rules.iter() {
+        println!("{}", r);
+    }
 
     let branches_better = compress(&branches, rules.clone());
 
     let branches_forced = branches_better.force();
 
-    println!("size after: {}", branches_forced.len());
+    println!("theWORKloadD");
 
+    for t in branches_forced.iter() {
+        println!("{}", t);
+    }
+
+    println!("size before: {}", branches.force().len());
+    println!("size after: {}", branches_forced.len());
+    
     branches_better
 }
 
