@@ -480,22 +480,21 @@ impl<L: SynthLanguage> Ruleset<L> {
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         by_cond: &IndexMap<String, Ruleset<L>>,
     ) {
-        let mut keep: Self = Default::default();
         for (condition, candidates) in by_cond.iter() {
+            let mut keep: Self = Default::default();
             // 1. Make a new e-graph.
             let mut egraph = EGraph::default();
 
-            println!("step 1 done");
+            println!("top");
             // 2. Add the condition to the e-graph.
             let cond_pat: &Pattern<L> = &condition.parse().unwrap();
             let cond_ast = &L::instantiate(cond_pat);
             egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
-            println!("step 2 done");
 
 
             // 3. Add lhs, rhs of all candidates with the condition to the e-graph.
             let mut initial = vec![];
-            for rule in candidates.0.values() {
+            for rule in self.0.values() {
                 // if the rule is no longer in the candidate ruleset (self), skip it.
                 if self.0.get(&rule.name).is_none() {
                     continue;
@@ -504,32 +503,29 @@ impl<L: SynthLanguage> Ruleset<L> {
                 let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
                 initial.push((lhs, rhs, rule.clone()));
             }
-            println!("step 3 done");
 
             // 4. Run condition propagation rules.
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
                 .run(prop_rules);
-            println!("step 4 done");
 
             // 5. Compress the candidates with the rules we've chosen so far.
             let egraph = scheduler.run(&runner.egraph, chosen);
-            println!("step 5 done");
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
                 if egraph.find(l_id) == egraph.find(r_id) {
                     // candidate has merged (derivable from other rewrites)
+                    println!("{} is derivable", rule.name);
                     continue;
                 } else {
                     keep.add(rule);
                 }
             }
 
-            println!("step 6 done");
+        self.0 = keep.0;
         }
 
-        self.0 = keep.0;
     }
 
     fn shrink(&mut self, chosen: &Self, scheduler: Scheduler) {
@@ -581,6 +577,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         while !self.is_empty() {
+            println!("candidates remaining: {}", self.len());
             let selected = self.select(step_size, &mut invalid);
             if selected.is_empty() {
                 continue;
