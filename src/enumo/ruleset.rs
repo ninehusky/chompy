@@ -478,51 +478,58 @@ impl<L: SynthLanguage> Ruleset<L> {
         chosen: &Self,
         scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
-        added_rule: &Rule<L>,
+        by_cond: &IndexMap<String, Ruleset<L>>,
     ) {
-        println!("rules:");
-        for r in chosen.clone() {
-            println!("{}", r.0);
+        let mut keep: Self = Default::default();
+        for (condition, candidates) in by_cond.iter() {
+            // 1. Make a new e-graph.
+            let mut egraph = EGraph::default();
 
-        }
-        let mut will_choose: Self = Default::default();
+            println!("step 1 done");
+            // 2. Add the condition to the e-graph.
+            let cond_pat: &Pattern<L> = &condition.parse().unwrap();
+            let cond_ast = &L::instantiate(cond_pat);
+            egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+            println!("step 2 done");
 
-        // 1. make new egraph
-        let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
 
-        let mut initial = vec![];
-
-        // 2. insert lhs and rhs of all candidates as roots
-        for rule in self.0.values() {
-            let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
-            let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
-            initial.push((lhs, rhs, rule.clone()));
-        }
-
-        let cond_ast = &L::instantiate(&added_rule.cond.clone().unwrap());
-        egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
-
-        println!("adding: {}", cond_ast);
-
-        // 2.5: do condition propagation
-        let runner: Runner<L, SynthAnalysis> = Runner::default()
-            .with_egraph(egraph.clone())
-            .run(prop_rules);
-
-        // 3. compress with the rules we've chosen so far
-        let egraph = scheduler.run(&runner.egraph, chosen);
-
-        // 4. go through candidates. for each candidate `if c then l ~> r`, if
-        // l and r have merged and this rule's condition implies the candidate's, then they are no longer candidates.
-        for (l_id, r_id, rule) in initial {
-            if egraph.find(l_id) == egraph.find(r_id) {
-                continue;
-            } else {
-                will_choose.add(rule);
+            // 3. Add lhs, rhs of all candidates with the condition to the e-graph.
+            let mut initial = vec![];
+            for rule in candidates.0.values() {
+                // if the rule is no longer in the candidate ruleset (self), skip it.
+                if self.0.get(&rule.name).is_none() {
+                    continue;
+                }
+                let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
+                let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
+                initial.push((lhs, rhs, rule.clone()));
             }
+            println!("step 3 done");
+
+            // 4. Run condition propagation rules.
+            let runner: Runner<L, SynthAnalysis> = Runner::default()
+                .with_egraph(egraph.clone())
+                .run(prop_rules);
+            println!("step 4 done");
+
+            // 5. Compress the candidates with the rules we've chosen so far.
+            let egraph = scheduler.run(&runner.egraph, chosen);
+            println!("step 5 done");
+
+            // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
+            for (l_id, r_id, rule) in initial {
+                if egraph.find(l_id) == egraph.find(r_id) {
+                    // candidate has merged (derivable from other rewrites)
+                    continue;
+                } else {
+                    keep.add(rule);
+                }
+            }
+
+            println!("step 6 done");
         }
 
-        self.0 = will_choose.0;
+        self.0 = keep.0;
     }
 
     fn shrink(&mut self, chosen: &Self, scheduler: Scheduler) {
@@ -563,10 +570,18 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut invalid: Ruleset<L> = Default::default();
         let mut chosen = prior.clone();
         let step_size = 1;
+
+        // bin the candidates by their conditions
+        let mut by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
+
+        for rule in self.0.values() {
+            if let Some(cond) = &rule.cond {
+                by_cond.entry(cond.clone().to_string()).or_default().add(rule.clone());
+            }
+        }
+
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
-            // TODO: why do I need this here? what does it mean when `self.select` returns nothing?
-            // See #10.
             if selected.is_empty() {
                 continue;
             }
@@ -575,7 +590,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 &chosen,
                 scheduler,
                 prop_rules,
-                selected.0.values().next().unwrap(),
+                &by_cond,
             );
         }
         // Return only the new rules
