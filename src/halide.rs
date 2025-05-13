@@ -983,40 +983,53 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
-    let (pvec_to_terms, cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide();
+
+    let (pvec_to_terms, cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide(&wkld);
     let mut all_rules = Ruleset::default();
 
-    let equality = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-        all_rules.clone(),
-    );
+    // let equality = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+    //     all_rules.clone(),
+    // );
 
-    all_rules.extend(equality);
+    // all_rules.extend(equality);
 
-    let comparisons = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // let comparisons = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
-    all_rules.extend(comparisons);
+    // all_rules.extend(comparisons);
 
-    let bool_only = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-        all_rules.clone(),
-    );
+    // let bool_only = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+    //     all_rules.clone(),
+    // );
 
-    all_rules.extend(bool_only);
+    // all_rules.extend(bool_only);
 
     // // corresponds to "mul/div with constants + mul/div with constants and other arith"
-    let arith_basic = recursive_rules_cond(
+    // let arith_basic = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     3,
+    //     Lang::new(
+    //         &["-1", "0", "1"],
+    //         &["a", "b", "c"],
+    //         &[&[], &["+", "-", "*", "/", "%"]],
+    //     ),
+    //     Ruleset::default(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
+    let arith_basic = recursive_rules(
         Metric::Atoms,
         3,
         Lang::new(
@@ -1024,29 +1037,27 @@ pub fn og_recipe() -> Ruleset<Pred> {
             &["a", "b", "c"],
             &[&[], &["+", "-", "*", "/", "%"]],
         ),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
+        Ruleset::default(),
     );
 
     all_rules.extend(arith_basic.clone());
 
-    let min_max = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // let min_max = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
-    all_rules.extend(min_max);
+    // all_rules.extend(min_max);
 
     // the special workloads, which mostly revolve around
     // composing int2boolop(int_term, int_term) or things like that
     // together.
     //
-    let int_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["+", "-", "min", "max"]]);
+    let int_lang = Lang::new(&["0", "1"], &["a", "b", "c"], &[&["abs"], &["+", "-", "min", "max"]]);
 
     let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
         .filter(Filter::Contains("VAR".parse().unwrap()))
@@ -1058,32 +1069,42 @@ pub fn og_recipe() -> Ruleset<Pred> {
         int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
 
-    // for op in &["<", "<=", ">", ">=", "&&"] {
-    //     let big_wkld = Workload::new(&["0", "1"]).append(
-    //         Workload::new(&["(OP V V)"])
-    //             // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-    //             // thing where we have to basically feed in these operators one at a time.
-    //             .plug("OP", &Workload::new(&[op]))
-    //             .plug("V", &int_wkld)
-    //             .filter(Filter::MetricLt(Metric::Atoms, 8)),
-    //     );
+    println!("int_wkld:");
+    for t in int_wkld.force() {
+        println!("{}", t);
+    }
 
-    //     let wrapped_rules = run_workload(
-    //         big_wkld,
-    //         arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
-    //         Limits::synthesis(),
-    //         Limits {
-    //             iter: 1,
-    //             node: 100_000,
-    //             match_: 100_000,
-    //         },
-    //         true,
-    //         Some(pvec_to_terms.clone()),
-    //         Some(cond_prop_ruleset.clone()),
-    //     );
+    println!("arith_basic:");
+    for r in arith_basic.iter() {
+        println!("{:?}", r.name);
+    }
 
-    //     all_rules.extend(wrapped_rules);
-    // }
+    for op in &["min"] {
+        let big_wkld = Workload::new(&["0", "1"]).append(
+            Workload::new(&["(OP V V)"])
+                // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
+                // thing where we have to basically feed in these operators one at a time.
+                .plug("OP", &Workload::new(&[op]))
+                .plug("V", &int_wkld)
+                .filter(Filter::MetricLt(Metric::Atoms, 8)),
+        );
+
+        let wrapped_rules = run_workload(
+            big_wkld,
+            arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
+            Limits::synthesis(),
+            Limits {
+                iter: 1,
+                node: 100_000,
+                match_: 100_000,
+            },
+            true,
+            Some(pvec_to_terms.clone()),
+            Some(cond_prop_ruleset.clone()),
+        );
+
+        all_rules.extend(wrapped_rules);
+    }
 
     all_rules
 }

@@ -15,17 +15,18 @@ use egglog::{extract, EGraph as EgglogEGraph};
 
 #[test]
 fn test_it() {
-    get_condition_propagation_rules_halide();
+    let wkld = get_condition_workload();
+    get_condition_propagation_rules_halide(&wkld);
 }
 
-pub fn get_condition_propagation_rules_halide() -> (
+pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
     HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
     Vec<Rewrite<Pred, SynthAnalysis>>,
 ) {
     // 1. enumerate the condition workload.
     // we can discuss further about if this needs to be a separate step, or if
     // there's some clever reusing of the "term workload" that we can do.
-    let wkld = get_condition_workload();
+    // let wkld = get_condition_workload();
 
     println!("step 1 done");
 
@@ -486,7 +487,7 @@ pub fn get_condition_workload() -> Workload {
 
     let leaves = Workload::new(&["0", "1", "(OP2 V V)"])
         .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-        .plug("OP2", &Workload::new(&["<", ">", "<=", "!=", "=="]));
+        .plug("OP2", &Workload::new(&["<", ">", "!="]));
 
     let branches = Workload::new(&["(OP2 V V)"])
         .plug("V", &leaves)
