@@ -1,15 +1,14 @@
 use std::{
     fmt::{Debug, Display},
-    hash::Hash,
+    hash::Hash, str::FromStr,
 };
 
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, PatternAst,
-    RecExpr, Rewrite, Subst,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language, PatternAst, RecExpr, Rewrite, Subst
 };
 use enumo::{lookup_pattern, Workload};
 
-use crate::{recipe_utils::Lang, *};
+use crate::{enumo::Sexp, recipe_utils::Lang, *};
 
 // An `ImplicationSwitch` models the implication of one condition to another.
 //
@@ -83,6 +82,8 @@ where
             return vec![];
         }
 
+        println!("adding {}", is_true_my_pattern);
+
         let new_id = apply_pat(
             is_true_my_pattern.ast.as_ref().iter().as_slice(),
             egraph,
@@ -90,6 +91,12 @@ where
         );
 
         // extract egraph[new_id]
+
+        if is_true_parent_pattern.to_string() == "(istrue (&& ?a ?b))" {
+            let extractor = Extractor::new(egraph, AstSize);
+            let (cost, ast) = extractor.find_best(new_id);
+            println!("added {} with cost {}", ast, cost);
+        }
 
         vec![new_id]
     }
@@ -470,16 +477,42 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         RecExpr::from(nodes)
     }
 
-    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> i32 {
-        let c_size = if cond.is_some() {
-            AstSize.cost_rec(&cond.clone().unwrap().ast) as i32
+    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> [i32; 2] {
+        fn sexp_to_cost(sexp: Sexp) -> i32 {
+            match sexp {
+                Sexp::Atom(a) => {
+                    // if we can parse `a` into a number, then...
+                    if let Ok(_) = a.parse::<i32>() {
+                        // slight penalty for constants
+                        2
+                    } else {
+                        1
+                    }
+                }
+                Sexp::List(l) => {
+                    l.into_iter()
+                        .map(|s| sexp_to_cost(s))
+                        .sum::<i32>()
+                }
+            }
+        }
+
+        let c_cost = if cond.is_some() {
+            sexp_to_cost(Sexp::from_str(&cond.clone().unwrap().to_string().as_str()).unwrap())
         } else {
             0
         };
-        let l_size = AstSize.cost_rec(&lhs.ast) as i32;
-        let r_size = AstSize.cost_rec(&rhs.ast) as i32;
+        let l_cost = sexp_to_cost(Sexp::from_str(&lhs.to_string().as_str()).unwrap());
+        let r_cost = sexp_to_cost(Sexp::from_str(&rhs.to_string().as_str()).unwrap());
 
-        -(l_size + r_size + c_size)
+        let mut vars: HashSet<Var> = Default::default();
+        vars.extend(lhs.vars());
+        vars.extend(rhs.vars());
+        if let Some(cond) = cond {
+            vars.extend(cond.vars());
+        }
+
+        [-(l_cost + r_cost + c_cost), vars.len() as i32]
     }
 
     #[allow(dead_code)]

@@ -73,7 +73,6 @@ fn run_workload_internal<L: SynthLanguage>(
         // now, try to add some conditions into tha mix!
         let mut conditional_candidates = Ruleset::conditional_cvec_match(&compressed, &conditions);
 
-
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
             chosen.clone(),
             Scheduler::Compress(minimize_limits),
