@@ -57,8 +57,6 @@ fn run_workload_internal<L: SynthLanguage>(
 
     let mut chosen: Ruleset<L> = prior.clone();
 
-    println!("num candidates: {}", candidates.len());
-
     // minimize the total candidates with respect to the prior rules
     let (chosen_total, _) =
         candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
@@ -67,11 +65,17 @@ fn run_workload_internal<L: SynthLanguage>(
 
     chosen.extend(chosen_total.clone());
 
-    let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen_total);
+    let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
     if let Some(conditions) = conditions {
         // now, try to add some conditions into tha mix!
         let mut conditional_candidates = Ruleset::conditional_cvec_match(&compressed, &conditions);
+
+        println!("conditional candidates:");
+
+        for r in conditional_candidates.0.iter() {
+            println!("  {}", r.0);
+        }
 
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
             chosen.clone(),

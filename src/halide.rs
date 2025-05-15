@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{enumo::Rule, *};
 
 use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
@@ -966,13 +966,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
-    let wkld = Workload::new(&["(&& (<= b 0) (<= 0 a))", "(<= 0 b)", "(<= b 0)", "(<= 0 a)", "(<= a 0)", "(<= a b)", "(<= b a)"]);
-
+    // let wkld = Workload::new(&["(&& (<= b a) (<= a 0))", "(<= a b)", "(>= a b)", "(<= b a)", "(>= b a)"]);
     let (pvec_to_terms, cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide(&wkld);
     let mut all_rules = Ruleset::default();
 
     let mut additional_imps = cond_prop_ruleset.clone();
-
 
     additional_imps.push( 
         ImplicationSwitch::new(
@@ -1044,21 +1042,21 @@ pub fn og_recipe() -> Ruleset<Pred> {
     //     &pvec_to_terms,
     //     &cond_prop_ruleset,
     // );
-    let arith_basic = recursive_rules_cond(
-        Metric::Atoms,
-        3,
-        Lang::new(
-            &["-1", "0", "1"],
-            &["a", "b"],
-            &[&[], &["+", "-", "*", "/", "%"]],
-        ),
-        Ruleset::default(),
-        &pvec_to_terms,
-        // &cond_prop_ruleset,
-        &additional_imps,
-    );
+    // let arith_basic = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     3,
+    //     Lang::new(
+    //         &["-1", "0", "1"],
+    //         &["a", "b"],
+    //         &[&[], &["+", "-", "*", "/", "%"]],
+    //     ),
+    //     Ruleset::default(),
+    //     &pvec_to_terms,
+    //     // &cond_prop_ruleset,
+    //     &additional_imps,
+    // );
 
-    all_rules.extend(arith_basic.clone());
+    // all_rules.extend(arith_basic.clone());
 
     // let min_max = recursive_rules_cond(
     //     Metric::Atoms,
@@ -1095,10 +1093,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
     //     println!("{:?}", r.name);
     // }
 
+
     let min_max = recursive_rules_cond(
         Metric::Atoms,
         5,
-        Lang::new(&[], &["a", "b"], &[&[], &["min", "max", "+", "-", "*", "/"]]),
+        Lang::new(&[], &["a", "b"], &[&[], &["min", "max", "+"]]),
         all_rules.clone(),
         &pvec_to_terms,
         &additional_imps,

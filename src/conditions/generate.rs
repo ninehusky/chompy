@@ -73,7 +73,7 @@ pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
 
     candidates = good_candidates.clone();
 
-    println!("candidates: {}", candidates.len());
+    println!("number of candidate_imps: {}", candidates.len());
 
 
     let mut candidate_imps: Vec<Implication<Pred>> = candidates
@@ -96,6 +96,8 @@ pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
 
     // 4. minimization.
     let result = minimize_implications(&mut candidate_imps, &mut vec![]);
+
+    println!("implications: {}", result.0.len());
 
     for r in result.0.clone() {
         println!("{}", r.name);
@@ -267,9 +269,10 @@ pub fn select(
         let popped = implications.0.pop();
         if let Some((_, rule)) = popped {
             if matches!(validate_implication(rule.clone()), ValidationResult::Valid) {
-                println!("{} is valid", rule);
+                println!("{} is valid", rule.name);
                 selected.add(rule.clone());
             } else {
+                println!("{} is invalid", rule.name);
                 invalid.add(rule.clone());
             }
         } else {
@@ -468,7 +471,6 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                         cond: None,
                     });
 
-                    candidates.add_from_recexprs(&e1, &e2);
                 }
             }
         }

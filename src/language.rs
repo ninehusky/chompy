@@ -82,21 +82,11 @@ where
             return vec![];
         }
 
-        println!("adding {}", is_true_my_pattern);
-
         let new_id = apply_pat(
             is_true_my_pattern.ast.as_ref().iter().as_slice(),
             egraph,
             subst,
         );
-
-        // extract egraph[new_id]
-
-        if is_true_parent_pattern.to_string() == "(istrue (&& ?a ?b))" {
-            let extractor = Extractor::new(egraph, AstSize);
-            let (cost, ast) = extractor.find_best(new_id);
-            println!("added {} with cost {}", ast, cost);
-        }
 
         vec![new_id]
     }
@@ -477,7 +467,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         RecExpr::from(nodes)
     }
 
-    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> [i32; 2] {
+    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> [i32; 1] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -512,7 +502,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             vars.extend(cond.vars());
         }
 
-        [-(l_cost + r_cost + c_cost), vars.len() as i32]
+        [-(l_cost + r_cost + c_cost)]
     }
 
     #[allow(dead_code)]
