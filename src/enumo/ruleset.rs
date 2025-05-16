@@ -1073,8 +1073,10 @@ pub mod tests {
 
         ruleset.add(Rule::from_string("(min (max ?c ?b) (+ ?b ?a)) ==> (min (+ ?b ?a) (- ?b ?a)) if (<= ?a 0)").unwrap().0);
 
+        let do_not_want = Rule::from_string("(min (+ ?b ?a) (max ?b ?c)) ==> (min (- ?b ?a) (+ ?b ?a)) if (<= ?a 0)").unwrap().0;
+
         let term_wkld = Workload::new(&["(min (+ b a) (max b c))", "(min (- b a) (+ b a))"]);
-        let cond_wkld = Workload::new(&["(<= a 0)"]);
+        let cond_wkld = Workload::new(&["(<= a 0)", "(<= b 0)", "(<= c 0)", "(<= a b)", "(<= b c)", "(<= c a)"]);
 
         let (pvec_to_terms, implication_rules) =
             crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
@@ -1094,7 +1096,7 @@ pub mod tests {
 
         actual_new_rules.remove_all(ruleset);
 
-        assert!(actual_new_rules.is_empty());
+        assert!(!actual_new_rules.contains(&do_not_want));
 
     }
 

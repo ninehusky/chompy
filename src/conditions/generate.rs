@@ -488,8 +488,16 @@ pub fn get_condition_workload() -> Workload {
     // we're going to do conjunctions of ==, != with
     // variables and 0.
 
+    let the_atoms = Workload::new(&["a", "b", "c"]).append(Workload::new(&["0"]));
+
+    // let the_ints = Workload::new(&["(OP2 V V)"])
+    //     .plug("V", &the_atoms)
+    //     .plug("OP1", &Workload::new(&["+"]));
+
+    let the_ints = the_atoms.clone();
+
     let leaves = Workload::new(&["0", "1", "(OP2 V V)"])
-        .plug("V", &Workload::new(&["a", "b", "c", "0"]))
+        .plug("V", &the_ints)
         .plug("OP2", &Workload::new(&["<", ">", "<=", "!="]));
 
     let branches = Workload::new(&["(OP2 V V)"])
