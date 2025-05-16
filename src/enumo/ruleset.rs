@@ -129,7 +129,11 @@ impl<L: SynthLanguage> Ruleset<L> {
             if rule.cond.is_some() {
                 continue;
             }
-            let reverse = Rule::new(&rule.rhs, &rule.lhs);
+            let reverse = if let Some(c) = &rule.cond {
+                Rule::new_cond(&rule.rhs, &rule.lhs, &c)
+            } else  {
+                Rule::new(&rule.rhs, &rule.lhs)
+            };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
                 bidir += 1;
             } else {
@@ -239,11 +243,20 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn pretty_print(&self) {
         let mut strs = vec![];
         for (name, rule) in &self.0 {
-            let reverse = Rule::new(&rule.rhs, &rule.lhs);
+            let reverse = if rule.cond.is_some() {
+                Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.clone().unwrap())
+            } else {
+                Rule::new(&rule.rhs, &rule.lhs)
+            };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
-                let reverse_name = format!("{} <=> {}", rule.rhs, rule.lhs);
+                let cond_display = if rule.cond.is_some() {
+                    format!(" if {}", rule.cond.clone().unwrap())
+                } else {
+                    "".to_string()
+                };
+                let reverse_name = format!("{} <=> {}{}", rule.rhs, rule.lhs, cond_display);
                 if !strs.contains(&reverse_name) {
-                    strs.push(format!("{} <=> {}", rule.lhs, rule.rhs));
+                    strs.push(format!("{} <=> {}{}", rule.lhs, rule.rhs, cond_display));
                 }
             } else {
                 strs.push(name.to_string());
@@ -383,7 +396,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 println!("candidate: if {} then {} ~> {}", pred, e1, e2);
 
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
-                                candidates.add_cond_from_recexprs(&e2, &e1, &pred);
                             }
                         }
                     }
@@ -506,7 +518,12 @@ impl<L: SynthLanguage> Ruleset<L> {
                 }
 
                 // If reverse direction is also in candidates, add it at the same time
-                let reverse = Rule::new(&rule.rhs, &rule.lhs);
+                let reverse = if rule.cond.is_some() {
+                    Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.unwrap())
+                } else {
+                    Rule::new(&rule.rhs, &rule.lhs)
+                };
+                
                 if let Some(reverse) = reverse {
                     if self.contains(&reverse) && reverse.is_valid() {
                         selected.add(reverse);
@@ -531,8 +548,20 @@ impl<L: SynthLanguage> Ruleset<L> {
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         by_cond: &IndexMap<String, Ruleset<L>>,
     ) {
+        let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
+
+        for (rule_name, rule) in self.0.iter() {
+            if let Some(cond) = &rule.cond {
+                actual_by_cond
+                    .entry(cond.clone().to_string())
+                    .or_default()
+                    .add(rule.clone());
+            }
+        }
+
+
         let mut should_remove = Ruleset::default();
-        for (condition, candidates) in by_cond.iter() {
+        for (condition, candidates) in actual_by_cond.iter() {
             println!("condition: {}", condition);
             println!("candidates: {}", candidates.len());
 
@@ -662,10 +691,9 @@ impl<L: SynthLanguage> Ruleset<L> {
         while !self.is_empty() {
             println!("candidates remaining: {}", self.len());
             let selected = self.select(step_size, &mut invalid);
-            assert!(selected.len() == 1);
             println!(
-                "I have selected this: {}",
-                selected.0.values().next().unwrap().name
+                "I have selected these: {:?}",
+                selected.0.values().map(|rule| rule.name.clone()).collect::<Vec<_>>()
             );
             if selected.is_empty() {
                 continue;
@@ -688,9 +716,9 @@ impl<L: SynthLanguage> Ruleset<L> {
                     println!("🟢 sacred rule is still in the pool");
                 }
             }
-            if !printed && inside {
-                panic!("sacred rule is not in the pool!");
-            }
+            // if !printed && inside {
+            //     panic!("sacred rule is not in the pool!");
+            // }
         }
         // Return only the new rules
         chosen.remove_all(prior);
@@ -1030,6 +1058,40 @@ pub mod tests {
 
         // new rules are actually those that were not in the original ruleset
         let mut actual_new_rules = new_rules.clone();
+        actual_new_rules.remove_all(ruleset);
+
+        assert!(actual_new_rules.is_empty());
+
+    }
+
+    #[test]
+    fn can_derive_4() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+        ruleset.add(Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0);
+        ruleset.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
+        ruleset.add(Rule::from_string("(+ ?a ?b) <=> (+ ?b ?a)").unwrap().0);
+
+        ruleset.add(Rule::from_string("(min (max ?c ?b) (+ ?b ?a)) ==> (min (+ ?b ?a) (- ?b ?a)) if (<= ?a 0)").unwrap().0);
+
+        let term_wkld = Workload::new(&["(min (+ b a) (max b c))", "(min (- b a) (+ b a))"]);
+        let cond_wkld = Workload::new(&["(<= a 0)"]);
+
+        let (pvec_to_terms, implication_rules) =
+            crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
+
+        let new_rules = run_workload(
+            term_wkld,
+            ruleset.clone(),
+            Limits::synthesis(),
+            Limits::synthesis(),
+            true,
+            Some(pvec_to_terms),
+            Some(implication_rules),
+        );
+
+        // new rules are actually those that were not in the original ruleset
+        let mut actual_new_rules = new_rules.clone();
+
         actual_new_rules.remove_all(ruleset);
 
         assert!(actual_new_rules.is_empty());
