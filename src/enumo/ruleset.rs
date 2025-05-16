@@ -5,11 +5,15 @@ use rayon::prelude::ParallelIterator;
 use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
 use crate::{
+    halide::{self, Pred},
+    recipe_utils::run_workload,
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature,
     SynthAnalysis, SynthLanguage,
 };
 
-use super::{Rule, Scheduler};
+use super::{Rule, Scheduler, Workload};
+
+const SACRED_RULE_NAME: &str = "(max ?b (+ ?b ?a)) ==> ?b if (<= ?a 0)";
 
 /// A set of rewrite rules
 #[derive(Clone, Debug)]
@@ -122,7 +126,14 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut bidir = 0;
         let mut unidir = 0;
         for (_, rule) in &self.0 {
-            let reverse = Rule::new(&rule.rhs, &rule.lhs);
+            if rule.cond.is_some() {
+                continue;
+            }
+            let reverse = if let Some(c) = &rule.cond {
+                Rule::new_cond(&rule.rhs, &rule.lhs, &c)
+            } else  {
+                Rule::new(&rule.rhs, &rule.lhs)
+            };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
                 bidir += 1;
             } else {
@@ -232,11 +243,20 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn pretty_print(&self) {
         let mut strs = vec![];
         for (name, rule) in &self.0 {
-            let reverse = Rule::new(&rule.rhs, &rule.lhs);
+            let reverse = if rule.cond.is_some() {
+                Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.clone().unwrap())
+            } else {
+                Rule::new(&rule.rhs, &rule.lhs)
+            };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
-                let reverse_name = format!("{} <=> {}", rule.rhs, rule.lhs);
+                let cond_display = if rule.cond.is_some() {
+                    format!(" if {}", rule.cond.clone().unwrap())
+                } else {
+                    "".to_string()
+                };
+                let reverse_name = format!("{} <=> {}{}", rule.rhs, rule.lhs, cond_display);
                 if !strs.contains(&reverse_name) {
-                    strs.push(format!("{} <=> {}", rule.lhs, rule.rhs));
+                    strs.push(format!("{} <=> {}{}", rule.lhs, rule.rhs, cond_display));
                 }
             } else {
                 strs.push(name.to_string());
@@ -294,6 +314,30 @@ impl<L: SynthLanguage> Ruleset<L> {
         egraph: &EGraph<L, SynthAnalysis>,
         conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
     ) -> Self {
+        // // find (max a (+ b a)) in the egraph.
+        // let max_id = egraph.lookup_expr(&"(max a (+ b a))".parse().unwrap());
+
+        // if let Some(max_id) = max_id {
+        //     // find the cvec for the max_id
+        //     let max_cvec = egraph[max_id].data.cvec.clone();
+        //     // find the cvec for "a"
+        //     let a_id = egraph.lookup_expr(&"a".parse().unwrap()).unwrap();
+
+        //     let a_cvec = egraph[a_id].data.cvec.clone();
+
+        //     println!("max cvec: {:?}", max_cvec);
+        //     println!("a cvec: {:?}", a_cvec);
+
+        //     let pvec = max_cvec.iter().zip(a_cvec.iter()).map(|(a, b)| a == b).collect::<Vec<bool>>();
+
+        //     println!("pvec: {:?}", pvec);
+
+        //     let cond = conditions.get(&pvec);
+
+        //     panic!("here is the condition matching (max a (+ b a)) and a: {:?}", cond);
+
+        // }
+
         let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::default();
 
         for class in egraph.classes() {
@@ -331,6 +375,23 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 if c1 == usize::MAX || c2 == usize::MAX {
                                     continue;
                                 }
+
+                                // let max_id = egraph.lookup_expr(&"(max a (+ b a))".parse().unwrap());
+
+                                // if let Some(max_id) = max_id {
+                                //     // find the cvec for the max_id
+                                //     let max_cvec = egraph[max_id].data.cvec.clone();
+                                //     // find the cvec for "a"
+                                //     let a_id = egraph.lookup_expr(&"a".parse().unwrap()).unwrap();
+                                //     let a_cvec = egraph[a_id].data.cvec.clone();
+
+                                //     if ((*cvec1).clone() == *a_cvec.clone() && (*cvec2).clone() == *max_cvec.clone()) ||
+                                //         (*cvec1).clone() == *max_cvec.clone() && (*cvec2).clone() == *a_cvec.clone() {
+                                //         println!("found a match for (max a (+ b a)) and a");
+                                //         println!("candidate: if {} then {} ~> {}", pred, e1, e2);
+                                //         // panic!();
+                                //     }
+                                // }
 
                                 println!("candidate: if {} then {} ~> {}", pred, e1, e2);
 
@@ -449,13 +510,20 @@ impl<L: SynthLanguage> Ruleset<L> {
             let popped = self.0.pop();
             if let Some((_, rule)) = popped {
                 if rule.is_valid() {
+                    println!("{} is valid", rule.name);
                     selected.add(rule.clone());
                 } else {
+                    println!("{} is invalid", rule.name);
                     invalid.add(rule.clone());
                 }
 
                 // If reverse direction is also in candidates, add it at the same time
-                let reverse = Rule::new(&rule.rhs, &rule.lhs);
+                let reverse = if rule.cond.is_some() {
+                    Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.unwrap())
+                } else {
+                    Rule::new(&rule.rhs, &rule.lhs)
+                };
+                
                 if let Some(reverse) = reverse {
                     if self.contains(&reverse) && reverse.is_valid() {
                         selected.add(reverse);
@@ -478,51 +546,95 @@ impl<L: SynthLanguage> Ruleset<L> {
         chosen: &Self,
         scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
-        added_rule: &Rule<L>,
+        by_cond: &IndexMap<String, Ruleset<L>>,
     ) {
-        println!("rules:");
-        for r in chosen.clone() {
-            println!("{}", r.0);
+        let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
-        }
-        let mut will_choose: Self = Default::default();
-
-        // 1. make new egraph
-        let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
-
-        let mut initial = vec![];
-
-        // 2. insert lhs and rhs of all candidates as roots
-        for rule in self.0.values() {
-            let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
-            let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
-            initial.push((lhs, rhs, rule.clone()));
-        }
-
-        let cond_ast = &L::instantiate(&added_rule.cond.clone().unwrap());
-        egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
-
-        println!("adding: {}", cond_ast);
-
-        // 2.5: do condition propagation
-        let runner: Runner<L, SynthAnalysis> = Runner::default()
-            .with_egraph(egraph.clone())
-            .run(prop_rules);
-
-        // 3. compress with the rules we've chosen so far
-        let egraph = scheduler.run(&runner.egraph, chosen);
-
-        // 4. go through candidates. for each candidate `if c then l ~> r`, if
-        // l and r have merged and this rule's condition implies the candidate's, then they are no longer candidates.
-        for (l_id, r_id, rule) in initial {
-            if egraph.find(l_id) == egraph.find(r_id) {
-                continue;
-            } else {
-                will_choose.add(rule);
+        for (rule_name, rule) in self.0.iter() {
+            if let Some(cond) = &rule.cond {
+                actual_by_cond
+                    .entry(cond.clone().to_string())
+                    .or_default()
+                    .add(rule.clone());
             }
         }
 
-        self.0 = will_choose.0;
+
+        let mut should_remove = Ruleset::default();
+        for (condition, candidates) in actual_by_cond.iter() {
+            println!("condition: {}", condition);
+            println!("candidates: {}", candidates.len());
+
+            for c in candidates.iter() {
+                println!("  {}", c.name);
+            }
+
+
+            let initial_len = candidates.len();
+            let mut keep: Self = Default::default();
+            // 1. Make a new e-graph.
+            let mut egraph = EGraph::default();
+
+            // 2. Add the condition to the e-graph.
+            let cond_pat: &Pattern<L> = &condition.parse().unwrap();
+            let cond_ast = &L::instantiate(cond_pat);
+            egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+
+            // 3. Add lhs, rhs of all candidates with the condition to the e-graph.
+            let mut initial = vec![];
+            // for rule in self.0.values() {
+            for (_, rule) in candidates {
+                // // if the rule is no longer in the candidate ruleset (self), skip it.
+                // if self.0.get(&rule.name).is_none() {
+                //     continue;
+                // }
+                let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
+                let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
+                if rule.name == "(max ?b (+ ?b ?a)) ==> ?b if (<= ?a 0)".into() {
+                    println!("adding in the sacred rule");
+                }
+                initial.push((lhs, rhs, rule.clone()));
+            }
+
+            // 4. Run condition propagation rules.
+            let runner: Runner<L, SynthAnalysis> = Runner::default()
+                .with_egraph(egraph.clone())
+                .run(prop_rules);
+
+            // println!("prop rules:");
+            // for r in prop_rules {
+            //     println!("  {}", r.name);
+            // }
+
+            // 5. Compress the candidates with the rules we've chosen so far.
+            let egraph = scheduler.run(&runner.egraph, chosen);
+
+            let mut removed = 0;
+
+            // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
+            for (l_id, r_id, rule) in initial {
+                if egraph.find(l_id) == egraph.find(r_id) {
+                    let r = Rule::<Pred>::from_string("(max ?b (+ ?b ?a)) ==> ?b if (<= ?a 0)");
+                    assert!(r.unwrap().0.is_valid());
+                    if rule.name == "(max ?b (+ ?b ?a)) ==> ?b if (<= ?a 0)".into() {
+                        println!("should get here");
+                    }
+                    removed += 1;
+                    should_remove.add(rule.clone());
+                    continue;
+                } else {
+                    if rule.name == "(max ?b (+ ?b ?a)) ==> ?b if (<= ?a 0)".into() {
+                        println!("we are keeping the sacred rule");
+                    }
+
+                    keep.add(rule);
+                }
+            }
+
+            assert_eq!(keep.len(), initial_len - removed);
+        }
+
+        self.remove_all(should_remove.clone());
     }
 
     fn shrink(&mut self, chosen: &Self, scheduler: Scheduler) {
@@ -563,20 +675,50 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut invalid: Ruleset<L> = Default::default();
         let mut chosen = prior.clone();
         let step_size = 1;
+
+        // bin the candidates by their conditions
+        let mut by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
+
+        for rule in self.0.values() {
+            if let Some(cond) = &rule.cond {
+                by_cond
+                    .entry(cond.clone().to_string())
+                    .or_default()
+                    .add(rule.clone());
+            }
+        }
+
         while !self.is_empty() {
+            println!("candidates remaining: {}", self.len());
             let selected = self.select(step_size, &mut invalid);
-            // TODO: why do I need this here? what does it mean when `self.select` returns nothing?
-            // See #10.
+            println!(
+                "I have selected these: {:?}",
+                selected.0.values().map(|rule| rule.name.clone()).collect::<Vec<_>>()
+            );
             if selected.is_empty() {
                 continue;
             }
             chosen.extend(selected.clone());
-            self.shrink_cond(
-                &chosen,
-                scheduler,
-                prop_rules,
-                selected.0.values().next().unwrap(),
-            );
+
+            let mut inside = false;
+            for rule in self.0.values() {
+                if rule.name == SACRED_RULE_NAME.into() {
+                    inside = true;
+                    println!("🟢 sacred rule is still in the pool");
+                }
+            }
+            println!("now, calling shrink!");
+            self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
+            let mut printed = false;
+            for rule in self.0.values() {
+                if rule.name == SACRED_RULE_NAME.into() {
+                    printed = true;
+                    println!("🟢 sacred rule is still in the pool");
+                }
+            }
+            // if !printed && inside {
+            //     panic!("sacred rule is not in the pool!");
+            // }
         }
         // Return only the new rules
         chosen.remove_all(prior);
@@ -594,6 +736,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
+            println!(
+                "I have chosen: {}",
+                selected.0.values().next().unwrap().name
+            );
             // assert_eq!(selected.len(), 1); <-- wasn't this here in ruler?
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
@@ -801,4 +947,372 @@ where
         }
     }
     out
+}
+
+// A series of tests containing some sanity checks about derivability.
+pub mod tests {
+    use crate::enumo::{rule, Rule};
+    use crate::halide::Pred;
+    use crate::ImplicationSwitch;
+
+    use super::*;
+
+    #[test]
+    pub fn score_is_good() {
+        let rule_1: Rule<Pred> = Rule::from_string("(min ?a (+ ?a ?a)) ==> (+ ?a ?a) if (<= ?a 0)")
+            .unwrap()
+            .0;
+
+        let rule_2: Rule<Pred> = Rule::from_string("(+ ?a (max ?a ?b)) ==> (min ?a (+ ?a ?a)) if (&& (<= ?b ?a) (<= ?a 0))")
+            .unwrap()
+            .0;
+
+        let r1_score = rule_1.score();
+        let r2_score = rule_2.score();
+
+        println!("{}: {:?}", rule_1, r1_score);
+        println!("{}: {:?}", rule_2, r2_score);
+
+        assert!(rule_1.score() < rule_2.score());
+
+    }
+
+    // R = {(min ?a ?b) <=> (min ?b ?a) (min (abs ?a) 0) ==> 0}.
+    // r = (min 0 (abs ?a)) => 0.
+    // test if R |= r.
+    #[test]
+    pub fn test_min_derive() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+        let (fw, bw) = Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap();
+        ruleset.add(fw);
+        ruleset.add(bw.unwrap());
+
+        let (fw, _) = Rule::from_string("(min (abs ?a) 0) ==> 0").unwrap();
+
+        ruleset.add(fw);
+
+        let derivable = Rule::<Pred>::from_string("(min 0 (abs ?a)) ==> 0").unwrap();
+        let mut derivable_rules = Ruleset::default();
+        derivable_rules.add(derivable.0);
+
+        let limits = Limits::deriving();
+        let scheduler = Scheduler::Saturating(limits);
+
+        derivable_rules.shrink(&ruleset, scheduler);
+        assert_eq!(derivable_rules.len(), 0);
+    }
+
+    #[test]
+    fn select_is_good() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+        ruleset.add(
+            Rule::from_string("(max ?b (+ ?b ?a)) ==> (min ?b ?a) if (&& (<= ?b ?a) (<= ?a 0))")
+                .unwrap()
+                .0,
+        );
+        ruleset.add(
+            Rule::from_string("(max ?b (+ ?b ?a)) ==> ?b if (&& (<= ?b ?a) (<= ?a 0))")
+                .unwrap()
+                .0,
+        );
+
+
+        let selected = ruleset.select(1, &mut Ruleset::default());
+        let selected2 = ruleset.select(1, &mut Ruleset::default());
+        println!("selected: {:?}", selected);
+        println!("selected2: {:?}", selected2);
+    }
+
+    #[test]
+    // R = {(max ?a ?b) <==> (max ?b ?a), if (<= ?a ?b) then (max ?a ?b) ==> ?b}
+    // r = (max ?a ?b) ==> ?b if (<= ?a ?b).
+    // test if R |= r.
+    fn can_derive_simple() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+        ruleset.add(Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0);
+        ruleset.add(
+            Rule::from_string("(max ?a ?b) ==> ?b if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        let term_wkld = Workload::new(&["(max a b)", "a"]);
+        let cond_wkld = Workload::new(&["(<= a b)", "(<= b a)", "(>= a b)", "(>= b a)"]);
+
+        let should_be_derivable: Rule<Pred> =
+            Rule::from_string("(max ?a ?b) ==> ?a if (<= ?a ?b)").unwrap().0;
+        assert!(should_be_derivable.is_valid());
+
+        let (pvec_to_terms, implication_rules) =
+            crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
+
+        let new_rules = run_workload(
+            term_wkld,
+            ruleset.clone(),
+            Limits::synthesis(),
+            Limits::synthesis(),
+            true,
+            Some(pvec_to_terms),
+            Some(implication_rules),
+        );
+
+        // new rules are actually those that were not in the original ruleset
+        let mut actual_new_rules = new_rules.clone();
+        actual_new_rules.remove_all(ruleset);
+
+        assert!(actual_new_rules.is_empty());
+
+    }
+
+    #[test]
+    fn can_derive_4() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+        ruleset.add(Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0);
+        ruleset.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
+        ruleset.add(Rule::from_string("(+ ?a ?b) <=> (+ ?b ?a)").unwrap().0);
+
+        ruleset.add(Rule::from_string("(min (max ?c ?b) (+ ?b ?a)) ==> (min (+ ?b ?a) (- ?b ?a)) if (<= ?a 0)").unwrap().0);
+
+        let do_not_want = Rule::from_string("(min (+ ?b ?a) (max ?b ?c)) ==> (min (- ?b ?a) (+ ?b ?a)) if (<= ?a 0)").unwrap().0;
+
+        let term_wkld = Workload::new(&["(min (+ b a) (max b c))", "(min (- b a) (+ b a))"]);
+        let cond_wkld = Workload::new(&["(<= a 0)", "(<= b 0)", "(<= c 0)", "(<= a b)", "(<= b c)", "(<= c a)"]);
+
+        let (pvec_to_terms, implication_rules) =
+            crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
+
+        let new_rules = run_workload(
+            term_wkld,
+            ruleset.clone(),
+            Limits::synthesis(),
+            Limits::synthesis(),
+            true,
+            Some(pvec_to_terms),
+            Some(implication_rules),
+        );
+
+        // new rules are actually those that were not in the original ruleset
+        let mut actual_new_rules = new_rules.clone();
+
+        actual_new_rules.remove_all(ruleset);
+
+        assert!(!actual_new_rules.contains(&do_not_want));
+
+    }
+
+    #[test]
+    fn can_derive_3() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+
+        let term_wkld = Workload::new(&["(+ a (max b a))", "(min a (+ a a))", "a", "b", "(+ a a)", "(min a b)", "(min b a)", "(max a b)", "(max b a)"]);
+        let cond_wkld = Workload::new(&["(&& (<= b a) (<= a 0))", "(<= a b)", "(>= a b)", "(<= b a)", "(>= b a)"]);
+
+        // okay, so the new rules which should be synthesized given prior ruleset
+        // and workloads are: NONE!
+
+        let (pvec_to_terms, implication_rules) =
+            crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
+
+        let mut additional_imps = implication_rules.clone();
+        // (&& a b) ==> a
+        additional_imps.push(
+            ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?a".parse().unwrap())
+                .rewrite(),
+        );
+
+        // (&& a b) ==> b
+        additional_imps.push(
+            ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?b".parse().unwrap())
+                .rewrite(),
+        );
+
+        println!("implication rules:");
+        for rule in additional_imps.iter() {
+            println!("  {}", rule.name);
+        }
+
+        let new_rules = run_workload(
+            term_wkld,
+            ruleset.clone(),
+            Limits::synthesis(),
+            Limits::synthesis(),
+            true,
+            Some(pvec_to_terms),
+            Some(additional_imps),
+        );
+
+        // new rules are actually those that were not in the original ruleset
+        let mut actual_new_rules = new_rules.clone();
+        actual_new_rules.remove_all(ruleset);
+
+        assert!(actual_new_rules.is_empty());
+    }
+
+    #[test]
+    fn can_derive_2() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+        ruleset.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
+
+        // we don't have this rule ruight now, but say we did.
+        ruleset.add(
+            Rule::from_string("(max ?b (+ ?b ?a)) ==> ?b if (&& (<= ?b ?a) (<= ?a 0))")
+                .unwrap()
+                .0,
+        );
+
+        assert!(Rule::<Pred>::from_string(
+            "(max ?b (+ ?b ?a)) ==> ?b if (&& (<= ?b ?a) (<= ?a 0))"
+        )
+        .unwrap()
+        .0
+        .is_valid());
+
+        let term_wkld = Workload::new(&["(max ?b (+ ?b ?a))", "(min ?b ?a)"]);
+        let cond_wkld = Workload::new(&["(<= b a)", "(<= a 0)", "(&& (<= b a) (<= a 0))"]);
+
+        let should_be_derivable: Rule<Pred> =
+            Rule::from_string("(max ?b (+ ?b ?a)) ==> (min ?b ?a) if (&& (<= ?b ?a) (<= ?a 0))")
+                .unwrap()
+                .0;
+
+        assert!(should_be_derivable.is_valid());
+
+        let (pvec_to_terms, implication_rules) =
+            crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
+
+        let mut additional_imps = implication_rules.clone();
+        // (&& a b) ==> a
+        additional_imps.push(
+            ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?a".parse().unwrap())
+                .rewrite(),
+        );
+
+        // (&& a b) ==> b
+        additional_imps.push(
+            ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?b".parse().unwrap())
+                .rewrite(),
+        );
+
+        let new_rules = run_workload(
+            term_wkld,
+            ruleset.clone(),
+            Limits::synthesis(),
+            Limits::synthesis(),
+            true,
+            Some(pvec_to_terms),
+            Some(additional_imps),
+        );
+
+        // new rules are actually those that were not in the original ruleset
+        let mut actual_new_rules = new_rules.clone();
+        actual_new_rules.remove_all(ruleset);
+
+        assert!(actual_new_rules.is_empty());
+
+        println!("new rules:");
+        for rule in actual_new_rules.iter() {
+            println!("{}", rule.name);
+        }
+    }
+
+    #[test]
+    fn can_derive_huh() {
+        let mut ruleset: Ruleset<Pred> = Ruleset::default();
+        ruleset.add(
+            Rule::from_string("(max ?b (+ ?b ?a)) ==> ?b if (<= ?a 0)")
+                .unwrap()
+                .0,
+        );
+        ruleset.add(
+            Rule::from_string("(max ?b (+ ?b ?a)) ==> (+ ?b ?a) if (>= ?a 0)")
+                .unwrap()
+                .0,
+        );
+        ruleset.add(
+            Rule::from_string("(min ?a (+ ?a ?a)) ==> ?a if (>= ?a 0)")
+                .unwrap()
+                .0,
+        );
+        ruleset.add(Rule::from_string("(+ ?a ?b) ==> (+ ?b ?a)").unwrap().0);
+        ruleset.add(Rule::from_string("(<= 0 ?b) ==> (>= ?b 0)").unwrap().0);
+
+        let cond_wkld =
+            Workload::new(&["(>= b 0)", "(>= a 0)", "(<= 0 b)", "(&& (<= a 0) (<= 0 b))"]);
+        let test_wkld = Workload::new(&["(max b (+ b a))", "(min b (+ b b))"]);
+
+        // the bug must be in the condition propagation rules: it should infer from:
+        // a <= 0 and 0 <= b that:
+        // a <= 0 ...
+        // 0 <= b <--> b >= 0
+        // using b >= 0, (min b (+ b b)) ==> b
+        // using a <= 0, (max b (+ b a)) ==> b
+        // and therefore, the rule (max b (+ b a)) ==> b should be derivable.
+        // so the next step is to take a snapshot of the egraph after running the condition propagation rules
+        // and asserting that if (istrue (&& (<= a 0) (<= 0 b))) is in the egraph, then
+        // (istrue (<= a 0)) and (istrue (<= 0 b)) are also in the egraph.
+        // orelse!
+
+        let (pvec_to_terms, implication_rules) =
+            crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
+
+        let mut additional_imps = implication_rules.clone();
+
+        // (&& a b) ==> a
+        additional_imps.push(
+            ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?a".parse().unwrap())
+                .rewrite(),
+        );
+
+        // (&& a b) ==> b
+        additional_imps.push(
+            ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?b".parse().unwrap())
+                .rewrite(),
+        );
+
+        let new_rules = run_workload(
+            test_wkld,
+            ruleset.clone(),
+            Limits::synthesis(),
+            Limits::synthesis(),
+            true,
+            Some(pvec_to_terms),
+            Some(additional_imps),
+        );
+
+        // new rules are actually those that were not in the original ruleset
+
+        let mut actual_new_rules = new_rules.clone();
+
+        actual_new_rules.remove_all(ruleset);
+
+        println!("new rules:");
+
+        for rule in actual_new_rules.iter() {
+            println!("{}", rule.name);
+        }
+    }
+
+    #[test]
+    fn blah() {
+        let cond_wkld = Workload::new(&["(&& (<= b 0) (<= 0 a))", "(&& (<= a 0) (<= 0 b))"]);
+        // let term_wkld = Workload::new(&["(max a (+ b a))", "(max a (+ a a))", "a", "b"]);
+        let term_wkld = Workload::new(&["(max b (+ b a))", "b"]);
+        let (pvec_to_terms, implication_rules) =
+            crate::conditions::generate::get_condition_propagation_rules_halide(&cond_wkld);
+
+        println!("pvec_to_terms: {:?}", pvec_to_terms);
+        println!("implication_rules: {:?}", implication_rules);
+
+        let rules = run_workload(
+            term_wkld,
+            Ruleset::default(),
+            Limits::synthesis(),
+            Limits::synthesis(),
+            true,
+            Some(pvec_to_terms),
+            Some(implication_rules),
+        );
+
+        println!("rules: {}", rules.to_str_vec().join("\n"));
+    }
 }

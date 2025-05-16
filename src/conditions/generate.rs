@@ -73,7 +73,7 @@ pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
 
     candidates = good_candidates.clone();
 
-    println!("candidates: {}", candidates.len());
+    println!("number of candidate_imps: {}", candidates.len());
 
 
     let mut candidate_imps: Vec<Implication<Pred>> = candidates
@@ -96,6 +96,8 @@ pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
 
     // 4. minimization.
     let result = minimize_implications(&mut candidate_imps, &mut vec![]);
+
+    println!("implications: {}", result.0.len());
 
     for r in result.0.clone() {
         println!("{}", r.name);
@@ -267,9 +269,10 @@ pub fn select(
         let popped = implications.0.pop();
         if let Some((_, rule)) = popped {
             if matches!(validate_implication(rule.clone()), ValidationResult::Valid) {
-                println!("{} is valid", rule);
+                println!("{} is valid", rule.name);
                 selected.add(rule.clone());
             } else {
+                println!("{} is invalid", rule.name);
                 invalid.add(rule.clone());
             }
         } else {
@@ -288,6 +291,7 @@ fn shrink(
     chosen: &Ruleset<Pred>,
     scheduler: Scheduler,
 ) -> Ruleset<Pred> {
+    panic!("This is deprecated.");
     println!("candidates left: {}", implications.len());
     // 1. make new egraph
     let mut egraph = EGraph::default();
@@ -467,7 +471,6 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                         cond: None,
                     });
 
-                    candidates.add_from_recexprs(&e1, &e2);
                 }
             }
         }
@@ -485,9 +488,17 @@ pub fn get_condition_workload() -> Workload {
     // we're going to do conjunctions of ==, != with
     // variables and 0.
 
+    let the_atoms = Workload::new(&["a", "b", "c"]).append(Workload::new(&["0"]));
+
+    // let the_ints = Workload::new(&["(OP2 V V)"])
+    //     .plug("V", &the_atoms)
+    //     .plug("OP1", &Workload::new(&["+"]));
+
+    let the_ints = the_atoms.clone();
+
     let leaves = Workload::new(&["0", "1", "(OP2 V V)"])
-        .plug("V", &Workload::new(&["a", "b", "c", "0"]))
-        .plug("OP2", &Workload::new(&["<", ">", "!="]));
+        .plug("V", &the_ints)
+        .plug("OP2", &Workload::new(&["<", ">", "<=", "!="]));
 
     let branches = Workload::new(&["(OP2 V V)"])
         .plug("V", &leaves)
