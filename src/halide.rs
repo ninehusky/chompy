@@ -1017,11 +1017,13 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(comparisons);
 
-    let bool_only = recursive_rules(
+    let bool_only = recursive_rules_cond(
         Metric::Atoms,
         5,
         Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
         all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
     );
 
     all_rules.extend(bool_only);
