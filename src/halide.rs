@@ -997,44 +997,44 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // }
 
 
-    let equality = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-        all_rules.clone(),
-    );
+    // let equality = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+    //     all_rules.clone(),
+    // );
 
-    all_rules.extend(equality);
+    // all_rules.extend(equality);
 
-    let comparisons = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // let comparisons = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
-    all_rules.extend(comparisons);
+    // all_rules.extend(comparisons);
 
-    let bool_only = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // let bool_only = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
-    all_rules.extend(bool_only);
+    // all_rules.extend(bool_only);
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
         3,
         Lang::new(
-            &["-1", "0", "1"],
+            &["0", "1"],
             &["a", "b", "c"],
-            &[&[], &["+", "-", "*", "/", "%"]],
+            &[&[], &["+"]],
         ),
         Ruleset::default(),
         &pvec_to_terms,
@@ -1062,8 +1062,9 @@ pub fn og_recipe() -> Ruleset<Pred> {
     let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
         .filter(Filter::Contains("VAR".parse().unwrap()))
         .plug("VAR", &Workload::new(int_lang.vars))
-        .plug("VAL", &Workload::new(int_lang.vals))
-        .append(Workload::new(&["0", "1"]));
+        .plug("VAL", &Workload::new(int_lang.vals));
+
+
     // let ops = vec![lang.uops, lang.bops, lang.tops];
     for (i, ops) in int_lang.ops.iter().enumerate() {
         int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
@@ -1081,7 +1082,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
         let wrapped_rules = run_workload(
             big_wkld,
-            arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
+            all_rules.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
             Limits::synthesis(),
             Limits {
                 iter: 1,
