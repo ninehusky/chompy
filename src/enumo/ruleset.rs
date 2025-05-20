@@ -617,14 +617,15 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
             let mut initial = vec![];
-            // for rule in candidates {
-            for rule in self.0.values() {
+            for rule in candidates {
+            // for rule in self.0.values() {
                 let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
                 let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
+                initial.push((lhs, rhs, rule.clone()));
                 // can only derive here?
-                if candidates.iter().any(|x| x.name == rule.name) {
-                    initial.push((lhs, rhs, rule.clone()));
-                }
+                // if candidates.iter().any(|x| x.name == rule.name) {
+
+                // }
             }
 
             // 4. Run condition propagation rules.
@@ -637,57 +638,57 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             // 5. Compress the candidates with the rules we've chosen so far.
 
-            // let mut egraph = scheduler.run(&runner.egraph, &chosen);
-            let mut egraph = Scheduler::Simple(Limits::deriving()).run(&runner.egraph, &chosen);
+            let scheduler = Scheduler::Simple(Limits::deriving());
+            let mut egraph = scheduler.run(&runner.egraph, &chosen);
 
             println!("# nodes in egraph after compressing: {}", egraph.total_number_of_nodes());
             println!("# eclasses: {}", egraph.number_of_classes());
 
 
-            if contains_good_rule && initial.iter().any(|(l_id, r_id, r)| r.name.to_string() == bad_rule) {
-                // save egraph to json
-                let max_a_b_id = egraph.add_expr(&"(max a b)".parse().unwrap());
-                let max_b_a_id = egraph.add_expr(&"(max b a)".parse().unwrap());
-                egraph.union(max_a_b_id, max_b_a_id);
-                let serialized = egg_to_serialized_egraph(&egraph);
-                serialized.to_json_file("myfile.json").unwrap();
+            // if contains_good_rule && initial.iter().any(|(l_id, r_id, r)| r.name.to_string() == bad_rule) {
+            //     // save egraph to json
+            //     let max_a_b_id = egraph.add_expr(&"(max a b)".parse().unwrap());
+            //     let max_b_a_id = egraph.add_expr(&"(max b a)".parse().unwrap());
+            //     egraph.union(max_a_b_id, max_b_a_id);
+            //     let serialized = egg_to_serialized_egraph(&egraph);
+            //     serialized.to_json_file("myfile.json").unwrap();
 
-                assert!(chosen.0.keys().any(|x| x.to_string() == "(max ?a ?b) ==> ?a if (<= ?b ?a)"));
-                // assert!(chosen.0.get("(max ?a ?b) ==> ?a if (<= ?b ?a)").unwrap());
-                let l_id = initial
-                    .iter()
-                    .find(|(_, _, r)| r.name.to_string() == bad_rule)
-                    .unwrap()
-                    .0;
-                let r_id = initial
-                    .iter()
-                    .find(|(_, _, r)| r.name.to_string() == bad_rule)
-                    .unwrap()
-                    .1;
+            //     assert!(chosen.0.keys().any(|x| x.to_string() == "(max ?a ?b) ==> ?a if (<= ?b ?a)"));
+            //     // assert!(chosen.0.get("(max ?a ?b) ==> ?a if (<= ?b ?a)").unwrap());
+            //     let l_id = initial
+            //         .iter()
+            //         .find(|(_, _, r)| r.name.to_string() == bad_rule)
+            //         .unwrap()
+            //         .0;
+            //     let r_id = initial
+            //         .iter()
+            //         .find(|(_, _, r)| r.name.to_string() == bad_rule)
+            //         .unwrap()
+            //         .1;
 
-                let max_rule: Rule<L> = Rule::from_string("(max ?a ?b) ==> ?a if (<= ?b ?a)").unwrap().0;
+            //     let max_rule: Rule<L> = Rule::from_string("(max ?a ?b) ==> ?a if (<= ?b ?a)").unwrap().0;
 
-                let runner: Runner<L, SynthAnalysis> = Runner::default()
-                    .with_egraph(egraph.clone())
-                    .run(&[max_rule.rewrite]);
+            //     let runner: Runner<L, SynthAnalysis> = Runner::default()
+            //         .with_egraph(egraph.clone())
+            //         .run(&[max_rule.rewrite]);
 
-                let egraph = runner.egraph;
+            //     let egraph = runner.egraph;
 
-                assert!(egraph.lookup_expr(&"(istrue (<= b a))".parse().unwrap()).is_some());
-                assert!(egraph.lookup_expr(&"(istrue (<= 0 b))".parse().unwrap()).is_some());
-                assert!(egraph.lookup_expr(&"(istrue (<= 0 a))".parse().unwrap()).is_some());
+            //     assert!(egraph.lookup_expr(&"(istrue (<= b a))".parse().unwrap()).is_some());
+            //     assert!(egraph.lookup_expr(&"(istrue (<= 0 b))".parse().unwrap()).is_some());
+            //     assert!(egraph.lookup_expr(&"(istrue (<= 0 a))".parse().unwrap()).is_some());
 
-                let extractor = Extractor::new(&egraph, AstSize);
-                let max_id = egraph.lookup_expr(&"(max a b)".parse().unwrap()).unwrap();
-                let (_, maxexpr) = extractor.find_best(max_id);
+            //     let extractor = Extractor::new(&egraph, AstSize);
+            //     let max_id = egraph.lookup_expr(&"(max a b)".parse().unwrap()).unwrap();
+            //     let (_, maxexpr) = extractor.find_best(max_id);
 
-                let (_, lexpr) = extractor.find_best(l_id);
-                let (_, rexpr) = extractor.find_best(r_id);
-                println!("max: {}", maxexpr);
-                println!("lexpr: {}", lexpr);
-                println!("rexpr: {}", rexpr);
-                panic!();
-            }
+            //     let (_, lexpr) = extractor.find_best(l_id);
+            //     let (_, rexpr) = extractor.find_best(r_id);
+            //     println!("max: {}", maxexpr);
+            //     println!("lexpr: {}", lexpr);
+            //     println!("rexpr: {}", rexpr);
+            //     panic!();
+            // }
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
@@ -1050,13 +1051,14 @@ pub mod tests {
     #[test]
     pub fn ugh() {
         let mut rules = Ruleset::default();
-        let rule: Rule<Pred> = Rule::from_string("(max ?a ?b) ==> (max ?b ?a)").unwrap().0;
+        let rule: Rule<Pred> = Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0;
         rules.add(rule);
 
         let scheduler = scheduler::Scheduler::Compress(Limits::deriving());
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
         let og_id = egraph.add_expr(&"(max a b)".parse().unwrap());
+        egraph.add_expr(&"(max b a)".parse().unwrap());
 
         let egraph = scheduler.run(&egraph, &rules);
         assert!(egraph.lookup_expr(&"(max a b)".parse().unwrap()) == egraph.lookup_expr(&"(max b a)".parse().unwrap()));

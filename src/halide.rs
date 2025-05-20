@@ -999,36 +999,32 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // }
 
 
-    // let equality = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-    //     all_rules.clone(),
-    // );
+    let equality = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+        all_rules.clone(),
+    );
 
-    // all_rules.extend(equality);
+    all_rules.extend(equality);
 
-    // let comparisons = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-    //     all_rules.clone(),
-    //     &pvec_to_terms,
-    //     &cond_prop_ruleset,
-    // );
+    let comparisons = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<="]]),
+        all_rules.clone(),
+    );
 
-    // all_rules.extend(comparisons);
+    all_rules.extend(comparisons);
 
-    // let bool_only = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-    //     all_rules.clone(),
-    //     &pvec_to_terms,
-    //     &cond_prop_ruleset,
-    // );
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        all_rules.clone(),
+    );
 
-    // all_rules.extend(bool_only);
+    all_rules.extend(bool_only);
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
