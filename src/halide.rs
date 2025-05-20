@@ -983,6 +983,8 @@ pub fn og_recipe() -> Ruleset<Pred> {
         ).rewrite()
     );
 
+    // add that `(&& (<= ?a ?c) (<= ?b ?c))` `
+
     // println!("terms:");
     // for v in pvec_to_terms.values() {
     //     for t in v {

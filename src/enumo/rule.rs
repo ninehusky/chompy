@@ -1,6 +1,5 @@
 use egg::{
-    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite,
-    Subst,
+    Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite, Subst
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -173,11 +172,13 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
     fn check(
         &self,
         egraph: &mut egg::EGraph<L, SynthAnalysis>,
-        _eclass: egg::Id,
+        eclass: egg::Id,
         subst: &Subst,
     ) -> bool {
         let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
-        lookup_pattern(&is_true_pat, egraph, subst)
+        let result = lookup_pattern(&is_true_pat, egraph, subst);
+        println!("result: {}", result);
+        result
     }
 }
 
@@ -327,7 +328,7 @@ mod test {
 
     #[test]
     fn cond_rewrite_fires() {
-        let rule: Rule<Pred> = Rule::from_string("(/ x x) ==> 1 if (!= x 0)").unwrap().0;
+        let rule: Rule<Pred> = Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0;
         let mut ruleset = Ruleset::default();
         ruleset.add(rule.clone());
 

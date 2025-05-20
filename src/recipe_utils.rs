@@ -65,7 +65,7 @@ fn run_workload_internal<L: SynthLanguage>(
 
     chosen.extend(chosen_total.clone());
 
-    let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
+    let compressed = Scheduler::Simple(prior_limits).run(&compressed, &chosen);
 
     if let Some(conditions) = conditions {
         // now, try to add some conditions into tha mix!
