@@ -1028,11 +1028,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
-        3,
+        5,
         Lang::new(
             &["0", "1"],
             &["a", "b", "c"],
-            &[&[], &["+"]],
+            &[&["-"], &["+", "-"]],
         ),
         Ruleset::default(),
         &pvec_to_terms,

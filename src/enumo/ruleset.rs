@@ -548,7 +548,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         by_cond: &IndexMap<String, Ruleset<L>>,
     ) {
-        println!("hi from shrink_cond");
 
         let contains_good_rule = chosen.0.values().any(|rule| {
             rule.name.to_string() == "(min ?b (+ ?b ?a)) ==> ?b if (<= 0 ?a)"
@@ -585,7 +584,6 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
-        // let mut should_remove = Ruleset::default();
         for (condition, _) in actual_by_cond.iter() {
             let candidates = self
                 .0
@@ -638,8 +636,9 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             // 5. Compress the candidates with the rules we've chosen so far.
 
-            let scheduler = Scheduler::Simple(Limits::deriving());
-            let mut egraph = scheduler.run(&runner.egraph, &chosen);
+            // Anjali said this was good! Thank you Anjali!
+            let scheduler = Scheduler::Saturating(Limits::deriving());
+            let egraph = scheduler.run(&runner.egraph, &chosen);
 
             println!("# nodes in egraph after compressing: {}", egraph.total_number_of_nodes());
             println!("# eclasses: {}", egraph.number_of_classes());
@@ -857,6 +856,11 @@ impl<L: SynthLanguage> Ruleset<L> {
         limits: Limits,
         condition_propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> bool {
+        println!("trying to derive {}", rule.name);
+        println!("condition propagation rules:");
+        for r in condition_propagation_rules {
+            println!("  {}", r.name);
+        }
         let scheduler = Scheduler::Saturating(limits);
         let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
         let lexpr = &L::instantiate(&rule.lhs);
@@ -1052,13 +1056,16 @@ pub mod tests {
     pub fn ugh() {
         let mut rules = Ruleset::default();
         let rule: Rule<Pred> = Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0;
+        let dummy: Rule<Pred> = Rule::from_string("(+ ?a (- ?b)) ==> (- ?a ?b)").unwrap().0;
+        let dummy: Rule<Pred> = Rule::from_string("(/ (* -1 ?a) ?b) ==> (* -1 (/ ?a ?b))").unwrap().0;
+        assert!(dummy.is_valid());
         rules.add(rule);
 
-        let scheduler = scheduler::Scheduler::Compress(Limits::deriving());
+        let scheduler = scheduler::Scheduler::Saturating(Limits::minimize());
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
-        let og_id = egraph.add_expr(&"(max a b)".parse().unwrap());
-        egraph.add_expr(&"(max b a)".parse().unwrap());
+        egraph.add_expr(&"(max a b)".parse().unwrap());
+        // egraph.add_expr(&"(max b a)".parse().unwrap());
 
         let egraph = scheduler.run(&egraph, &rules);
         assert!(egraph.lookup_expr(&"(max a b)".parse().unwrap()) == egraph.lookup_expr(&"(max b a)".parse().unwrap()));
