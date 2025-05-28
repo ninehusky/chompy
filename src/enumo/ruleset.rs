@@ -826,10 +826,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
-            println!(
-                "I have chosen: {}",
-                selected.0.values().next().unwrap().name
-            );
             // assert_eq!(selected.len(), 1); <-- wasn't this here in ruler?
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
@@ -856,11 +852,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         limits: Limits,
         condition_propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> bool {
-        println!("trying to derive {}", rule.name);
-        println!("condition propagation rules:");
-        for r in condition_propagation_rules {
-            println!("  {}", r.name);
-        }
         let scheduler = Scheduler::Saturating(limits);
         let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
         let lexpr = &L::instantiate(&rule.lhs);
@@ -980,6 +971,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         condition_propagation_rules: Option<&Vec<Rewrite<L, SynthAnalysis>>>,
     ) -> (Self, Self) {
         against.partition(|rule| {
+            println!("attempting to derive: {}", rule.name);
             if rule.cond.is_some() {
                 if condition_propagation_rules.is_none() {
                     panic!("Condition propagation rules required for conditional rules. You gave me: {:?}", rule);

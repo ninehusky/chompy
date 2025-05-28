@@ -1008,12 +1008,15 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(equality);
 
-    let comparisons = recursive_rules(
+    let comparisons = recursive_rules_cond(
         Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<="]]),
+        3,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
         all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
     );
+
 
     all_rules.extend(comparisons);
 
@@ -1041,11 +1044,26 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(arith_basic.clone());
 
+    let mul_div = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["*", "/", "%"]],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(mul_div.clone());
+
     let min_max = recursive_rules_cond(
         Metric::Atoms,
         5,
         Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max"]]),
-        all_rules.clone(),
+        Ruleset::default(),
         &pvec_to_terms,
         &cond_prop_ruleset,
     );
@@ -1068,7 +1086,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
 
-    for op in &["min"] {
+    for op in &["min", "max"] {
         let big_wkld = Workload::new(&["0", "1"]).append(
             Workload::new(&["(OP V V)"])
                 // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe

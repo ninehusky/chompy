@@ -498,7 +498,7 @@ pub fn get_condition_workload() -> Workload {
 
     let leaves = Workload::new(&["0", "1", "(OP2 V V)"])
         .plug("V", &the_ints)
-        .plug("OP2", &Workload::new(&["<", ">", "<=", "!="]));
+        .plug("OP2", &Workload::new(&["<", "==", "<=", "!="]));
 
     let branches = Workload::new(&["(OP2 V V)"])
         .plug("V", &leaves)
