@@ -176,8 +176,7 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
         subst: &Subst,
     ) -> bool {
         let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
-        let result = lookup_pattern(&is_true_pat, egraph, subst);
-        result
+        lookup_pattern(&is_true_pat, egraph, subst)
     }
 }
 

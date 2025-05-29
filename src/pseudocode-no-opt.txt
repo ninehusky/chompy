@@ -1,0 +1,181 @@
+# 1. Find implications over a conditional grammar
+# 2. Find total rules over a term grammar
+# 3. Use implications and conditions to find conditional rules
+def run_chompy():
+    term_egraph = new_egraph()
+    rules = []
+
+    (pvec_to_patterns, impls) = get_conditional_structures(cond_egraph)
+
+    for i in 1..MAX_SIZE:
+        rules.add(find_total_rules(term_egraph, rules, i))
+        rules.add(find_conditional_rules(term_egraph, rules, pvec_to_patterns, impls)
+                  
+"""
+Returns the data structures Chompy needs for conditional rules.
+
+`pvec_to_patterns` is used to find conditional rule candidates.
+It is a map from a pvec to a list of patterns which have that pvec.
+e.g., pvec_to_patterns[T, F, T] = [a <= 0, b <= 0]
+
+`impls` is a list of egg rules which represent implications.
+see `egglog_to_egg` for more details.
+"""
+def get_conditional_structures(cond_egraph) -> (Dict[List[Bool], List[Term]], List[Rewrite]):
+    condition_workload = enumerate_condition_workload()
+
+    cond_egraph = new_egraph()
+    cond_egraph.add_terms(condition_workload)
+
+    # Discover basic rules about the conditional workload.
+    predicate_rewrites = run_ruler(condition_workload)
+
+    # Compress the e-graph with the discovered rules.
+    cond_egraph.compress(predicate_rewrites)
+
+    # Create a mapping from pvecs to patterns.
+    pvec_to_patterns = get_pvec_to_patterns(cond_egraph)
+
+    # Perform `pvec matching` to find candidate implications over the e-graph.
+    candidate_impls = pvec_match(cond_egraph)
+
+    # Minimize the candidate implications using Egglog.
+    impls = minimize_impls(candidate_impls)
+
+    return (pvec_to_patterns, impls)
+
+def to_pvec(cvec):
+    # Converts a Halide cvec (a vector of integers) into a pvec (a vector of Booleans).
+    # Because the cvec is representing a condition, it will always be a vector of 0s and 1s.
+    return [x == 1 for x in cvec]
+
+def get_pvec_to_patterns(cond_egraph) -> Dict[List[Bool], List[Term]]:
+    pvec_to_patterns = {}
+    for eclass in cond_egraph.eclasses():
+        pvec = to_pvec(eclass.data.cvec)
+        term = eclass.best_term()
+        pvec_to_patterns[pvec].append(term)
+
+    return pvec_to_patterns
+
+def pvec_match(cond_egraph) -> List[Rule]:
+    candidate_impls = []
+    for ec1 in cond_egraph.eclasses():
+        for ec2 in cond_egraph.eclasses():
+            pvec1 = to_pvec(ec1.data.cvec)
+            pvec2 = to_pvec(ec2.data.cvec)
+            # we need to check: does ec1.cvec[i] ==> ec2.cvec[i] for all i?
+            if zip(pvec1, pvec2).all(|x, y| x ==> y):
+                # ec1 is a candidate for implication to ec2
+                candidate_impls.append(ec1.term ==> ec2.term)
+
+    return candidate_impls
+
+# This is just Ruler
+def find_total_rules(term_egraph, size, rules):
+    # Find all terms of size `size`
+    term_egraph.add_terms(term_egraph.find_terms(size))
+
+    candidates = term_egraph.cvec_match()
+
+    while candidates not empty:
+        # 1. select
+        candidate = candidates.pop_best_valid()
+
+        derive_egraph = new_egraph()
+        # 2. add all lhs, rhs of candidate impls to the egraph
+        for all lhs, rhs in candidates:
+            derive_egraph.add_term(lhs)
+            derive_egraph.add_term(rhs)
+        
+        # 3. run rules
+        derive_egraph.run_impls(rules)
+
+        # 4. for all candidates, see if they merged.
+        for all lhs, rhs in candidates:
+            if derive_egraph.find(lhs) == derive_egraph.find(rhs):
+                # This candidate is derivable
+                candidates.remove(lhs ==> rhs)
+    
+    return rules
+
+def find_conditional_rules(term_egraph, rules, pvec_to_patterns, impls):
+    candidates = cond_cvec_match(term_egraph, pvec_to_patterns)
+
+    cond_to_candidates: cond -> rule list = pvec_to_patterns.sort_by_cond(candidates)
+
+    while candidates not empty:
+        # 1. select
+        candidate = candidates.pop_best_valid()
+
+        derive_egraph = new_egraph()
+
+        for cond, candidates in cond_to_candidates:
+            # 2. add all lhs, rhs of candidate impls with a specific
+            #    condition to the egraph
+            derive_egraph.add_term(candidate.lhs)
+            derive_egraph.add_term(candidate.rhs)
+
+            # 3. set the condition of recently added terms to true
+            derive_egraph.add_term("(istrue {candidate.cond})")
+
+            # 4. condition propagation
+            derive_egraph.run_rules(impls)
+
+            derive_egraph.run_rules(rules)
+
+            # 5. for all candidates, see if they merged.
+            # "under the condition of cond, can we prove lhs == rhs?"
+            for all cond, lhs, rhs in candidates:
+                if derive_egraph.find(lhs) == derive_egraph.find(rhs):
+                    # This candidate is derivable
+                    candidates.remove(lhs ==> rhs)
+        
+        return rules
+
+def minimize_impls(candidate_impls):
+    egglog_egraph = new_egraph()
+
+    # Add all lhs, rhs of candidate impls to the egraph
+    for impl in candidate_impls:
+        egglog_egraph.add_term(impl.lhs) egglog_egraph.add_term(impl.rhs)
+
+    while candidate_impls not empty:
+        impl = candidate_impls.pop_best_valid()
+        egglog_egraph.run_impls(impls)
+        if egglog_egraph.query("(path {impl.lhs} {impl.rhs})") == PATH:
+            # This implication is derivable
+            continue
+        else:
+            impls.append("""
+                        (rule
+                          ((impl.lhs))
+                          ((edge impl.lhs impl.rhs)))
+                         """)
+    
+    return impls
+
+"""
+Converts an egglog rule to an egg rule.
+Fundamentally, both rules perform the following:
+1. Find an assumption of the form ?lhs
+2. Add into the egraph an assumption of the form ?rhs
+
+(in the egglog case, we also do:)
+3. Add a path from ?lhs to ?rhs
+
+As an example, consider the implication a < b ==> a != b.
+In egglog, this would be represented as:
+(rule
+    ((< ?a ?b))
+    ((edge (< ?a ?b) (!= ?a ?b))
+)
+
+This function would convert the above to the following egg rule:
+(forgive odd pseudocode)
+let searcher = (istrue (< ?a ?b))
+let applier = (egraph) => { egraph.add_expr((istrue (!= ?a ?b))) }
+Rewrite { searcher, applier }
+"""
+def egglog_to_egg(egglog_rule):
+    pass

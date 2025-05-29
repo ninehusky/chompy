@@ -13,8 +13,6 @@ use crate::{
 
 use super::{Rule, Scheduler, Workload};
 
-const SACRED_RULE_NAME: &str = "(min ?a (+ ?b ?a)) ==> ?a if (<= 0 ?b)";
-
 /// A set of rewrite rules
 #[derive(Clone, Debug)]
 pub struct Ruleset<L: SynthLanguage>(pub IndexMap<Arc<str>, Rule<L>>);
@@ -314,30 +312,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         egraph: &EGraph<L, SynthAnalysis>,
         conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
     ) -> Self {
-        // // find (max a (+ b a)) in the egraph.
-        // let max_id = egraph.lookup_expr(&"(max a (+ b a))".parse().unwrap());
-
-        // if let Some(max_id) = max_id {
-        //     // find the cvec for the max_id
-        //     let max_cvec = egraph[max_id].data.cvec.clone();
-        //     // find the cvec for "a"
-        //     let a_id = egraph.lookup_expr(&"a".parse().unwrap()).unwrap();
-
-        //     let a_cvec = egraph[a_id].data.cvec.clone();
-
-        //     println!("max cvec: {:?}", max_cvec);
-        //     println!("a cvec: {:?}", a_cvec);
-
-        //     let pvec = max_cvec.iter().zip(a_cvec.iter()).map(|(a, b)| a == b).collect::<Vec<bool>>();
-
-        //     println!("pvec: {:?}", pvec);
-
-        //     let cond = conditions.get(&pvec);
-
-        //     panic!("here is the condition matching (max a (+ b a)) and a: {:?}", cond);
-
-        // }
-
         let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::default();
 
         for class in egraph.classes() {
@@ -376,31 +350,17 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     continue;
                                 }
 
-                                // let max_id = egraph.lookup_expr(&"(max a (+ b a))".parse().unwrap());
-
-                                // if let Some(max_id) = max_id {
-                                //     // find the cvec for the max_id
-                                //     let max_cvec = egraph[max_id].data.cvec.clone();
-                                //     // find the cvec for "a"
-                                //     let a_id = egraph.lookup_expr(&"a".parse().unwrap()).unwrap();
-                                //     let a_cvec = egraph[a_id].data.cvec.clone();
-
-                                //     if ((*cvec1).clone() == *a_cvec.clone() && (*cvec2).clone() == *max_cvec.clone()) ||
-                                //         (*cvec1).clone() == *max_cvec.clone() && (*cvec2).clone() == *a_cvec.clone() {
-                                //         println!("found a match for (max a (+ b a)) and a");
-                                //         println!("candidate: if {} then {} ~> {}", pred, e1, e2);
-                                //         // panic!();
-                                //     }
-                                // }
-
-                                println!("candidate: if {} then {} ~> {}", pred, e1, e2);
-
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
                             }
                         }
                     }
                 }
             }
+        }
+
+        println!("Found {} conditional candidates", candidates.len());
+        for (_, rule) in &candidates.0 {
+            println!("  {}", rule.name);
         }
 
         candidates
@@ -548,31 +508,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         by_cond: &IndexMap<String, Ruleset<L>>,
     ) {
-
-        let contains_good_rule = chosen.0.values().any(|rule| {
-            rule.name.to_string() == "(min ?b (+ ?b ?a)) ==> ?b if (<= 0 ?a)"
-        });
-
-        // the good rule should derive this
-        let bad_rule = "(max ?b ?a) ==> (min ?a (+ ?b ?a)) if (&& (<= ?b ?a) (<= 0 ?b))".to_string();
-
-
-
-        let names = chosen
-            .0
-            .values()
-            .map(|rule| rule.name.to_string().clone())
-            .collect::<Vec<_>>();
-
-        println!("chosen rules:");
-        for r in chosen.0.values() {
-            println!("  {}", r.name);
-        }
-
-        if names.contains(&"(max ?b ?a) ==> ?a if (<= ?b ?a)".to_string()) && names.contains(&"(max ?a ?b) ==> ?a if (<= ?b ?a)".to_string()) {
-            panic!("redundant rules");
-        }
-
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
         for (_, rule) in self.0.iter() {
@@ -597,13 +532,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 })
                 .collect::<Vec<_>>();
 
-            println!("condition: {}", condition);
-            println!("candidates: {}", candidates.len());
-
-            for c in candidates.iter() {
-                println!("  {}", c.name);
-            }
-
             // 1. Make a new e-graph.
             let mut egraph = EGraph::default();
 
@@ -620,10 +548,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
                 let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
                 initial.push((lhs, rhs, rule.clone()));
-                // can only derive here?
-                // if candidates.iter().any(|x| x.name == rule.name) {
-
-                // }
             }
 
             // 4. Run condition propagation rules.
@@ -631,63 +555,10 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .with_egraph(egraph.clone())
                 .run(prop_rules);
 
-            println!("# nodes in egraph after prop rules: {}", runner.egraph.total_number_of_nodes());
-            println!("# eclasses: {}", egraph.number_of_classes());
-
             // 5. Compress the candidates with the rules we've chosen so far.
-
             // Anjali said this was good! Thank you Anjali!
             let scheduler = Scheduler::Saturating(Limits::deriving());
             let egraph = scheduler.run(&runner.egraph, &chosen);
-
-            println!("# nodes in egraph after compressing: {}", egraph.total_number_of_nodes());
-            println!("# eclasses: {}", egraph.number_of_classes());
-
-
-            // if contains_good_rule && initial.iter().any(|(l_id, r_id, r)| r.name.to_string() == bad_rule) {
-            //     // save egraph to json
-            //     let max_a_b_id = egraph.add_expr(&"(max a b)".parse().unwrap());
-            //     let max_b_a_id = egraph.add_expr(&"(max b a)".parse().unwrap());
-            //     egraph.union(max_a_b_id, max_b_a_id);
-            //     let serialized = egg_to_serialized_egraph(&egraph);
-            //     serialized.to_json_file("myfile.json").unwrap();
-
-            //     assert!(chosen.0.keys().any(|x| x.to_string() == "(max ?a ?b) ==> ?a if (<= ?b ?a)"));
-            //     // assert!(chosen.0.get("(max ?a ?b) ==> ?a if (<= ?b ?a)").unwrap());
-            //     let l_id = initial
-            //         .iter()
-            //         .find(|(_, _, r)| r.name.to_string() == bad_rule)
-            //         .unwrap()
-            //         .0;
-            //     let r_id = initial
-            //         .iter()
-            //         .find(|(_, _, r)| r.name.to_string() == bad_rule)
-            //         .unwrap()
-            //         .1;
-
-            //     let max_rule: Rule<L> = Rule::from_string("(max ?a ?b) ==> ?a if (<= ?b ?a)").unwrap().0;
-
-            //     let runner: Runner<L, SynthAnalysis> = Runner::default()
-            //         .with_egraph(egraph.clone())
-            //         .run(&[max_rule.rewrite]);
-
-            //     let egraph = runner.egraph;
-
-            //     assert!(egraph.lookup_expr(&"(istrue (<= b a))".parse().unwrap()).is_some());
-            //     assert!(egraph.lookup_expr(&"(istrue (<= 0 b))".parse().unwrap()).is_some());
-            //     assert!(egraph.lookup_expr(&"(istrue (<= 0 a))".parse().unwrap()).is_some());
-
-            //     let extractor = Extractor::new(&egraph, AstSize);
-            //     let max_id = egraph.lookup_expr(&"(max a b)".parse().unwrap()).unwrap();
-            //     let (_, maxexpr) = extractor.find_best(max_id);
-
-            //     let (_, lexpr) = extractor.find_best(l_id);
-            //     let (_, rexpr) = extractor.find_best(r_id);
-            //     println!("max: {}", maxexpr);
-            //     println!("lexpr: {}", lexpr);
-            //     println!("rexpr: {}", rexpr);
-            //     panic!();
-            // }
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
@@ -781,34 +652,10 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .unwrap()
                 .to_string();
 
-            if identifier == "(max ?b ?a) ==> (min ?a (+ ?b ?a)) if (&& (<= ?b ?a) (<= 0 ?b))".to_string() {
-                panic!("BAD CHOMPY!");
-            }
             chosen.extend(selected.clone());
 
-            let mut inside = false;
-            for rule in self.0.values() {
-                if rule.name == SACRED_RULE_NAME.into() {
-                    inside = true;
-                    println!("🟢 sacred rule is still in the pool");
-                }
-            }
             println!("now, calling shrink!");
             self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
-            let mut printed = false;
-            for rule in self.0.values() {
-                if rule.name == SACRED_RULE_NAME.into() {
-                    printed = true;
-                    println!("🟢 sacred rule is still in the pool");
-                }
-            }
-
-            if identifier == SACRED_RULE_NAME.to_string() {
-                println!("done");
-            }
-            // if !printed && inside {
-            //     panic!("sacred rule is not in the pool!");
-            // }
         }
         // Return only the new rules
         chosen.remove_all(prior);
@@ -880,31 +727,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let egraph = runner.egraph;
 
-        // println!("# eclasses in the egraph: {}", egraph.number_of_classes());
-
-        // println!("cond: {}", cond);
-
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
-
-        // println!("lexpr: {}", lexpr);
-        // println!("rexpr: {}", rexpr);
-
-        // println!(
-        //     "# eclasses in the egraph after rules: {}",
-        //     out_egraph.number_of_classes()
-        // );
-
-        let serialized = egg_to_serialized_egraph(&out_egraph);
-
-        // save it to egraph.json
-
-        let mut file = std::fs::File::create("egraph.json")
-            .unwrap_or_else(|_| panic!("Failed to open 'egraph.json'"));
-
-        let serialized = serde_json::to_string_pretty(&serialized).unwrap();
-
-        file.write_all(serialized.as_bytes())
-            .expect("Unable to write");
 
         let l_id = out_egraph
             .lookup_expr(lexpr)

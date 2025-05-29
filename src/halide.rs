@@ -1035,7 +1035,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Lang::new(
             &["0", "1"],
             &["a", "b", "c"],
-            &[&["-"], &["+", "-"]],
+            &[&["-"], &["+", "-", "*", "/"]],
         ),
         Ruleset::default(),
         &pvec_to_terms,
@@ -1074,7 +1074,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // composing int2boolop(int_term, int_term) or things like that
     // together.
     //
-    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min", "max"]]);
+    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "min", "max"]]);
     let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
         .filter(Filter::Contains("VAR".parse().unwrap()))
         .plug("VAR", &Workload::new(int_lang.vars))

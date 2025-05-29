@@ -23,17 +23,6 @@ pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
     HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
     Vec<Rewrite<Pred, SynthAnalysis>>,
 ) {
-    // 1. enumerate the condition workload.
-    // we can discuss further about if this needs to be a separate step, or if
-    // there's some clever reusing of the "term workload" that we can do.
-    // let wkld = get_condition_workload();
-
-    println!("step 1 done");
-
-    for t in wkld.force() {
-        println!("{}", t);
-    }
-
     // 2. put it in an e-graph.
     let egraph: EGraph<Pred, SynthAnalysis> = wkld.to_egraph();
 
@@ -143,27 +132,6 @@ pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
             .or_insert_with(Vec::new)
             .push(pattern.clone());
     }
-
-    // for (k, v) in pvec_to_terms.iter() {
-    //     // println!("key: {:?}", k);
-    //     for v in v {
-    //         println!("value: {}", v);
-    //     }
-    // }
-
-    // result.0.iter().map(|x| {
-    //     let mut rule = x.clone();
-    //     let mut cache = Default::default();
-    //     let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
-    //     let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
-
-    //     ImplicationSwitch::new(&parent, &child).rewrite()
-    // }).collect();
-
-    // for r in &prop_rules {
-    //     println!("prop rule: {}", r.name);
-    // }
-
     (
         pvec_to_terms,
         result
@@ -285,102 +253,6 @@ pub fn select(
     chosen
 }
 
-fn shrink(
-    roots: &Vec<RecExpr<Pred>>,
-    implications: &Ruleset<Pred>,
-    chosen: &Ruleset<Pred>,
-    scheduler: Scheduler,
-) -> Ruleset<Pred> {
-    panic!("This is deprecated.");
-    println!("candidates left: {}", implications.len());
-    // 1. make new egraph
-    let mut egraph = EGraph::default();
-
-    // 2. add all the roots to the e-graph.
-    for root in roots {
-        println!("adding (istrue {})", root);
-        egraph.add_expr(&format!("(istrue {})", root).parse().unwrap());
-    }
-
-    // 3. compress with the rules we've chosen so far
-    let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-        .with_egraph(egraph)
-        .with_iter_limit(Limits::minimize().iter)
-        .with_node_limit(Limits::minimize().node);
-
-    let runner = runner.run(&ruleset_to_rewrites(chosen));
-
-    let egraph = runner.egraph.clone();
-
-    let mut keep = Ruleset::default();
-
-    // 4. go through candidates and for a candidate (l --> r),
-    // if (istrue l) and (istrue r) is in the e-graph, then it
-    // is no longer a candidate.
-    for (_, rule) in implications {
-        let l = Pred::instantiate(&rule.lhs);
-        let r = Pred::instantiate(&rule.rhs);
-
-        if egraph.lookup_expr(&l).is_some() && egraph.lookup_expr(&r).is_some() {
-            continue;
-        } else {
-            keep.add(rule.clone())
-        }
-    }
-
-    keep
-}
-
-// /// Minimization algorithm for rule selection
-// ///     while there are still candidates to choose:
-// ///         1. select the best rule candidate
-// ///         2. filter out candidates that are redundant given the addition of the selected rule
-// pub fn minimize(implications: &mut Ruleset<Pred>, prior: Ruleset<Pred>, scheduler: Scheduler) -> (Ruleset<Pred>, Ruleset<Pred>) {
-//     let mut invalid: Ruleset<Pred> = Default::default();
-//     let mut chosen = prior.clone();
-//     let step_size = 1;
-//     while !implications.is_empty() {
-//         let selected = select(implications, step_size, &mut invalid);
-//         println!("done selecting");
-//         // assert_eq!(selected.len(), 1); <-- wasn't this here in ruler?
-//         chosen.extend(selected.clone());
-
-//         let roots = get_roots(&chosen);
-
-//         println!("roots: {}", roots.len());
-
-//         for root in &roots {
-//             println!("root: {}", root);
-//         }
-
-//         shrink(&get_roots(&chosen), implications, &chosen, scheduler);
-//     }
-//     // Return only the new rules
-//     chosen.remove_all(prior);
-
-//     (chosen, invalid)
-// }
-
-// fn get_roots(selected: &Ruleset<Pred>) -> Vec<RecExpr<Pred>> {
-//     let mut lhss = selected
-//         .0
-//         .iter()
-//         .map(|(_, rule)| Pred::instantiate(&rule.lhs))
-//         .collect::<HashSet<_>>();
-
-//     let mut rhss = selected
-//         .0
-//         .iter()
-//         .map(|(_, rule)| Pred::instantiate(&rule.rhs))
-//         .collect::<HashSet<_>>();
-
-//     // the roots are all left hand sides which are not in the right hand sides.
-
-//     lhss.retain(|x| !rhss.contains(x));
-
-//     lhss.into_iter().collect()
-// }
-
 /// Find candidates by CVec matching
 /// (this returns a Ruleset for now, even though these are not actually rewrite rules.)
 pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
@@ -438,11 +310,6 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                 if class1.id == class2.id {
                     continue;
                 }
-                // if class1.id == class2.id || one_id == class1.id || zero_id == class1.id ||
-                //     one_id == class2.id || zero_id == class2.id {
-                //         // do nothing.
-                //     // continue;
-                // }
 
                 let (_, e1) = extract.find_best(class1.id);
                 let (_, e2) = extract.find_best(class2.id);
@@ -452,14 +319,9 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                     let l_pat = Pred::generalize(&e1, map);
                     let r_pat = Pred::generalize(&e2, map);
 
-                    // println!("l_pat: {}", l_pat);
-                    // println!("r_pat: {}", r_pat);
-
                     // if the right hand side refers to variables which are not in the left hand side,
                     // then skip.
-
                     if r_pat.vars().iter().any(|v| !l_pat.vars().contains(v)) {
-                        // println!("skipping rule because RHS has vars not in LHS: {} -> {}", e1, e2);
                         continue;
                     }
 
