@@ -5,11 +5,13 @@ use rayon::prelude::ParallelIterator;
 use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
 use crate::{
+    halide::{self, Pred},
+    recipe_utils::run_workload,
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature,
     SynthAnalysis, SynthLanguage,
 };
 
-use super::{Rule, Scheduler};
+use super::{Rule, Scheduler, Workload};
 
 /// A set of rewrite rules
 #[derive(Clone, Debug)]
@@ -122,7 +124,14 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut bidir = 0;
         let mut unidir = 0;
         for (_, rule) in &self.0 {
-            let reverse = Rule::new(&rule.rhs, &rule.lhs);
+            if rule.cond.is_some() {
+                continue;
+            }
+            let reverse = if let Some(c) = &rule.cond {
+                Rule::new_cond(&rule.rhs, &rule.lhs, &c)
+            } else {
+                Rule::new(&rule.rhs, &rule.lhs)
+            };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
                 bidir += 1;
             } else {
@@ -232,11 +241,20 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn pretty_print(&self) {
         let mut strs = vec![];
         for (name, rule) in &self.0 {
-            let reverse = Rule::new(&rule.rhs, &rule.lhs);
+            let reverse = if rule.cond.is_some() {
+                Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.clone().unwrap())
+            } else {
+                Rule::new(&rule.rhs, &rule.lhs)
+            };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
-                let reverse_name = format!("{} <=> {}", rule.rhs, rule.lhs);
+                let cond_display = if rule.cond.is_some() {
+                    format!(" if {}", rule.cond.clone().unwrap())
+                } else {
+                    "".to_string()
+                };
+                let reverse_name = format!("{} <=> {}{}", rule.rhs, rule.lhs, cond_display);
                 if !strs.contains(&reverse_name) {
-                    strs.push(format!("{} <=> {}", rule.lhs, rule.rhs));
+                    strs.push(format!("{} <=> {}{}", rule.lhs, rule.rhs, cond_display));
                 }
             } else {
                 strs.push(name.to_string());
@@ -332,14 +350,17 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     continue;
                                 }
 
-                                println!("candidate: if {} then {} ~> {}", pred, e1, e2);
-
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
                             }
                         }
                     }
                 }
             }
+        }
+
+        println!("Found {} conditional candidates", candidates.len());
+        for (_, rule) in &candidates.0 {
+            println!("  {}", rule.name);
         }
 
         candidates
@@ -449,13 +470,20 @@ impl<L: SynthLanguage> Ruleset<L> {
             let popped = self.0.pop();
             if let Some((_, rule)) = popped {
                 if rule.is_valid() {
+                    println!("{} is valid", rule.name);
                     selected.add(rule.clone());
                 } else {
+                    println!("{} is invalid", rule.name);
                     invalid.add(rule.clone());
                 }
 
                 // If reverse direction is also in candidates, add it at the same time
-                let reverse = Rule::new(&rule.rhs, &rule.lhs);
+                let reverse = if rule.cond.is_some() {
+                    Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.unwrap())
+                } else {
+                    Rule::new(&rule.rhs, &rule.lhs)
+                };
+
                 if let Some(reverse) = reverse {
                     if self.contains(&reverse) && reverse.is_valid() {
                         selected.add(reverse);
@@ -478,51 +506,73 @@ impl<L: SynthLanguage> Ruleset<L> {
         chosen: &Self,
         scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
-        added_rule: &Rule<L>,
+        by_cond: &IndexMap<String, Ruleset<L>>,
     ) {
-        println!("rules:");
-        for r in chosen.clone() {
-            println!("{}", r.0);
+        let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
-        }
-        let mut will_choose: Self = Default::default();
-
-        // 1. make new egraph
-        let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
-
-        let mut initial = vec![];
-
-        // 2. insert lhs and rhs of all candidates as roots
-        for rule in self.0.values() {
-            let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
-            let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
-            initial.push((lhs, rhs, rule.clone()));
-        }
-
-        let cond_ast = &L::instantiate(&added_rule.cond.clone().unwrap());
-        egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
-
-        println!("adding: {}", cond_ast);
-
-        // 2.5: do condition propagation
-        let runner: Runner<L, SynthAnalysis> = Runner::default()
-            .with_egraph(egraph.clone())
-            .run(prop_rules);
-
-        // 3. compress with the rules we've chosen so far
-        let egraph = scheduler.run(&runner.egraph, chosen);
-
-        // 4. go through candidates. for each candidate `if c then l ~> r`, if
-        // l and r have merged and this rule's condition implies the candidate's, then they are no longer candidates.
-        for (l_id, r_id, rule) in initial {
-            if egraph.find(l_id) == egraph.find(r_id) {
-                continue;
-            } else {
-                will_choose.add(rule);
+        for (_, rule) in self.0.iter() {
+            if let Some(cond) = &rule.cond {
+                actual_by_cond
+                    .entry(cond.clone().to_string())
+                    .or_default()
+                    .add(rule.clone());
             }
         }
 
-        self.0 = will_choose.0;
+        for (condition, _) in actual_by_cond.iter() {
+            let candidates = self
+                .0
+                .values()
+                .filter(|rule| {
+                    if let Some(cond) = &rule.cond {
+                        cond.to_string() == condition.to_string()
+                    } else {
+                        false
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            // 1. Make a new e-graph.
+            let mut egraph = EGraph::default();
+
+            // 2. Add the condition to the e-graph.
+            let cond_pat: &Pattern<L> = &condition.parse().unwrap();
+            let cond_ast = &L::instantiate(cond_pat);
+            println!("adding (istrue {})", cond_ast);
+            egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+
+            // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
+            let mut initial = vec![];
+            for rule in candidates {
+            // for rule in self.0.values() {
+                let lhs = egraph.add_expr(&L::instantiate(&rule.lhs));
+                let rhs = egraph.add_expr(&L::instantiate(&rule.rhs));
+                initial.push((lhs, rhs, rule.clone()));
+            }
+
+            // 4. Run condition propagation rules.
+            let runner: Runner<L, SynthAnalysis> = Runner::default()
+                .with_egraph(egraph.clone())
+                .run(prop_rules);
+
+            // 5. Compress the candidates with the rules we've chosen so far.
+            // Anjali said this was good! Thank you Anjali!
+            let scheduler = Scheduler::Saturating(Limits::deriving());
+            let egraph = scheduler.run(&runner.egraph, &chosen);
+
+            // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
+            for (l_id, r_id, rule) in initial {
+                println!("seeing if we can derive this rule: {}", rule.name);
+                if egraph.find(l_id) == egraph.find(r_id) {
+                    let mut dummy: Ruleset<L> = Ruleset::default();
+                    dummy.add(rule.clone());
+                    println!("removing {}", rule.name);
+                    self.remove_all(dummy.clone());
+                } else {
+                    println!("keeping {}", rule.name);
+                }
+            }
+        }
     }
 
     fn shrink(&mut self, chosen: &Self, scheduler: Scheduler) {
@@ -563,20 +613,49 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut invalid: Ruleset<L> = Default::default();
         let mut chosen = prior.clone();
         let step_size = 1;
+
+        // bin the candidates by their conditions
+        let mut by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
+
+        for rule in self.0.values() {
+            if let Some(cond) = &rule.cond {
+                by_cond
+                    .entry(cond.clone().to_string())
+                    .or_default()
+                    .add(rule.clone());
+            }
+        }
+
+        // so, it sucks but we already have to do a call to minimize here.
+        self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
+
         while !self.is_empty() {
+            println!("candidates remaining: {}", self.len());
             let selected = self.select(step_size, &mut invalid);
-            // TODO: why do I need this here? what does it mean when `self.select` returns nothing?
-            // See #10.
+            println!(
+                "I have selected these: {:?}",
+                selected
+                    .0
+                    .values()
+                    .map(|rule| rule.name.clone())
+                    .collect::<Vec<_>>()
+            );
             if selected.is_empty() {
                 continue;
             }
+            let identifier = selected
+                .0
+                .values()
+                .map(|rule| rule.name.clone())
+                .collect::<Vec<_>>()
+                .first()
+                .unwrap()
+                .to_string();
+
             chosen.extend(selected.clone());
-            self.shrink_cond(
-                &chosen,
-                scheduler,
-                prop_rules,
-                selected.0.values().next().unwrap(),
-            );
+
+            println!("now, calling shrink!");
+            self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
         }
         // Return only the new rules
         chosen.remove_all(prior);
@@ -648,31 +727,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let egraph = runner.egraph;
 
-        // println!("# eclasses in the egraph: {}", egraph.number_of_classes());
-
-        // println!("cond: {}", cond);
-
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
-
-        // println!("lexpr: {}", lexpr);
-        // println!("rexpr: {}", rexpr);
-
-        // println!(
-        //     "# eclasses in the egraph after rules: {}",
-        //     out_egraph.number_of_classes()
-        // );
-
-        let serialized = egg_to_serialized_egraph(&out_egraph);
-
-        // save it to egraph.json
-
-        let mut file = std::fs::File::create("egraph.json")
-            .unwrap_or_else(|_| panic!("Failed to open 'egraph.json'"));
-
-        let serialized = serde_json::to_string_pretty(&serialized).unwrap();
-
-        file.write_all(serialized.as_bytes())
-            .expect("Unable to write");
 
         let l_id = out_egraph
             .lookup_expr(lexpr)
@@ -739,6 +794,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         condition_propagation_rules: Option<&Vec<Rewrite<L, SynthAnalysis>>>,
     ) -> (Self, Self) {
         against.partition(|rule| {
+            println!("attempting to derive: {}", rule.name);
             if rule.cond.is_some() {
                 if condition_propagation_rules.is_none() {
                     panic!("Condition propagation rules required for conditional rules. You gave me: {:?}", rule);
@@ -801,4 +857,102 @@ where
         }
     }
     out
+}
+
+// A series of tests containing some sanity checks about derivability.
+pub mod tests {
+    use crate::enumo::{rule, scheduler, Rule};
+    use crate::halide::{compute_conditional_structures, Pred};
+    use crate::ImplicationSwitch;
+
+    use super::*;
+
+    #[test]
+    pub fn ugh() {
+        let mut rules = Ruleset::default();
+        let rule: Rule<Pred> = Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0;
+        let dummy: Rule<Pred> = Rule::from_string("(+ ?a (- ?b)) ==> (- ?a ?b)").unwrap().0;
+        let dummy: Rule<Pred> = Rule::from_string("(/ (* -1 ?a) ?b) ==> (* -1 (/ ?a ?b))").unwrap().0;
+        assert!(dummy.is_valid());
+        rules.add(rule);
+
+        let scheduler = scheduler::Scheduler::Saturating(Limits::minimize());
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
+        egraph.add_expr(&"(max a b)".parse().unwrap());
+        // egraph.add_expr(&"(max b a)".parse().unwrap());
+
+        let egraph = scheduler.run(&egraph, &rules);
+        assert!(egraph.lookup_expr(&"(max a b)".parse().unwrap()) == egraph.lookup_expr(&"(max b a)".parse().unwrap()));
+    }
+
+    #[test]
+    pub fn condition_fires() {
+        let rule: Rule<Pred> = Rule::from_string("(max ?a ?b) ==> ?a if (<= ?b ?a)").unwrap().0;
+        let rule2: Rule<Pred> = Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0;
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule);
+        ruleset.add(rule2);
+
+        let scheduler = scheduler::Scheduler::Compress(Limits::deriving());
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
+        let og_id = egraph.add_expr(&"(max a b)".parse().unwrap());
+        egraph.add_expr(&"(istrue (<= a b))".parse().unwrap());
+
+        let egraph = scheduler.run(&egraph, &ruleset);
+
+        let extractor = Extractor::new(&egraph, AstSize);
+
+        let (_, best_expr) = extractor.find_best(og_id);
+        println!("{}", best_expr);
+    }
+
+    #[test]
+    pub fn score_is_good() {
+        let rule_1: Rule<Pred> = Rule::from_string("(min ?a (+ ?a ?a)) ==> (+ ?a ?a) if (<= ?a 0)")
+            .unwrap()
+            .0;
+
+        let rule_2: Rule<Pred> = Rule::from_string(
+            "(+ ?a (max ?a ?b)) ==> (min ?a (+ ?a ?a)) if (&& (<= ?b ?a) (<= ?a 0))",
+        )
+        .unwrap()
+        .0;
+
+        let mut ruleset = Ruleset::default();
+        ruleset.add(rule_1.clone());
+        ruleset.add(rule_2.clone());
+
+        let mut expected = Ruleset::default();
+        expected.add(rule_1.clone());
+
+        assert_eq!(ruleset.select(1, &mut Ruleset::default()), expected);
+    }
+
+    // given (min ?a ?b) <=> (min ?b ?a), only derive one of [(min ?a ?b) ==> ?a if (<= ?a ?b), (min ?b ?a) ==> ?a if (<= ?a ?b)].
+    #[test]
+    fn basic_derive() {
+        let mut ruleset = Ruleset::default();
+        ruleset.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
+
+        let term_workload = Workload::new(&["(min a b)", "(min b a)"]);
+        let cond_workload = Workload::new(&["(<= a b)"]);
+
+        let (pvec_to_patterns, prop_rules) = compute_conditional_structures(&cond_workload);
+
+        let found = run_workload(
+            term_workload,
+            ruleset,
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+            Some(pvec_to_patterns),
+            Some(prop_rules),
+        );
+
+        for r in found {
+            println!("found: {}", r.0);
+        }
+    }
 }

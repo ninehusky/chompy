@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{enumo::Rule, *};
 
 use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
@@ -833,8 +833,7 @@ pub fn compute_conditional_structures(
     let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
     let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
-    // let cond_prop_ruleset = Pred::get_condition_propagation_rules(conditional_soup);
-    let cond_prop_ruleset = vec![];
+    let cond_prop_ruleset = Pred::get_condition_propagation_rules(conditional_soup);
 
     for cond in conditional_soup.force() {
         let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
@@ -962,124 +961,132 @@ pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
 }
 
 pub fn og_recipe() -> Ruleset<Pred> {
-    // let cond_lang = Lang::new(&["0"], &["a", "b", "c"], &[&[], &["<", "<=", "!="]]);
-
-    // let base_lang = if cond_lang.ops.len() == 2 {
-    //     base_lang(2)
-    // } else {
-    //     base_lang(3)
-    // };
-
-    // let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
-    //     .filter(Filter::Contains("VAR".parse().unwrap()))
-    //     .plug("VAR", &Workload::new(cond_lang.vars))
-    //     .plug("VAL", &Workload::new(cond_lang.vals));
-    // for (i, ops) in cond_lang.ops.iter().enumerate() {
-    //     wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    // }
-
     let mut wkld = conditions::generate::get_condition_workload();
 
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
-
-    let (pvec_to_terms, cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide(&wkld);
+    let (pvec_to_terms, mut cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide(&wkld);
     let mut all_rules = Ruleset::default();
 
-    // let equality = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-    //     all_rules.clone(),
-    // );
+    cond_prop_ruleset.push( 
+        ImplicationSwitch::new(
+            &"(&& ?a ?b)".parse().unwrap(),
+            &"?a".parse().unwrap()
+        ).rewrite()
+    );
 
-    // all_rules.extend(equality);
+    cond_prop_ruleset.push( 
+        ImplicationSwitch::new(
+            &"(&& ?a ?b)".parse().unwrap(),
+            &"?b".parse().unwrap()
+        ).rewrite()
+    );
 
-    // let comparisons = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-    //     all_rules.clone(),
-    //     &pvec_to_terms,
-    //     &cond_prop_ruleset,
-    // );
+    // add that `(&& (<= ?a ?c) (<= ?b ?c))` `
 
-    // all_rules.extend(comparisons);
+    // println!("terms:");
+    // for v in pvec_to_terms.values() {
+    //     for t in v {
+    //         println!("{}", t);
+    //     }
+    // }
 
-    // let bool_only = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-    //     all_rules.clone(),
-    // );
+    // println!("implication rules:");
 
-    // all_rules.extend(bool_only);
+    // for r in cond_prop_ruleset {
+    //     println!("{}", r.name);
+    // }
 
-    // // corresponds to "mul/div with constants + mul/div with constants and other arith"
-    // let arith_basic = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     3,
-    //     Lang::new(
-    //         &["-1", "0", "1"],
-    //         &["a", "b", "c"],
-    //         &[&[], &["+", "-", "*", "/", "%"]],
-    //     ),
-    //     Ruleset::default(),
-    //     &pvec_to_terms,
-    //     &cond_prop_ruleset,
-    // );
-    let arith_basic = recursive_rules(
+
+    let equality = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(equality);
+
+    let comparisons = recursive_rules_cond(
         Metric::Atoms,
         3,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+
+    all_rules.extend(comparisons);
+
+    let bool_only = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+        all_rules.clone(),
+    );
+
+    all_rules.extend(bool_only);
+
+    let arith_basic = recursive_rules_cond(
+        Metric::Atoms,
+        5,
         Lang::new(
-            &["-1", "0", "1"],
+            &["0", "1"],
             &["a", "b", "c"],
-            &[&[], &["+", "-", "*", "/", "%"]],
+            &[&["-"], &["+", "-", "*", "/"]],
         ),
         Ruleset::default(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
     );
 
     all_rules.extend(arith_basic.clone());
 
-    // let min_max = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
-    //     all_rules.clone(),
-    //     &pvec_to_terms,
-    //     &cond_prop_ruleset,
-    // );
+    let mul_div = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["-1", "0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["*", "/", "%"]],
+        ),
+        all_rules.clone(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
 
-    // all_rules.extend(min_max);
+    all_rules.extend(mul_div.clone());
+
+    let min_max = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max"]]),
+        Ruleset::default(),
+        &pvec_to_terms,
+        &cond_prop_ruleset,
+    );
+
+    all_rules.extend(min_max);
 
     // the special workloads, which mostly revolve around
     // composing int2boolop(int_term, int_term) or things like that
     // together.
     //
-    let int_lang = Lang::new(&["0", "1"], &["a", "b", "c"], &[&["abs"], &["+", "-", "min", "max"]]);
-
+    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "min", "max"]]);
     let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
         .filter(Filter::Contains("VAR".parse().unwrap()))
         .plug("VAR", &Workload::new(int_lang.vars))
-        .plug("VAL", &Workload::new(int_lang.vals))
-        .append(Workload::new(&["0", "1"]));
+        .plug("VAL", &Workload::new(int_lang.vals));
+
+
     // let ops = vec![lang.uops, lang.bops, lang.tops];
     for (i, ops) in int_lang.ops.iter().enumerate() {
         int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
     }
 
-    println!("int_wkld:");
-    for t in int_wkld.force() {
-        println!("{}", t);
-    }
-
-    println!("arith_basic:");
-    for r in arith_basic.iter() {
-        println!("{:?}", r.name);
-    }
-
-    for op in &["min"] {
+    for op in &["min", "max"] {
         let big_wkld = Workload::new(&["0", "1"]).append(
             Workload::new(&["(OP V V)"])
                 // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
@@ -1091,7 +1098,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
         let wrapped_rules = run_workload(
             big_wkld,
-            arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
+            all_rules.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
             Limits::synthesis(),
             Limits {
                 iter: 1,
@@ -1156,7 +1163,7 @@ pub fn og_recipe_no_conditions() -> Ruleset<Pred> {
     let min_max = recursive_rules(
         Metric::Atoms,
         7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&["abs"], &["min", "max"]]),
         all_rules.clone(),
     );
 
@@ -1208,3 +1215,4 @@ pub fn og_recipe_no_conditions() -> Ruleset<Pred> {
 
     all_rules
 }
+
