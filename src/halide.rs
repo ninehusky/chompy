@@ -2,6 +2,7 @@ use crate::{enumo::Rule, *};
 
 use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
+use log::log;
 use num::ToPrimitive;
 use recipe_utils::{
     base_lang, iter_metric, recursive_rules, recursive_rules_cond, run_workload, Lang,
@@ -961,6 +962,7 @@ pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
 }
 
 pub fn og_recipe() -> Ruleset<Pred> {
+    log::info!("LOG: Starting recipe.");
     let mut wkld = conditions::generate::get_condition_workload();
 
     // only want conditions greater than size 2
@@ -968,36 +970,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     let (pvec_to_terms, mut cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide(&wkld);
     let mut all_rules = Ruleset::default();
-
-    cond_prop_ruleset.push( 
-        ImplicationSwitch::new(
-            &"(&& ?a ?b)".parse().unwrap(),
-            &"?a".parse().unwrap()
-        ).rewrite()
-    );
-
-    cond_prop_ruleset.push( 
-        ImplicationSwitch::new(
-            &"(&& ?a ?b)".parse().unwrap(),
-            &"?b".parse().unwrap()
-        ).rewrite()
-    );
-
-    // add that `(&& (<= ?a ?c) (<= ?b ?c))` `
-
-    // println!("terms:");
-    // for v in pvec_to_terms.values() {
-    //     for t in v {
-    //         println!("{}", t);
-    //     }
-    // }
-
-    // println!("implication rules:");
-
-    // for r in cond_prop_ruleset {
-    //     println!("{}", r.name);
-    // }
-
 
     let equality = recursive_rules(
         Metric::Atoms,
@@ -1073,7 +1045,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // the special workloads, which mostly revolve around
     // composing int2boolop(int_term, int_term) or things like that
     // together.
-    //
     let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "min", "max"]]);
     let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
         .filter(Filter::Contains("VAR".parse().unwrap()))
