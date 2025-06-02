@@ -184,6 +184,13 @@ impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
 
+        let cond_vars = cond_pat.vars();
+        let l_vars = l_pat.vars();
+
+        if cond_vars.iter().any(|v| !l_vars.contains(v)) {
+            return None; // Condition variables must be a subset of the left-hand side variables
+        }
+
         let rewrite = Rewrite::new(
             name.clone(),
             l_pat.clone(),
