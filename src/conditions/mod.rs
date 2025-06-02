@@ -17,7 +17,7 @@ pub struct Implication<L: SynthLanguage> {
     rhs: Pattern<L>,
 }
 
-pub fn validate_implication(imp: Implication<Pred>) -> ValidationResult {
+pub fn validate_implication(imp: Implication<Pred>, filter_equalities: bool) -> ValidationResult {
     let mut cfg = z3::Config::new();
     cfg.set_timeout_msec(1000);
     let ctx = z3::Context::new(&cfg);
@@ -25,7 +25,6 @@ pub fn validate_implication(imp: Implication<Pred>) -> ValidationResult {
     let lexpr = egg_to_z3(&ctx, Pred::instantiate(&imp.lhs).as_ref());
     let rexpr = egg_to_z3(&ctx, Pred::instantiate(&imp.rhs).as_ref());
     // assert that lexpr --> rexpr.
-
 
     // 1. we want to get rid of trivial implications
     // because p -> q == !p or q, we can just check if
@@ -55,7 +54,20 @@ pub fn validate_implication(imp: Implication<Pred>) -> ValidationResult {
         return ValidationResult::Invalid;
     }
 
+
     solver.reset();
+
+    if filter_equalities {
+        // if we are filtering equalities, we can just check if the LHS is equal to the RHS.
+        // if they are equal, then the implication is trivially true.
+        solver.assert(&lexpr._eq(&rexpr).not());
+        if solver.check() == z3::SatResult::Unsat {
+            // we've found not a one-directional implication, but a two-way equivalence.
+            return ValidationResult::Invalid;
+        }   
+        solver.reset();
+    }
+
 
     // with trivial implications out of the way, we can now check if the non-trivial implication is valid.
 
