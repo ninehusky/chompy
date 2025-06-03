@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use egg::{Pattern, Rewrite};
+use egg::{EGraph, Pattern, Rewrite, Runner};
 
 use crate::{
     enumo::{Filter, Metric, Ruleset, Scheduler, Workload},
@@ -26,6 +26,33 @@ pub fn substitute(workload: Workload, sub: Workload, atom: &str) -> Workload {
         pegs = pegs.append(workload.clone().plug(atom, &Workload::Set(vec![sub])));
     }
     pegs
+}
+
+// kind of a hack because colors are hard.
+fn get_cond_egraphs<L: SynthLanguage>(
+    conditions: &Vec<Pattern<L>>,
+    black_egraph: &EGraph<L, SynthAnalysis>,
+    chosen: &Ruleset<L>,
+    impls: &Vec<Rewrite<L, SynthAnalysis>>,
+) -> HashMap<String, EGraph<L, SynthAnalysis>> {
+    let mut egraphs = HashMap::default();
+    for cond in conditions {
+        let mut egraph = black_egraph.clone();
+
+        // Add `(istrue ?cond)` to the egraph.
+        egraph.add_expr(&format!("(istrue {})", cond.to_string()).parse().unwrap());
+
+        let runner: Runner<L, SynthAnalysis> = Runner::default()
+            .with_egraph(egraph.clone())
+            .run(&impls.clone());
+
+        let scheduler = Scheduler::Compress(Limits::deriving());
+        let egraph = scheduler.run(&runner.egraph, &chosen);
+
+        let key = cond.to_string();
+        egraphs.insert(key, egraph);
+    }
+    egraphs
 }
 
 fn run_workload_internal<L: SynthLanguage>(
@@ -69,7 +96,7 @@ fn run_workload_internal<L: SynthLanguage>(
 
     if let Some(conditions) = conditions {
         // now, try to add some conditions into tha mix!
-        let mut conditional_candidates = Ruleset::conditional_cvec_match(&compressed, &conditions);
+        let mut conditional_candidates = Ruleset::conditional_cvec_match(&compressed, &conditions, &Default::default());
 
         println!("conditional candidates:");
 

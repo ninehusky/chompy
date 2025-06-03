@@ -311,6 +311,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn conditional_cvec_match(
         egraph: &EGraph<L, SynthAnalysis>,
         conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
+        condition_egraphs: &HashMap<String, Vec<EGraph<L, SynthAnalysis>>>,
     ) -> Self {
         let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::default();
 
@@ -349,7 +350,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 if c1 == usize::MAX || c2 == usize::MAX {
                                     continue;
                                 }
-
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
                             }
                         }
