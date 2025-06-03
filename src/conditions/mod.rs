@@ -10,6 +10,8 @@ use crate::halide::{Pred, egg_to_z3};
 pub mod generate;
 mod derive;
 
+mod colors;
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Implication<L: SynthLanguage> {
     pub name: Arc<str>,
