@@ -8,7 +8,7 @@ use egg::{
 };
 use enumo::{lookup_pattern, Workload};
 
-use crate::{enumo::Sexp, recipe_utils::Lang, *};
+use crate::{enumo::{egg_to_serialized_egraph, Sexp}, recipe_utils::Lang, *};
 
 // An `ImplicationSwitch` models the implication of one condition to another.
 //
@@ -21,13 +21,54 @@ use crate::{enumo::Sexp, recipe_utils::Lang, *};
 // then it will add `(IsTrue c')` to the e-graph, paving the way for conditional rewrite
 // rules. See `ConditionalRewrite` for more details.
 pub struct ImplicationSwitch<L: SynthLanguage> {
-    parent_cond: Pattern<L>,
-    my_cond: Pattern<L>,
+    pub(crate) parent_cond: Pattern<L>,
+    pub(crate) my_cond: Pattern<L>,
 }
 
 struct ImplicationApplier<L: SynthLanguage> {
     parent_cond: Pattern<L>,
     my_cond: Pattern<L>,
+}
+
+// returns Option<Id> if the pattern is found in the egraph, otherwise None.
+fn search_pat<L: Language, A: Analysis<L>>(
+    pat: &Pattern<L>,
+    egraph: &EGraph<L, A>,
+    subst: &Subst,
+) -> Option<Id> {
+    let mut ids = vec![None; pat.ast.as_ref().len()];
+
+    for (i, pat_node) in pat.ast.as_ref().iter().enumerate() {
+        match pat_node {
+            ENodeOrVar::Var(v) => {
+                ids[i] = subst.get(*v).copied();
+            }
+            ENodeOrVar::ENode(e) => {
+                let mut resolved_enode: L = e.clone();
+                for child in resolved_enode.children_mut() {
+                    match ids[usize::from(*child)] {
+                        None => {
+                            return None;
+                        }
+                        Some(id) => {
+                            *child = id;
+                        }
+                    }
+                }
+                match egraph.lookup(resolved_enode) {
+                    None => {
+                        return None;
+                    }
+                    Some(id) => {
+                        ids[i] = Some(id);
+                    }
+                }
+            }
+        }
+    }
+
+    // the first id.
+    ids[0]
 }
 
 fn apply_pat<L: Language, A: Analysis<L>>(
@@ -58,12 +99,16 @@ where
     fn apply_one(
         &self,
         egraph: &mut egg::EGraph<L, SynthAnalysis>,
-        _eclass: egg::Id,
+        eclass: egg::Id,
         subst: &egg::Subst,
         _searcher_ast: Option<&PatternAst<L>>,
-        _rule_name: egg::Symbol,
+        rule_name: egg::Symbol,
     ) -> Vec<egg::Id> {
         // it better be the case that the parent condition exists in the e-graph.
+
+        let extractor = Extractor::new(egraph, AstSize);
+        let (_, best) = extractor.find_best(eclass);
+
 
         let is_true_parent_pattern: Pattern<L> =
             format!("(istrue {})", self.parent_cond).parse().unwrap();
@@ -71,11 +116,15 @@ where
         let is_true_my_pattern: Pattern<L> = format!("(istrue {})", self.my_cond).parse().unwrap();
 
         if !lookup_pattern(&is_true_parent_pattern, egraph, subst) {
+            // save the egraph to a json.
+            let serialized = egg_to_serialized_egraph(egraph);
+            serialized.to_json_file("dump.json").unwrap();
             panic!(
                 "Parent condition {} not found in egraph for {}",
                 self.parent_cond, self.my_cond
             );
         }
+
 
         if lookup_pattern(&is_true_my_pattern, egraph, subst) {
             // we already have the condition in the egraph, so no need to add it.
@@ -88,7 +137,10 @@ where
             subst,
         );
 
-        vec![new_id]
+        let mut changed = vec![];
+
+        changed.push(new_id);
+        changed
     }
 }
 
@@ -110,6 +162,7 @@ impl<L: SynthLanguage> ImplicationSwitch<L> {
             my_cond: self.my_cond.clone(),
         };
 
+        println!("searcher is for : {}", searcher);
         // NOTE @ninehusky: I made the string like this so that we don't confuse it with
         // a rewrite rule.
         Rewrite::new(
@@ -280,6 +333,11 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     /// Returns None when the conversion is not defined for the constant.
     fn constant_to_bool(_c: &Self::Constant) -> Option<bool> {
         None
+    }
+
+    // Says if a node in the language is an equality.
+    fn is_equality(&self) -> bool {
+        false
     }
 
     /// Hook into the e-graph analysis modify method
@@ -604,6 +662,7 @@ pub mod tests {
     use super::*;
     use crate::halide::Pred;
     use egg::{EGraph, Id, Runner};
+    use symbolic_expressions::ser;
 
     #[test]
     // in previous step, we have (IsTrue foo)
@@ -844,5 +903,32 @@ pub mod tests {
                 .lookup_expr(&"(istrue baz)".parse().unwrap())
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn implication_toggle_equality_simple() {
+        let rule: ImplicationSwitch<Pred> = ImplicationSwitch {
+            parent_cond: "(!= ?x 0)".parse().unwrap(),
+            my_cond: "(== (/ ?x ?x) 1)".parse().unwrap(),
+        };
+
+        let egraph = &mut EGraph::<Pred, SynthAnalysis>::default();
+
+        egraph.add_expr(&"(istrue (!= x 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[rule.rewrite()]);
+
+    let egraph = runner.egraph.clone();
+
+    let serialized = egg_to_serialized_egraph(&egraph);
+    serialized.to_json_file("implication_toggle_equality_simple.json").unwrap();
+
+
+    assert!(egraph.lookup_expr(&"(istrue (== (/ x x) 1))".parse().unwrap()).is_some());
+
+    assert_eq!(egraph.lookup_expr(&"(/ x x)".parse().unwrap()), egraph.lookup_expr(&"1".parse().unwrap()));
+
     }
 }

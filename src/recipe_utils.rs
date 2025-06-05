@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use egg::{Pattern, Rewrite};
+use egg::{EGraph, Pattern, Rewrite, Runner};
 
 use crate::{
     enumo::{Filter, Metric, Ruleset, Scheduler, Workload},
@@ -28,6 +28,33 @@ pub fn substitute(workload: Workload, sub: Workload, atom: &str) -> Workload {
     pegs
 }
 
+// kind of a hack because colors are hard.
+fn get_cond_egraphs<L: SynthLanguage>(
+    conditions: &Vec<String>,
+    black_egraph: &EGraph<L, SynthAnalysis>,
+    chosen: &Ruleset<L>,
+    impls: &Vec<Rewrite<L, SynthAnalysis>>,
+) -> HashMap<String, EGraph<L, SynthAnalysis>> {
+    let mut egraphs = HashMap::default();
+    for cond in conditions {
+        let mut egraph = black_egraph.clone();
+
+        // Add `(istrue ?cond)` to the egraph.
+        egraph.add_expr(&format!("(istrue {})", cond.to_string()).parse().unwrap());
+
+        let runner: Runner<L, SynthAnalysis> = Runner::default()
+            .with_egraph(egraph.clone())
+            .run(&impls.clone());
+
+        let scheduler = Scheduler::Compress(Limits::deriving());
+        let egraph = scheduler.run(&runner.egraph, &chosen);
+
+        let key = cond.to_string();
+        egraphs.insert(key, egraph);
+    }
+    egraphs
+}
+
 fn run_workload_internal<L: SynthLanguage>(
     workload: Workload,
     prior: Ruleset<L>,
@@ -40,6 +67,7 @@ fn run_workload_internal<L: SynthLanguage>(
     // rules for how other conditions become true from other conditions which are true
     propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
+
     let t = Instant::now();
     let num_prior = prior.len();
 
@@ -68,8 +96,25 @@ fn run_workload_internal<L: SynthLanguage>(
     let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
     if let Some(conditions) = conditions {
+        let used_conditions = chosen.0.iter().filter_map(|(_, r)| {
+            // if the rule has a condition, return it
+            r.cond.as_ref().map(|c| c.clone().to_string() )
+        }).collect::<Vec<_>>();
+
+        println!("the conditions used in the rules are:");
+        for cond in &used_conditions {
+            println!("  {}", cond);
+        }
+        // let cond_egraphs = get_cond_egraphs(
+        //     // only use the conditions for which we actually have rules
+        //     &used_conditions,
+        //     &compressed,
+        //     &chosen,
+        //     &propagation_rules.as_ref().unwrap(),
+        // );
+
         // now, try to add some conditions into tha mix!
-        let mut conditional_candidates = Ruleset::conditional_cvec_match(&compressed, &conditions);
+        let mut conditional_candidates = Ruleset::conditional_cvec_match(&compressed, &conditions, &prior, propagation_rules.as_ref().unwrap());
 
         println!("conditional candidates:");
 

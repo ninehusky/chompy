@@ -1,6 +1,6 @@
-use crate::{enumo::Rule, *};
+use crate::{conditions::merge_eqs, enumo::{egg_to_serialized_egraph, Rule}, *};
 
-use egg::{RecExpr, Rewrite};
+use egg::{RecExpr, Rewrite, Runner};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use log::log;
 use num::ToPrimitive;
@@ -149,6 +149,13 @@ impl SynthLanguage for Pred {
                 vec![None, None, None]
             }
         }
+    }
+
+    fn is_equality(&self) -> bool {
+        println!("seeing if {} is equality", self);
+        let result = matches!(self, Pred::Eq(_));
+        println!("the result is: {}", result);
+        result
     }
 
     fn initialize_vars(egraph: &mut EGraph<Self, SynthAnalysis>, vars: &[String]) {
@@ -969,37 +976,61 @@ pub fn og_recipe() -> Ruleset<Pred> {
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
     let (pvec_to_terms, mut cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide(&wkld);
+
+    cond_prop_ruleset.push(merge_eqs());
+    cond_prop_ruleset.push(ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?a".parse().unwrap()).rewrite());
+    cond_prop_ruleset.push(ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?b".parse().unwrap()).rewrite());
+    // for c in cond_prop_ruleset.clone() {
+    //     println!("   {}", c.name);
+    // }
+
+    // TODO: put this as a test
+    // let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
+
+    // egraph.add_expr(&"(istrue (&& (!= b 0) (== b a)))".parse().unwrap());
+
+    // let runner: Runner<Pred, SynthAnalysis> = Runner::default()
+    //         .with_egraph(egraph.clone())
+    //         .run(&cond_prop_ruleset.clone());
+
+    // assert!(runner.egraph.lookup_expr(&"(istrue (== b a))".parse().unwrap()).is_some());
+    // assert!(runner.egraph.lookup_expr(&"(istrue (!= a 0))".parse().unwrap()).is_some());
+
+    // let egraph = egg_to_serialized_egraph(&runner.egraph);
+    // egraph.to_json_file("impls.json").unwrap();
+
+
     let mut all_rules = Ruleset::default();
 
-    let equality = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-        all_rules.clone(),
-    );
+    // let equality = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
+    //     all_rules.clone(),
+    // );
 
-    all_rules.extend(equality);
+    // all_rules.extend(equality);
 
-    let comparisons = recursive_rules_cond(
-        Metric::Atoms,
-        3,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-        all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
-    );
+    // let comparisons = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     3,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
+    //     all_rules.clone(),
+    //     &pvec_to_terms,
+    //     &cond_prop_ruleset,
+    // );
 
 
-    all_rules.extend(comparisons);
+    // all_rules.extend(comparisons);
 
-    let bool_only = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-        all_rules.clone(),
-    );
+    // let bool_only = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+    //     all_rules.clone(),
+    // );
 
-    all_rules.extend(bool_only);
+    // all_rules.extend(bool_only);
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
