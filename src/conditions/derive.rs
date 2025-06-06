@@ -4,7 +4,11 @@ use std::str::FromStr;
 
 use egg::Rewrite;
 
-use crate::{enumo::{self, Sexp}, halide::Pred, SynthAnalysis, SynthLanguage, ValidationResult};
+use crate::{
+    enumo::{self, Sexp},
+    halide::Pred,
+    SynthAnalysis, SynthLanguage, ValidationResult,
+};
 
 use super::{validate_implication, Implication};
 
@@ -40,14 +44,22 @@ fn score<L: SynthLanguage>(imp: &Implication<L>) -> f64 {
 // 3. Run the path-finding algorithm on the egraph.
 // 4. For each remaining implication, query the egraph to see if `(path lhs rhs)` is present. If it is, throw the rule away.
 // TODO: get rid of `Pred`, and boot the need to validate over to the `SynthLanguage` trait.
-pub fn minimize_implications(imps: &Vec<Implication<Pred>>, prior: &Vec<Implication<Pred>>) -> (Vec<Implication<Pred>>, Vec<Implication<Pred>>) {
+pub fn minimize_implications(
+    imps: &Vec<Implication<Pred>>,
+    prior: &Vec<Implication<Pred>>,
+) -> (Vec<Implication<Pred>>, Vec<Implication<Pred>>) {
     let mut invalid: Vec<Implication<Pred>> = vec![];
     let mut chosen = prior.clone();
-    let step_size = 1;
+    let step_size = 10;
     let mut mut_imps = imps.clone();
     let mut egraph = new_impl_egraph();
     while !mut_imps.is_empty() {
         let selected = select_implications(&mut mut_imps, step_size, &mut invalid);
+        println!("i have selected these impls:");
+        for imp in &selected {
+            println!("  {}: {} -> {}", imp.name, imp.lhs, imp.rhs);
+        }
+
         chosen.extend(selected.clone());
         mut_imps = shrink_implications(&mut_imps, &chosen);
     }
@@ -61,193 +73,156 @@ pub fn minimize_implications(imps: &Vec<Implication<Pred>>, prior: &Vec<Implicat
     }
 
     (new_imps, invalid)
-
 }
 
-
-pub fn shrink_implications(imps: &Vec<Implication<Pred>>, chosen: &Vec<Implication<Pred>>) -> Vec<Implication<Pred>> {
-    fn add_term(egraph: &mut egglog::EGraph, term: &enumo::Sexp) {
-        egraph.parse_and_run_program(None, format!(r#"
-            {term}
-            (edge {term} {term}) "#).as_str()).unwrap();
-    }
-    
-    
-    fn egg_to_egglog(term: &Sexp) -> Sexp {
-        match term {
-            Sexp::Atom(a) => {
-                if let Ok(num) = a.parse::<i64>() {
-                    return Sexp::Atom(format!("(Lit {})", num.to_string()));
-                } else if a.starts_with("?") {
-                    // a is a meta-variable, leave it alone.
-                    return Sexp::Atom(a.into());
-                } else {
-                    return Sexp::Atom(format!("(Var \"{}\")", a).into());
-                }
-
-            }
-            Sexp::List(l) => {
-                assert!(l.len() > 1);
-                let op = if let Some(Sexp::Atom(a)) = l.first() {
-                    match a.as_ref() {
-                        "abs" => "Abs",
-                        "<" => "Lt",
-                        "<=" => "Leq",
-                        ">" => "Gt",
-                        ">=" => "Geq",
-                        "==" => "Eq",
-                        "!=" => "Neq",
-                        "->" => "Implies",
-                        "!" => "Not",
-                        "-" => {
-                            if l.len() == 2 {
-                                "Neg"
-                            } else if l.len() == 3 {
-                                "Sub"
-                            } else {
-                                panic!("expected unary negation")
-                            }
-                        }
-                        "&&" => "And",
-                        "||" => "Or",
-                        "^" => "Xor",
-                        "+" => "Add",
-                        "*" => "Mul",
-                        "/" => "Div",
-                        "%" => "Mod",
-                        "min" => "Min",
-                        "max" => "Max",
-                        "select" => "Select",
-                        _ => panic!("unknown operator: {}", a),
-                    }
-                } else {
-                    panic!("expected first element to be an atom")
-                };
-
-
-                let mut new_list = vec![Sexp::Atom(op.into())];
-                for item in &l[1..] {
-                    new_list.push(egg_to_egglog(item));
-                }
-                Sexp::List(new_list)
+pub fn egg_to_egglog(term: &Sexp) -> Sexp {
+    match term {
+        Sexp::Atom(a) => {
+            if let Ok(num) = a.parse::<i64>() {
+                return Sexp::Atom(format!("(Lit {})", num.to_string()));
+            } else if a.starts_with("?") {
+                // a is a meta-variable, leave it alone.
+                return Sexp::Atom(a.into());
+            } else {
+                return Sexp::Atom(format!("(Var \"{}\")", a).into());
             }
         }
+        Sexp::List(l) => {
+            assert!(l.len() > 1);
+            let op = if let Some(Sexp::Atom(a)) = l.first() {
+                match a.as_ref() {
+                    "abs" => "Abs",
+                    "<" => "Lt",
+                    "<=" => "Leq",
+                    ">" => "Gt",
+                    ">=" => "Geq",
+                    "==" => "Eq",
+                    "!=" => "Neq",
+                    "->" => "Implies",
+                    "!" => "Not",
+                    "-" => {
+                        if l.len() == 2 {
+                            "Neg"
+                        } else if l.len() == 3 {
+                            "Sub"
+                        } else {
+                            panic!("expected unary negation")
+                        }
+                    }
+                    "&&" => "And",
+                    "||" => "Or",
+                    "^" => "Xor",
+                    "+" => "Add",
+                    "*" => "Mul",
+                    "/" => "Div",
+                    "%" => "Mod",
+                    "min" => "Min",
+                    "max" => "Max",
+                    "select" => "Select",
+                    _ => panic!("unknown operator: {}", a),
+                }
+            } else {
+                panic!("expected first element to be an atom")
+            };
 
+            let mut new_list = vec![Sexp::Atom(op.into())];
+            for item in &l[1..] {
+                new_list.push(egg_to_egglog(item));
+            }
+            Sexp::List(new_list)
+        }
+    }
+}
 
+pub fn shrink_implications(
+    imps: &Vec<Implication<Pred>>,
+    chosen: &Vec<Implication<Pred>>,
+) -> Vec<Implication<Pred>> {
+    fn add_term(egraph: &mut egglog::EGraph, term: &enumo::Sexp) {
+        egraph
+            .parse_and_run_program(
+                None,
+                format!(
+                    r#"
+            {term}
+            (edge {term} {term}) "#
+                )
+                .as_str(),
+            )
+            .unwrap();
     }
 
-        // 1. make new egraph
-        let mut egraph = new_impl_egraph();
+    // 1. make new egraph
+    let mut egraph = new_impl_egraph();
 
-        // 2. add the prior implications as rules to the egraph.
-        for imp in chosen {
-            // keep these as terms with meta-variables.
-            let lhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.lhs.to_string()).unwrap());
-            let rhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.rhs.to_string()).unwrap());
+    // 2. add the prior implications as rules to the egraph.
+    println!("prior implications: {}", chosen.len());
+    for imp in chosen {
+        println!("adding prior implication: {}: {} -> {}", imp.name, imp.lhs, imp.rhs);
 
-            egraph.parse_and_run_program(None,
-                format!(r#"
+        // keep these as terms with meta-variables.
+        let lhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.lhs.to_string()).unwrap());
+        let rhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.rhs.to_string()).unwrap());
+
+
+        egraph
+            .parse_and_run_program(
+                None,
+                format!(
+                    r#"
                 (rule
                     ({lhs}
                      {rhs})
                     ((edge {lhs} {rhs}))
                     :ruleset find-path)
-                "#).as_str()).unwrap();
+                "#
+                )
+                .as_str(),
+            )
+            .unwrap();
+    }
 
+    // 3. add the lhs, rhs of each implication to the egraph
+    // now, attempt to derive the selected implications.
+    for imp in imps.iter().chain(chosen.iter()) {
+        let lhs = egg_to_egglog(
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs).to_string()).unwrap(),
+        );
+        let rhs = egg_to_egglog(
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs).to_string()).unwrap(),
+        );
+
+        // add lhs, rhs to egraph
+        add_term(&mut egraph, &lhs);
+        add_term(&mut egraph, &rhs);
+    }
+
+    egraph
+        .parse_and_run_program(None, "(run-schedule (saturate find-path))")
+        .unwrap();
+
+    let mut keep = vec![];
+
+    // step 4
+    for imp in imps {
+        let lhs = egg_to_egglog(
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs).to_string()).unwrap(),
+        );
+        let rhs = egg_to_egglog(
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs).to_string()).unwrap(),
+        );
+
+        if !egraph
+            .parse_and_run_program(None, format!("(check (path {} {}))", lhs, rhs).as_str())
+            .is_ok()
+        {
+            // the path does not exist
+            println!("we are keeping: {}", imp.name);
+            keep.push(imp.clone());
+        } else {
+            println!("discarding: {}", imp.name);
         }
-
-        // let's just add this implication to the egraph and see how much performance gain we get.
-        // the implication: (&& ?a ?b) ==> (|| ?a ?c)
-
-        // This is a ruleset of baseline implications.
-        // We should think kind of hard about how we can synthesize rules like this instead
-        // of hard-coding them.
-        // The tricky bit is the inductive case -- it's not just finding single-step implications;
-        // but rather depends on a "star-step" like transitive closure thing.
-        // So, I don't really know how you would find something like this in an e-graph.
-        egraph.parse_and_run_program(None,
-            r#"
-            (rewrite
-                (And ?a ?b)
-                (And ?b ?a)
-                :ruleset find-path)
-            
-            (rewrite
-                (Or ?a ?b)
-                (Or ?b ?a)
-                :ruleset find-path)
-
-            ;;; the base cases.
-            (rule
-                ((And ?a ?b))
-                ((edge (And ?a ?b) ?a)
-                 (edge (And ?a ?b) ?b))
-                :ruleset find-path)
-
-            (rule
-                ((Or ?a ?b))
-                ((edge (Or ?a ?b) ?a)
-                 (edge (Or ?a ?b) ?b))
-                :ruleset find-path)
-
-            ;;; the inductive cases.
-            (rule
-                ((And ?a ?b)
-                 (path ?a ?c))
-                ((path (And ?a ?b) ?c))
-                :ruleset find-path)
-
-            (rule
-                ((Or ?a ?b)
-                 (path ?c ?a))
-                ((path ?c (Or ?a ?b)))
-                :ruleset find-path)
-
-            (rule
-                ((And ?a ?b)
-                 (And ?c ?d)
-                 (path ?a ?c)
-                 (path ?b ?d))
-                ((path (And ?a ?b) (And ?c ?d)))
-                :ruleset find-path)
-
-            "#).unwrap();
-
-
-        // 3. add the lhs, rhs of each implication to the egraph
-        // now, attempt to derive the selected implications.
-        // step 2
-        for imp in imps.iter().chain(chosen.iter()) {
-            let lhs = egg_to_egglog(&enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs).to_string()).unwrap());
-            let rhs = egg_to_egglog(&enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs).to_string()).unwrap());
-
-            // add lhs, rhs to egraph
-            add_term(&mut egraph, &lhs);
-            add_term(&mut egraph, &rhs);
-            // egraph.parse_and_run_program(None, &lhs.to_string()).unwrap();
-            // egraph.parse_and_run_program(None, &rhs.to_string()).unwrap();
-        }
-
-        // step 3
-        egraph.parse_and_run_program(None, "(run-schedule (saturate find-path))").unwrap();
-
-        let mut keep = vec![];
-
-        // step 4
-        for imp in imps {
-            let lhs = egg_to_egglog(&enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs).to_string()).unwrap());
-            let rhs = egg_to_egglog(&enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs).to_string()).unwrap());
-
-
-            if !egraph.parse_and_run_program(None,
-                format!("(check (path {} {}))", lhs, rhs).as_str()).is_ok() {
-                // the path does not exist
-                keep.push(imp.clone());
-            } else {
-                println!("discarding: {}", imp.name);
-            }
-
-        }
+    }
 
     keep
 }
@@ -255,16 +230,19 @@ pub fn shrink_implications(imps: &Vec<Implication<Pred>>, chosen: &Vec<Implicati
 #[test]
 fn validate() {
     let validation = validate_implication(Implication {
-         name: "test".into(),
-         lhs: "(<= ?a ?b)".parse().unwrap(),
-         rhs: "(|| (< ?a ?b) (== ?a ?b))".parse().unwrap(),
-    });
+        name: "test".into(),
+        lhs: "(<= ?a ?b)".parse().unwrap(),
+        rhs: "(|| (< ?a ?b) (== ?a ?b))".parse().unwrap(),
+    }, false);
 
     println!("validation result: {:?}", validation);
-
 }
 
-pub fn select_implications(imps: &mut Vec<Implication<Pred>>, step_size: usize, invalid: &mut Vec<Implication<Pred>>) -> Vec<Implication<Pred>> {
+pub fn select_implications(
+    imps: &mut Vec<Implication<Pred>>,
+    step_size: usize,
+    invalid: &mut Vec<Implication<Pred>>,
+) -> Vec<Implication<Pred>> {
     let mut chosen = vec![];
     imps.sort_by(|a, b| score(b).partial_cmp(&score(a)).unwrap());
 
@@ -273,7 +251,7 @@ pub fn select_implications(imps: &mut Vec<Implication<Pred>>, step_size: usize, 
     while selected.len() < step_size {
         let popped = imps.pop();
         if let Some(imp) = popped {
-            if matches!(validate_implication(imp.clone()), ValidationResult::Valid) {
+            if matches!(validate_implication(imp.clone(), true), ValidationResult::Valid) {
                 selected.push(imp.clone());
             } else {
                 invalid.push(imp.clone());
@@ -286,11 +264,10 @@ pub fn select_implications(imps: &mut Vec<Implication<Pred>>, step_size: usize, 
 
     chosen.extend(selected);
     chosen
-
 }
 
 /// Returns an egraph initialized with the path-finding ruleset.
-fn new_impl_egraph() -> egglog::EGraph {
+pub fn new_impl_egraph() -> egglog::EGraph {
     let mut egraph = egglog::EGraph::default();
     // This kind of sucks, but we need to re-add the Halide language definition to the egraph.
     // TODO: @ninehusky: later, as with `validate_implication`, we should move this to the `SynthLanguage` trait.
@@ -323,12 +300,15 @@ fn new_impl_egraph() -> egglog::EGraph {
 
     egraph.parse_and_run_program(None, pred_defn).unwrap();
 
-    egraph.parse_and_run_program(None,
-        r#"
+    egraph
+        .parse_and_run_program(
+            None,
+            r#"
         (relation edge (Predicate Predicate))
         (relation path (Predicate Predicate))
 
         (ruleset find-path)
+        (ruleset explore)
 
         ;;; The base case.
         ;;; (would be great to have (edge x x) for all x, but no way to
@@ -344,7 +324,53 @@ fn new_impl_egraph() -> egglog::EGraph {
              (edge ?x ?r))
             ((path ?l ?r))
             :ruleset find-path)
-        "#).unwrap();
+
+        (rewrite
+            (And ?a ?b)
+            (And ?b ?a)
+            :ruleset find-path)
+        
+        (rewrite
+            (Or ?a ?b)
+            (Or ?b ?a)
+            :ruleset find-path)
+
+        ;;; the base cases.
+        (rule
+            ((And ?a ?b))
+            ((edge (And ?a ?b) ?a)
+                (edge (And ?a ?b) ?b))
+            :ruleset find-path)
+
+        (rule
+            ((Or ?a ?b))
+            ((edge (Or ?a ?b) ?a)
+                (edge (Or ?a ?b) ?b))
+            :ruleset find-path)
+
+        ;;; the inductive cases.
+        (rule
+            ((And ?a ?b)
+                (path ?a ?c))
+            ((path (And ?a ?b) ?c))
+            :ruleset find-path)
+
+        (rule
+            ((Or ?a ?b)
+                (path ?c ?a))
+            ((path ?c (Or ?a ?b)))
+            :ruleset find-path)
+
+        (rule
+            ((And ?a ?b)
+                (And ?c ?d)
+                (path ?a ?c)
+                (path ?b ?d))
+            ((path (And ?a ?b) (And ?c ?d)))
+            :ruleset find-path)
+        "#,
+        )
+        .unwrap();
     egraph
 }
 
@@ -440,7 +466,6 @@ fn shrink_implications_halide_path() {
     let (new_imps, invalid) = minimize_implications(&mut imps, &mut vec![]);
     assert_eq!(invalid.len(), 0);
     assert_eq!(new_imps.len(), 1);
-
 }
 
 #[test]
@@ -478,16 +503,30 @@ fn new_impl_egraph_compiles() {
 #[test]
 fn egraph_edge_relation_ok() {
     let mut egraph = new_impl_egraph();
-    egraph.parse_and_run_program(None, "(edge (Var \"a\") (Var \"b\"))").unwrap();
-    egraph.parse_and_run_program(None, "(check (edge (Var \"a\") (Var \"b\")))").unwrap();
+    egraph
+        .parse_and_run_program(None, "(edge (Var \"a\") (Var \"b\"))")
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(check (edge (Var \"a\") (Var \"b\")))")
+        .unwrap();
 }
 
 #[test]
 fn egraph_path_ok() {
     let mut egraph = new_impl_egraph();
-    egraph.parse_and_run_program(None, "(edge (Var \"a\") (Var \"b\"))").unwrap();
-    egraph.parse_and_run_program(None, "(edge (Var \"b\") (Var \"c\"))").unwrap();
-    egraph.parse_and_run_program(None, "(run-schedule (saturate find-path))").unwrap();
-    egraph.parse_and_run_program(None, "(check (path (Var \"a\") (Var \"c\")))").unwrap();
-    egraph.parse_and_run_program(None, "(check (path (Var \"a\") (Var \"b\")))").unwrap();
+    egraph
+        .parse_and_run_program(None, "(edge (Var \"a\") (Var \"b\"))")
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(edge (Var \"b\") (Var \"c\"))")
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(run-schedule (saturate find-path))")
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(check (path (Var \"a\") (Var \"c\")))")
+        .unwrap();
+    egraph
+        .parse_and_run_program(None, "(check (path (Var \"a\") (Var \"b\")))")
+        .unwrap();
 }

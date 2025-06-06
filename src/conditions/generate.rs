@@ -1,6 +1,11 @@
+use std::str::FromStr;
+
 use egg::{AstSize, EClass, Extractor, Id, Pattern, RecExpr, Rewrite, Runner};
+use env_logger::filter;
 use z3::ast::Ast;
 
+use crate::conditions::derive::{egg_to_egglog, new_impl_egraph};
+use crate::enumo::Sexp;
 use crate::language::SynthLanguage;
 use crate::{
     conditions::{derive::minimize_implications, Implication},
@@ -13,21 +18,376 @@ use crate::{
 
 use egglog::{extract, EGraph as EgglogEGraph};
 
+use super::derive::select_implications;
+
+// oh my god
+#[derive(PartialEq, Eq)]
+enum Type {
+    BoolTy,
+    IntTy,
+}
+
+fn well_typed(exp: &Sexp, expected_type: Type) -> bool {
+    match exp {
+        Sexp::Atom(_) => expected_type == Type::IntTy,
+        Sexp::List(l) => {
+            if let Sexp::Atom(op) = &l[0] {
+                match op.as_str() {
+                    "&&" | "||" => {
+                        if expected_type == Type::BoolTy && l.len() == 3 {
+                            l[1..].iter().all(|x| well_typed(x, Type::BoolTy))
+                        } else {
+                            false
+                        }
+                    }
+                    "<" | "<=" | ">" | ">=" | "==" | "!=" => {
+                        if expected_type == Type::BoolTy && l.len() == 3 {
+                            l[1..].iter().all(|x| well_typed(x, Type::IntTy))
+                        } else {
+                            false
+                        }
+                    }
+                    "+" | "-" | "*" | "/" | "min" | "max" => {
+                        if expected_type == Type::IntTy && l.len() >= 2 {
+                            l[1..].iter().all(|x| well_typed(x, Type::IntTy))
+                        } else {
+                            false
+                        }
+                    }
+                    _ => panic!("Unknown operator: {}", op),
+                }
+            } else {
+                panic!("Not well formed");
+            }
+        }
+    }
+}
 #[test]
 fn test_it() {
     let wkld = get_condition_workload();
     get_condition_propagation_rules_halide(&wkld);
 }
 
-pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
+fn add_term(egraph: &mut egglog::EGraph, term: &crate::enumo::Sexp) {
+    egraph
+        .parse_and_run_program(
+            None,
+            format!(
+                r#"
+        {term}
+        (edge {term} {term}) "#
+            )
+            .as_str(),
+        )
+        .unwrap();
+}
+
+pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
     HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
     Vec<Rewrite<Pred, SynthAnalysis>>,
 ) {
-    // 2. put it in an e-graph.
+    println!("starting");
+
+    let mut pred_rules: Ruleset<Pred> = Ruleset::default();
+
+    let int_workload = Workload::new(&["0", "V", "(OP2 V V)"])
+        .plug("V", &Workload::new(&["a", "b", "c"]))
+        .plug("OP2", &Workload::new(&["+", "-", "min", "max"]));
+
+    let int_rules = recursive_rules(
+        Metric::Atoms,
+        3,
+        Lang::new(
+            &["0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["+", "-", "min", "max"]],
+        ),
+        Ruleset::default(),
+    );
+
+    pred_rules.extend(int_rules.clone());
+
+    let int_workload = compress(&int_workload, int_rules.clone());
+
+    println!("int workload:");
+    for t in int_workload.force() {
+        println!("{}", t);
+    }
+
+    let int_to_bool_workload = Workload::new(&["(OP2 V V)"])
+        .plug("V", &int_workload)
+        .plug("OP2", &Workload::new(&["<", "==", "!="]))
+        .filter(Filter::Canon(vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+        ]));
+
+    let bool_rules = recursive_rules(
+        Metric::Atoms,
+        3,
+        Lang::new(
+            &["0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["<", "<=", "==", "!="]],
+        ),
+        Ruleset::default(),
+    );
+
+    println!("bool rules:");
+    for r in bool_rules.iter() {
+        println!("{}", r.name);
+    }
+
+    pred_rules.extend(bool_rules.clone());
+
+    let int_to_bool_workload = compress(&int_to_bool_workload, bool_rules.clone());
+
+    println!("int to bool workload:");
+    for t in int_to_bool_workload.force() {
+        println!("{}", t);
+    }
+
+    let bool_workload = Workload::new(&["(OP2 V V)"])
+        .plug("V", &int_to_bool_workload)
+        .plug("OP2", &Workload::new(&["&&"]));
+
+    println!("bool workload:");
+    for t in bool_workload.force() {
+        println!("{}", t);
+    }
+
+    let and_rules = recursive_rules(
+        Metric::Atoms,
+        3,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["&&"]]),
+        Ruleset::default(),
+    );
+
+    pred_rules.extend(and_rules.clone());
+
+    let bool_workload = compress(&bool_workload, and_rules.clone());
+
+    println!("bool workload:");
+    for t in bool_workload.force() {
+        println!("{}", t);
+    }
+
+    let max_size = 9;
+
+    // get all the atoms in there
+    let mut cond_egraph: EGraph<Pred, SynthAnalysis> = int_workload.append(Workload::new(&["1"])).to_egraph();
+
+    let mut impl_egraph: EgglogEGraph = new_impl_egraph();
+
+    // add the rules to the impl egraph.
+
+    for rule in pred_rules.iter() {
+        let lhs = egg_to_egglog(&Sexp::from_str(&rule.lhs.to_string()).unwrap());
+        let rhs = egg_to_egglog(&Sexp::from_str(&rule.rhs.to_string()).unwrap());
+
+        // can't have lhs mean "match on anything"
+        if lhs.to_string() == "?a" {
+            println!("skipping rule: {}", rule.name);
+            continue;
+        }
+
+        println!("adding rule: {}", &format!(
+            r#"
+            (rewrite
+                {lhs}
+                {rhs}
+                :ruleset explore)
+            "#,
+            lhs = lhs,
+            rhs = rhs
+        ));
+        impl_egraph.parse_and_run_program(None, &format!(
+            r#"
+            (rewrite
+                {lhs}
+                {rhs}
+                :ruleset explore)
+            "#
+        )).unwrap();
+
+    }
+
+    let mut implications = vec![];
+
+    for i in 1..max_size {
+        println!("i: {}", i);
+        let new_terms = bool_workload
+            .clone()
+            .filter(Filter::MetricEq(Metric::Atoms, i as usize)).append(Workload::new(&["a", "b", "c"]));
+        for term in new_terms.force() {
+            if !well_typed(&term, Type::BoolTy) {
+                println!("skipping ill-typed term: {}", term);
+                continue;
+            }
+            println!("adding: {}", term);
+            cond_egraph.add_expr(&term.to_string().parse::<RecExpr<Pred>>().unwrap());
+
+            // add the generalized term to the implementation egraph.
+            println!("adding to impl_egraph: {}", egg_to_egglog(&term));
+            add_term(&mut impl_egraph, &egg_to_egglog(&term));
+        }
+
+        let new_rules = run_workload(
+            new_terms,
+            pred_rules.clone(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+            None,
+            None,
+        );
+
+        pred_rules.extend(new_rules);
+
+        // compress the egraphs
+        cond_egraph =
+            Scheduler::Compress(Limits::minimize()).run(&cond_egraph, &pred_rules.clone());
+
+        // can mess around with iters that we do here
+        impl_egraph.parse_and_run_program(None, "(run-schedule (saturate explore))")
+            .unwrap();  
+
+        impl_egraph
+            .parse_and_run_program(None, "(run-schedule (saturate find-path))")
+            .unwrap();
+
+        println!("eclasses after: {}", cond_egraph.number_of_classes());
+
+        let candidates = pvec_match(&cond_egraph, &mut impl_egraph);
+        let candidate_impls: Vec<Implication<Pred>> = candidates
+            .0
+            .iter()
+            .map(|(_, rule)| Implication {
+                name: rule.name.clone(),
+                lhs: rule.lhs.clone(),
+                rhs: rule.rhs.clone(),
+            })
+            .collect();
+
+        if !candidate_impls.is_empty() {
+            println!("found {} candidate implications", candidate_impls.len());
+            for rule in candidate_impls.iter() {
+                println!("{}", rule.name);
+            }
+        } else {
+            println!("no candidate implications found");
+        }
+
+        // minimize them.
+        let (chosen, invalid) = minimize_implications(&candidate_impls, &implications);
+
+        assert!(chosen.iter().all(|i| !implications.contains(i)));
+
+        println!("prior implications: {}", implications.len());
+        for i in implications.iter() {
+            println!("{}: {} -> {}", i.name, i.lhs, i.rhs);
+        }
+
+        println!("chosen implications: {}", chosen.len());
+        for i in chosen.iter() {
+            println!("{}: {} -> {}", i.name, i.lhs, i.rhs);
+        }
+
+        // add the chosen implications.
+
+        implications.extend(chosen.clone());
+
+        assert!(chosen.iter().all(|i| implications.contains(i)));
+        if !chosen.is_empty() {
+            assert!(!implications.is_empty());
+        }
+
+        implications.sort_by(|a, b| a.name.cmp(&b.name));
+        implications.dedup_by(|a, b| a.name == b.name);
+
+        for imp in chosen {
+            println!("adding imp to top-level: {}", imp.name);
+            // keep these as terms with meta-variables.
+            let lhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&imp.lhs.to_string()).unwrap());
+            let rhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&imp.rhs.to_string()).unwrap());
+
+            impl_egraph
+                .parse_and_run_program(
+                    None,
+                    format!(
+                        r#"
+                    (rule
+                        ({lhs}
+                        {rhs})
+                        ((edge {lhs} {rhs}))
+                        :ruleset find-path)
+                    "#
+                    )
+                    .as_str(),
+                )
+                .unwrap();
+        }
+    }
+
+    println!("implications found: {}", implications.len());
+    for imp in implications.iter() {
+        println!("{}", imp.name);
+    }
+
+    // now we have a set of implications that we can use to generate the rules.
+    let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
+    let extract = Extractor::new(&cond_egraph, AstSize);
+    for (i, class) in cond_egraph.classes().enumerate() {
+        let (_, expr) = extract.find_best(class.id);
+        let pattern: Pattern<Pred> = expr.to_string().parse().unwrap();
+
+        if !well_typed(&Sexp::from_str(&pattern.to_string()).unwrap(), Type::BoolTy) {
+            println!("skipping ill-typed pattern: {}", pattern);
+            continue;
+        }
+
+        let cvec = class
+            .data
+            .cvec
+            .clone()
+            .iter()
+            .map(|x| x.unwrap_or(0) != 0)
+            .collect::<Vec<bool>>();
+        pvec_to_terms
+            .entry(cvec)
+            .or_insert_with(Vec::new)
+            .push(pattern.clone());
+    }
+
+    (
+        pvec_to_terms,
+        implications
+            .into_iter()
+            .map(|x| {
+                let mut rule = x.clone();
+                let mut cache = Default::default();
+                let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
+                let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
+
+                ImplicationSwitch::new(&parent, &child).rewrite()
+            })
+            .collect(),
+    )
+}
+
+pub fn get_condition_propagation_rules_halide_old(
+    wkld: &Workload,
+) -> (
+    HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
+    Vec<Rewrite<Pred, SynthAnalysis>>,
+) {
+    todo!();
+    // 1. Put the conditional workload into an e-graph.
     let egraph: EGraph<Pred, SynthAnalysis> = wkld.to_egraph();
 
-    // 3. cvec matching.
-    let mut candidates = pvec_match(&egraph);
+    // 2. Use cvec matching
+    let mut candidates = pvec_match(&egraph, &mut Default::default());
 
     let mut good_candidates = Ruleset::default();
 
@@ -63,7 +423,6 @@ pub fn get_condition_propagation_rules_halide(wkld: &Workload) -> (
     candidates = good_candidates.clone();
 
     println!("number of candidate_imps: {}", candidates.len());
-
 
     let mut candidate_imps: Vec<Implication<Pred>> = candidates
         .0
@@ -164,11 +523,10 @@ fn test_validate_implication() {
         cond: None,
     };
 
-    let result = validate_implication(rule.clone());
-
+    let result = validate_implication(rule.clone(), false);
 }
 
-fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
+fn validate_implication(imp: Rule<Pred>, filter_equalities: bool) -> ValidationResult {
     let mut cfg = z3::Config::new();
     cfg.set_timeout_msec(1000);
     let ctx = z3::Context::new(&cfg);
@@ -207,6 +565,18 @@ fn validate_implication(imp: Rule<Pred>) -> ValidationResult {
 
     solver.reset();
 
+    if filter_equalities {
+        // if we are filtering equalities, we can just check if the LHS is equal to the RHS.
+        // if they are equal, then the implication is trivially true.
+        solver.assert(&lexpr._eq(&rexpr).not());
+        if solver.check() == z3::SatResult::Unsat {
+            // we've found not a one-directional implication, but a two-way equivalence.
+            return ValidationResult::Invalid;
+        }
+        solver.reset();
+    }
+
+
     // with trivial implications out of the way, we can now check if the non-trivial implication is valid.
 
     // println!("checking implication: {} -> {}", lexpr, rexpr);
@@ -236,7 +606,7 @@ pub fn select(
     while selected.len() < step_size {
         let popped = implications.0.pop();
         if let Some((_, rule)) = popped {
-            if matches!(validate_implication(rule.clone()), ValidationResult::Valid) {
+            if matches!(validate_implication(rule.clone(), true), ValidationResult::Valid) {
                 println!("{} is valid", rule.name);
                 selected.add(rule.clone());
             } else {
@@ -255,7 +625,21 @@ pub fn select(
 
 /// Find candidates by CVec matching
 /// (this returns a Ruleset for now, even though these are not actually rewrite rules.)
-pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
+pub fn pvec_match(
+    egraph: &EGraph<Pred, SynthAnalysis>,
+    impl_egraph: &mut EgglogEGraph,
+) -> Ruleset<Pred> {
+    fn should_filter(term: String) -> bool {
+        !(term.starts_with("(<")
+            || term.starts_with("(<=")
+            || term.starts_with("(>")
+            || term.starts_with("(>=")
+            || term.starts_with("(&&")
+            || term.starts_with("(||")
+            || term.starts_with("(==")
+            || term.starts_with("(!="))
+    }
+
     let time_start = std::time::Instant::now();
 
     println!(
@@ -295,8 +679,8 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
     let first_none = by_first.get(&None).cloned().unwrap_or(empty);
     let mut candidates: Ruleset<Pred> = Ruleset::default();
 
-    // let one_id = egraph.lookup_expr(&"1".parse().unwrap()).unwrap();
-    // let zero_id = egraph.lookup_expr(&"0".parse().unwrap()).unwrap();
+    let one_id = egraph.lookup_expr(&"1".parse().unwrap()).unwrap();
+    let zero_id = egraph.lookup_expr(&"0".parse().unwrap()).unwrap();
 
     for (value, classes) in by_first {
         let mut all_classes = classes.clone();
@@ -311,8 +695,31 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                     continue;
                 }
 
+                if class1.id == zero_id {
+                    continue;
+                }
+
+
+                if class2.id == one_id {
+                    continue;
+                }
+
                 let (_, e1) = extract.find_best(class1.id);
                 let (_, e2) = extract.find_best(class2.id);
+
+                // if class1's cvec is all zeros...
+                if class1.data.cvec.iter().all(|v| v.is_none() || *v == Some(0)) {
+                    // skip it.
+                    continue;
+                }
+
+                // if class2's cvec is all ones...
+                if class2.data.cvec.iter().all(|v| v.is_none() || *v == Some(1)) {
+                    // skip it.
+                    continue;
+                }
+
+
                 if compare(&class1.data.cvec, &class2.data.cvec) {
                     // create the implication rule.
                     let map = &mut HashMap::default();
@@ -325,6 +732,59 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                         continue;
                     }
 
+                    if should_filter(l_pat.to_string()) || should_filter(r_pat.to_string()) {
+                        continue;
+                    }
+
+                    let egglog_lhs =
+                        egg_to_egglog(&Sexp::from_str(e1.to_string().as_str()).unwrap());
+                    let egglog_rhs =
+                        egg_to_egglog(&Sexp::from_str(e2.to_string().as_str()).unwrap());
+
+                    println!("querying: (check (path {} {}))", egglog_lhs, egglog_rhs);
+
+                    let lhs_sexp = Sexp::from_str(&l_pat.to_string()).unwrap();
+                    if !well_typed(&lhs_sexp, Type::BoolTy) {
+                        println!("skipping ill-typed lhs: {}", lhs_sexp);
+                        continue;
+                    }
+
+                    let rhs_sexp = Sexp::from_str(&r_pat.to_string()).unwrap();
+                    if !well_typed(&rhs_sexp, Type::BoolTy) {
+                        println!("skipping ill-typed rhs: {}", rhs_sexp);
+                        continue;
+                    }
+
+                    impl_egraph
+                        .parse_and_run_program(None, &format!("(check {})", egglog_lhs))
+                        .unwrap();
+
+                    impl_egraph
+                        .parse_and_run_program(None, &format!("(check {})", egglog_rhs))
+                        .unwrap();
+
+                    if impl_egraph
+                        .parse_and_run_program(
+                            None,
+                            &format!("(check (path {} {}))", egglog_lhs, egglog_rhs),
+                        )
+                        .is_ok()
+                    {
+                        println!("skipping rule: {} -> {} because it is already in the implication egraph", l_pat, r_pat);
+                        continue;
+                    } else {
+                        let error = impl_egraph
+                            .parse_and_run_program(
+                                None,
+                                &format!("(check (path {} {}))", egglog_lhs, egglog_rhs),
+                            )
+                            .err();
+                        if let Some(err) = error {
+                            println!("error: {}", err);
+                        }
+                        println!("adding rule: {} -> {}", l_pat, r_pat);
+                    }
+
                     candidates.add(Rule {
                         name: format!("{} -> {}", e1, e2).into(),
                         lhs: l_pat.clone(),
@@ -332,7 +792,6 @@ pub fn pvec_match(egraph: &EGraph<Pred, SynthAnalysis>) -> Ruleset<Pred> {
                         rewrite: ImplicationSwitch::new(&l_pat, &r_pat).rewrite(),
                         cond: None,
                     });
-
                 }
             }
         }
@@ -372,12 +831,20 @@ pub fn get_condition_workload() -> Workload {
         ]));
 
     let mut eq_rules = Ruleset::default();
-    eq_rules.add(Rule::from_string("(&& (<= ?a ?b) (<= ?b ?a)) ==> (== ?a ?b)".into()).unwrap().0);
+    eq_rules.add(
+        Rule::from_string("(&& (<= ?a ?b) (<= ?b ?a)) ==> (== ?a ?b)".into())
+            .unwrap()
+            .0,
+    );
 
     let new_rules = recursive_rules(
         Metric::Atoms,
         5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", "==", "!=", "&&"]]),
+        Lang::new(
+            &["0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["<", "<=", "==", "!=", "&&"]],
+        ),
         Ruleset::default(),
     );
 
@@ -410,7 +877,7 @@ pub fn get_condition_workload() -> Workload {
 
     println!("size before: {}", branches.force().len());
     println!("size after: {}", branches_forced.len());
-    
+
     branches_better
 }
 
