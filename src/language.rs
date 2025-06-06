@@ -106,10 +106,6 @@ where
     ) -> Vec<egg::Id> {
         // it better be the case that the parent condition exists in the e-graph.
 
-        let extractor = Extractor::new(egraph, AstSize);
-        let (_, best) = extractor.find_best(eclass);
-
-
         let is_true_parent_pattern: Pattern<L> =
             format!("(istrue {})", self.parent_cond).parse().unwrap();
 
