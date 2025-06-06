@@ -341,6 +341,21 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                 if let Some(pred_patterns) = conditions.get(&pvec) {
                     for pred_pat in pred_patterns {
+                        // this is fucking stupid to do this here.
+                        // if it gets expensive, we should do some pre-processing on the workload
+                        // to make the upper-level data structure a map from usize -> map<pvec, patterns>
+                        fn size(sexp: &Sexp) -> usize {
+                            match sexp {
+                                Sexp::Atom(_) => 1,
+                                Sexp::List(list) => list.iter().map(size).sum(),
+                            }
+                        }
+
+                        let size = size(&Sexp::from_str(&pred_pat.to_string()).unwrap());
+                        if size != cond_size {
+                            continue;
+                        }
+
                         for id1 in by_cvec[cvec1].clone() {
                             for id2 in by_cvec[cvec2].clone() {
                                 let (c1, e1) = extract.find_best(id1);
@@ -653,6 +668,10 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
             let scheduler = Scheduler::Saturating(Limits::deriving());
+            println!("chosen: ");
+            for rule in chosen.0.values() {
+                println!("  {}: {}", rule.name, rule.lhs);
+            }
             let egraph = scheduler.run(&runner.egraph, &chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
@@ -1102,6 +1121,8 @@ pub mod tests {
     }
 
     #[test]
+
+    #[test]
     // A test for optimization 2.
     // Given the rules: `[(+ 0 1) ==> 1, (/ ?a ?a) ==> 1 if (!= ?a 0)]``,
     // will the candidate (+ 0 (/ ?a ?a)) ==> 1 if (!= ?a 0) get chosen?
@@ -1124,7 +1145,7 @@ pub mod tests {
         let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
 
         let candidates: Ruleset<Pred> =
-            Ruleset::conditional_cvec_match(&egraph, &cond_map, &prior, &impl_rules);
+            Ruleset::conditional_cvec_match(&egraph, &cond_map, 8, &prior, &impl_rules);
 
         // no candidates should have been discovered.
         // in the world where (istrue (!= a 0)), (/ a a) ==> 1.
@@ -1160,7 +1181,7 @@ pub mod tests {
         let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
 
         let candidates: Ruleset<Pred> =
-            Ruleset::conditional_cvec_match(&egraph, &cond_map, &prior, &impl_rules);
+            Ruleset::conditional_cvec_match(&egraph, &cond_map, 8, &prior, &impl_rules);
 
         // no candidates should have been discovered.
         assert!(candidates.is_empty());
