@@ -67,7 +67,6 @@ fn run_workload_internal<L: SynthLanguage>(
     // rules for how other conditions become true from other conditions which are true
     propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
-
     let t = Instant::now();
     let num_prior = prior.len();
 
@@ -96,15 +95,19 @@ fn run_workload_internal<L: SynthLanguage>(
     let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
     if let Some(conditions) = conditions {
-        let used_conditions = chosen.0.iter().filter_map(|(_, r)| {
-            // if the rule has a condition, return it
-            r.cond.as_ref().map(|c| c.clone().to_string() )
-        }).collect::<Vec<_>>();
+        // let used_conditions = chosen
+        //     .0
+        //     .iter()
+        //     .filter_map(|(_, r)| {
+        //         // if the rule has a condition, return it
+        //         r.cond.as_ref().map(|c| c.clone().to_string())
+        //     })
+        //     .collect::<Vec<_>>();
 
-        println!("the conditions used in the rules are:");
-        for cond in &used_conditions {
-            println!("  {}", cond);
-        }
+        // println!("the conditions used in the rules are:");
+        // for cond in &used_conditions {
+        //     println!("  {}", cond);
+        // }
         // let cond_egraphs = get_cond_egraphs(
         //     // only use the conditions for which we actually have rules
         //     &used_conditions,
@@ -113,21 +116,31 @@ fn run_workload_internal<L: SynthLanguage>(
         //     &propagation_rules.as_ref().unwrap(),
         // );
 
-        // now, try to add some conditions into tha mix!
-        let mut conditional_candidates = Ruleset::conditional_cvec_match(&compressed, &conditions, &prior, propagation_rules.as_ref().unwrap());
+        let max_cond_size = 7;
 
-        println!("conditional candidates:");
+        for cond_size in 1..max_cond_size {
+            // now, try to add some conditions into tha mix!
+            let mut conditional_candidates = Ruleset::conditional_cvec_match(
+                &compressed,
+                &conditions,
+                cond_size as usize,
+                &chosen,
+                propagation_rules.as_ref().unwrap(),
+            );
 
-        for r in conditional_candidates.0.iter() {
-            println!("  {}", r.0);
+            println!("conditional candidates:");
+
+            for r in conditional_candidates.0.iter() {
+                println!("  {}", r.0);
+            }
+
+            let (chosen_cond, _) = conditional_candidates.minimize_cond(
+                chosen.clone(),
+                Scheduler::Compress(minimize_limits),
+                propagation_rules.as_ref().unwrap(),
+            );
+            chosen.extend(chosen_cond.clone());
         }
-
-        let (chosen_cond, _) = conditional_candidates.minimize_cond(
-            chosen.clone(),
-            Scheduler::Compress(minimize_limits),
-            &propagation_rules.unwrap(),
-        );
-        chosen.extend(chosen_cond.clone());
     }
 
     // let (chosen, _) = candidates.minimize(prior, Scheduler::Compress(minimize_limits));

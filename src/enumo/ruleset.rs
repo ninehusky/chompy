@@ -5,11 +5,7 @@ use rayon::prelude::ParallelIterator;
 use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
 use crate::{
-    conditions::merge_eqs,
-    halide::{self, Pred},
-    recipe_utils::run_workload,
-    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature,
-    SynthAnalysis, SynthLanguage,
+    conditions::merge_eqs, enumo::Sexp, halide::{self, Pred}, recipe_utils::run_workload, CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature, SynthAnalysis, SynthLanguage
 };
 
 use super::{Rule, Scheduler, Workload};
@@ -312,6 +308,8 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn conditional_cvec_match(
         egraph: &EGraph<L, SynthAnalysis>,
         conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
+        // find candidates with conditions of this size
+        cond_size: usize,
         prior: &Self,
         impl_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> Self {
@@ -349,6 +347,21 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 let (c2, e2) = extract.find_best(id2);
                                 let pred: RecExpr<L> =
                                     RecExpr::from_str(&pred_pat.to_string()).unwrap();
+
+                                fn size(sexp: &Sexp) -> usize {
+                                    match sexp {
+                                        Sexp::Atom(_) => 1,
+                                        Sexp::List(list) => list.iter().map(size).sum(),
+                                    }
+                                }
+
+                                let cond_size = size(&Sexp::from_str(&pred.to_string()).unwrap());
+
+                                if cond_size != cond_size {
+                                    // we're not looking for this condition size
+                                    continue;
+                                }   
+
                                 if c1 == usize::MAX || c2 == usize::MAX {
                                     continue;
                                 }
@@ -381,7 +394,8 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 let runner: Runner<L, SynthAnalysis> =
                                     Runner::new(SynthAnalysis::default())
                                         .with_egraph(egraph.clone())
-                                        .run(&impl_rules.clone());
+                                        .run(&impl_rules.clone())
+                                        .with_node_limit(500);
 
                                 let egraph = runner.egraph;
 
@@ -411,10 +425,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     );
                                     continue;
                                 } else {
-                                    println!("prior:");
-                                    for p in prior {
-                                        println!("  {}", p.1.name);
-                                    }
                                     println!("adding: if {} then {} ~> {}", pred_pat, e1, e2);
                                 }
                                 // END HACK
@@ -637,7 +647,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 4. Run condition propagation rules.
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
-                .run(prop_rules);
+                .run(prop_rules)
+                .with_node_limit(500);
 
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
@@ -712,6 +723,13 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         // so, it sucks but we already have to do a call to minimize here.
         self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
+
+        // let's give this a shot.
+        let step_size = if self.len() > 1000 {
+            10
+        } else {
+            1
+        };
 
         while !self.is_empty() {
             println!("candidates remaining: {}", self.len());
