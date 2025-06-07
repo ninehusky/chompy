@@ -5,7 +5,12 @@ use rayon::prelude::ParallelIterator;
 use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
 use crate::{
-    conditions::merge_eqs, enumo::Sexp, halide::{self, Pred}, recipe_utils::run_workload, CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature, SynthAnalysis, SynthLanguage
+    conditions::merge_eqs,
+    enumo::Sexp,
+    halide::{self, Pred},
+    recipe_utils::run_workload,
+    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature,
+    SynthAnalysis, SynthLanguage,
 };
 
 use super::{Rule, Scheduler, Workload};
@@ -310,6 +315,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
         // find candidates with conditions of this size
         cond_size: usize,
+        cond_to_egraph: &mut HashMap<String, EGraph<L, SynthAnalysis>>,
         prior: &Self,
         impl_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> Self {
@@ -341,6 +347,40 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                 if let Some(pred_patterns) = conditions.get(&pvec) {
                     for pred_pat in pred_patterns {
+                        let pred_string = pred_pat.to_string();
+                        let cond_egraph = cond_to_egraph.entry(pred_string.clone()).or_insert_with(|| {
+                             println!("inserting {:?}", pred_string); // this should only show on misses
+                            // Construct the e-graph which has the implication rules propagated through.
+                            let mut egraph = EGraph::default();
+
+                            // 1. add the condition to the egraph
+                            let cond_ast = &L::instantiate(pred_pat);
+
+                            println!("adding (istrue {})", cond_ast);
+
+                            // 2. run the condition propagation rules
+                            egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+
+                            let runner: Runner<L, SynthAnalysis> =
+                                Runner::new(SynthAnalysis::default())
+                                    .with_egraph(egraph.clone())
+                                    .run(&impl_rules.clone())
+                                    .with_node_limit(500);
+
+                            // 3. add the lhs, rhs of all candidates to the egraph
+
+                            // let mut egraph = runner.egraph;
+
+                            // for (_, rule) in candidates {
+                            //     egraph.add_expr(&L::instantiate(&rule.lhs));
+                            //     egraph.add_expr(&L::instantiate(&rule.rhs));
+                            // }
+
+                            // 4. run the rules
+
+                            runner.egraph
+                        });
+
                         // this is fucking stupid to do this here.
                         // if it gets expensive, we should do some pre-processing on the workload
                         // to make the upper-level data structure a map from usize -> map<pvec, patterns>
@@ -375,7 +415,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 if cond_size != cond_size {
                                     // we're not looking for this condition size
                                     continue;
-                                }   
+                                }
 
                                 if c1 == usize::MAX || c2 == usize::MAX {
                                     continue;
@@ -383,40 +423,19 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                                 // BEGIN HACK
 
-                                // 1. make a new egraph just containing the lhs and rhs of the candidate.
+                                // 1. get the e-graph with the implication rules already there
+                                let mut egraph = cond_egraph.clone();
 
-                                let mut egraph = EGraph::default();
-
+                                // 2. Add the rules.
                                 let lexpr = &L::instantiate(&e1.to_string().parse().unwrap());
                                 let rexpr = &L::instantiate(&e2.to_string().parse().unwrap());
 
                                 egraph.add_expr(lexpr);
                                 egraph.add_expr(rexpr);
 
-                                // 2. add the condition to the egraph
-                                let cond_ast = &L::instantiate(pred_pat);
-
-                                println!("adding (istrue {})", cond_ast);
-
-                                let mut should_print = false;
-                                if cond_ast.to_string() == "(&& (== b 0) (!= b a))" {
-                                    should_print = true;
-                                }
-
-                                // 3. run the condition propagation rules
-                                egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
-
-                                let runner: Runner<L, SynthAnalysis> =
-                                    Runner::new(SynthAnalysis::default())
-                                        .with_egraph(egraph.clone())
-                                        .run(&impl_rules.clone())
-                                        .with_node_limit(500);
-
-                                let egraph = runner.egraph;
-
-                                // now, run the existing rules for a lil snippet.
+                                // 3. now, run the existing rules for a lil snippet.
                                 let egraph =
-                                    Scheduler::Simple(Limits::deriving()).run(&egraph, &prior);
+                                    Scheduler::Saturating(Limits::deriving()).run(&egraph, &prior);
 
                                 let l_id = egraph
                                     .lookup_expr(lexpr)
@@ -426,38 +445,18 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     .lookup_expr(rexpr)
                                     .unwrap_or_else(|| panic!("Did not find {}", rexpr));
 
-                                if should_print {
-                                    let serialized = egg_to_serialized_egraph(&egraph);
-                                    serialized.to_json_file("test.json").unwrap();
-                                }
-
                                 // 4. check if the lhs and rhs are equivalent in the egraph
                                 if l_id == r_id {
                                     // e1 and e2 are equivalent in the condition egraph
                                     println!(
-                                        "Skipping {} and {} because they are equivalent in the condition egraph",
-                                        e1, e2
+                                        "Skipping {} and {} because they are equivalent in the egraph representing {}",
+                                        e1, e2, pred_pat
                                     );
                                     continue;
                                 } else {
                                     println!("adding: if {} then {} ~> {}", pred_pat, e1, e2);
                                 }
                                 // END HACK
-
-                                // println!("looking for cond_egraphs[{}]", pred_pat.to_string());
-                                // if let Some(cond_egraph) = cond_egraphs.get(&pred_pat.to_string()) {
-                                //     match (cond_egraph.lookup_expr(&e1.to_string().parse().unwrap()),
-                                //         cond_egraph.lookup_expr(&e2.to_string().parse().unwrap())) {
-                                //         (Some(e1_id), Some(e2_id)) => {
-                                //             if e1_id == e2_id {
-                                //                 // e1 and e2 are equivalent in the condition egraph
-                                //                 println!("Skipping {} and {} because they are equivalent in the condition egraph", e1, e2);
-                                //                 continue;
-                                //             }
-                                //         }
-                                //         _ => (),
-                                //     };
-                                // }
 
                                 candidates.add_cond_from_recexprs(&e1, &e2, &pred);
                             }
@@ -744,11 +743,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
 
         // let's give this a shot.
-        let step_size = if self.len() > 1000 {
-            10
-        } else {
-            1
-        };
+        let step_size = if self.len() > 1000 { 10 } else { 1 };
 
         while !self.is_empty() {
             println!("candidates remaining: {}", self.len());
@@ -1121,7 +1116,6 @@ pub mod tests {
     }
 
     #[test]
-
     #[test]
     // A test for optimization 2.
     // Given the rules: `[(+ 0 1) ==> 1, (/ ?a ?a) ==> 1 if (!= ?a 0)]``,
@@ -1145,7 +1139,7 @@ pub mod tests {
         let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
 
         let candidates: Ruleset<Pred> =
-            Ruleset::conditional_cvec_match(&egraph, &cond_map, 8, &prior, &impl_rules);
+            Ruleset::conditional_cvec_match(&egraph, &cond_map, 8, &mut Default::default(),  &prior, &impl_rules);
 
         // no candidates should have been discovered.
         // in the world where (istrue (!= a 0)), (/ a a) ==> 1.
@@ -1181,7 +1175,7 @@ pub mod tests {
         let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
 
         let candidates: Ruleset<Pred> =
-            Ruleset::conditional_cvec_match(&egraph, &cond_map, 8, &prior, &impl_rules);
+            Ruleset::conditional_cvec_match(&egraph, &cond_map, 8, &mut Default::default(), &prior, &impl_rules);
 
         // no candidates should have been discovered.
         assert!(candidates.is_empty());

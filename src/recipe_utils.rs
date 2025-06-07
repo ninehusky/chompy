@@ -118,12 +118,15 @@ fn run_workload_internal<L: SynthLanguage>(
 
         let max_cond_size = 7;
 
+        let mut map = Default::default();
+
         for cond_size in 1..max_cond_size {
             // now, try to add some conditions into tha mix!
             let mut conditional_candidates = Ruleset::conditional_cvec_match(
                 &compressed,
                 &conditions,
                 cond_size as usize,
+                &mut map,
                 &chosen,
                 propagation_rules.as_ref().unwrap(),
             );
