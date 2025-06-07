@@ -419,16 +419,11 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     continue;
                                 }
 
-                                // BEGIN HACK
-
                                 // 1. get the e-graph with the implication rules already there
-                                let egraph = cond_egraph.clone();
+                                let egraph = &cond_egraph;
 
-                                // 2. Add the rules.
                                 let lexpr = &L::instantiate(&e1.to_string().parse().unwrap());
                                 let rexpr = &L::instantiate(&e2.to_string().parse().unwrap());
-
-                                // 3. now, run the existing rules for a lil snippet.
 
                                 let l_id = egraph
                                     .lookup_expr(lexpr)
@@ -438,7 +433,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     .lookup_expr(rexpr)
                                     .unwrap_or_else(|| panic!("Did not find {}", rexpr));
 
-                                // 4. check if the lhs and rhs are equivalent in the egraph
+                                // 2. check if the lhs and rhs are equivalent in the egraph
                                 if l_id == r_id {
                                     // e1 and e2 are equivalent in the condition egraph
                                     println!(
