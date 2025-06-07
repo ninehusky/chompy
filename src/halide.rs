@@ -1,4 +1,10 @@
-use crate::{conditions::merge_eqs, enumo::{egg_to_serialized_egraph, Rule}, *};
+use std::{convert::TryInto, str::FromStr};
+
+use crate::{
+    conditions::merge_eqs,
+    enumo::{egg_to_serialized_egraph, Rule},
+    *,
+};
 
 use egg::{RecExpr, Rewrite, Runner};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
@@ -302,8 +308,27 @@ impl SynthLanguage for Pred {
         let ctx = z3::Context::new(&cfg);
         let solver = z3::Solver::new(&ctx);
         let zero = z3::ast::Int::from_i64(&ctx, 0);
+
+        // ugh there's some stupid string conversion thing i'm going to try first.
+        // eventually we'll probably want to snip out the underlying child expression
+        // from `istrue`.
+
+        let cond_expr = Sexp::from_str(&cond.to_string()).unwrap();
+        let cond: Pattern<Self> = match cond_expr {
+            Sexp::Atom(_) => {
+                // if it's an atom, we can just use it as is.
+                panic!("Expected `(istrue <cond>)`, got `{}`", cond_expr);
+            }
+            Sexp::List(l) => {
+                assert_eq!(l.len(), 2);
+                let child_expr = &l[1];
+                let pat: Pattern<Self> = Pattern::from_str(&child_expr.to_string()).unwrap();
+                pat
+            }
+        };
+
         let cexpr =
-            z3::ast::Bool::not(&egg_to_z3(&ctx, Self::instantiate(cond).as_ref())._eq(&zero));
+            z3::ast::Bool::not(&egg_to_z3(&ctx, Self::instantiate(&cond).as_ref())._eq(&zero));
 
         let lexpr = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref());
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
@@ -332,7 +357,6 @@ impl SynthLanguage for Pred {
     }
 }
 
-
 // 1. run "ruler" on the conditional workload, generating a series of rewrite
 //    rules.
 // 2. when it comes time to check condition implication, use these rules
@@ -341,15 +365,18 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
     let cond_lang = Lang {
         vars: vec!["a".to_string(), "b".to_string()],
         vals: vec!["0".to_string(), "1".to_string()],
-        ops: vec![vec![], vec!["<".to_string(), "<=".to_string(), "!=".to_string(), "->".to_string()]],
+        ops: vec![
+            vec![],
+            vec![
+                "<".to_string(),
+                "<=".to_string(),
+                "!=".to_string(),
+                "->".to_string(),
+            ],
+        ],
     };
 
-    let rules: Ruleset<Pred> = recursive_rules(
-        Metric::Atoms,
-        5,
-        cond_lang,
-        Ruleset::default()
-    );
+    let rules: Ruleset<Pred> = recursive_rules(Metric::Atoms, 5, cond_lang, Ruleset::default());
 
     println!("ruleset:");
 
@@ -365,7 +392,6 @@ fn test_get_condition_propagation_rules_halide() {
     // we just wanna call the function to test locally
     let rules = get_condition_propagation_rules_halide();
 }
-
 
 pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
     let mut buf: Vec<z3::ast::Int> = vec![];
@@ -538,7 +564,7 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ))
             }
             Pred::Var(v) => buf.push(z3::ast::Int::new_const(ctx, v.to_string())),
-            Pred::IsTrue(_) => {
+            Pred::IsTrue(x) => {
                 panic!("IsTrue should not be used in egg_to_z3");
             }
         }
@@ -975,11 +1001,16 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
-    let (pvec_to_terms, mut cond_prop_ruleset) = conditions::generate::get_condition_propagation_rules_halide(&wkld);
+    let (pvec_to_terms, mut cond_prop_ruleset) =
+        conditions::generate::get_condition_propagation_rules_halide(&wkld);
 
     cond_prop_ruleset.push(merge_eqs());
-    cond_prop_ruleset.push(ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?a".parse().unwrap()).rewrite());
-    cond_prop_ruleset.push(ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?b".parse().unwrap()).rewrite());
+    cond_prop_ruleset.push(
+        ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?a".parse().unwrap()).rewrite(),
+    );
+    cond_prop_ruleset.push(
+        ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?b".parse().unwrap()).rewrite(),
+    );
     // for c in cond_prop_ruleset.clone() {
     //     println!("   {}", c.name);
     // }
@@ -998,7 +1029,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     // let egraph = egg_to_serialized_egraph(&runner.egraph);
     // egraph.to_json_file("impls.json").unwrap();
-
 
     let mut all_rules = Ruleset::default();
 
@@ -1019,7 +1049,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     //     &pvec_to_terms,
     //     &cond_prop_ruleset,
     // );
-
 
     // all_rules.extend(comparisons);
 
@@ -1076,12 +1105,15 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // the special workloads, which mostly revolve around
     // composing int2boolop(int_term, int_term) or things like that
     // together.
-    let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "*", "min", "max"]]);
+    let int_lang = Lang::new(
+        &[],
+        &["a", "b", "c"],
+        &[&[], &["+", "-", "*", "min", "max"]],
+    );
     let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
         .filter(Filter::Contains("VAR".parse().unwrap()))
         .plug("VAR", &Workload::new(int_lang.vars))
         .plug("VAL", &Workload::new(int_lang.vals));
-
 
     // let ops = vec![lang.uops, lang.bops, lang.tops];
     for (i, ops) in int_lang.ops.iter().enumerate() {
@@ -1217,4 +1249,3 @@ pub fn og_recipe_no_conditions() -> Ruleset<Pred> {
 
     all_rules
 }
-

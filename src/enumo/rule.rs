@@ -172,17 +172,20 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
     fn check(
         &self,
         egraph: &mut egg::EGraph<L, SynthAnalysis>,
-        eclass: egg::Id,
+        _eclass: egg::Id,
         subst: &Subst,
     ) -> bool {
-        let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
-        lookup_pattern(&is_true_pat, egraph, subst)
+        // let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
+        lookup_pattern(&self.cond, egraph, subst)
     }
 }
 
 impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
+        let cond_pat: Pattern<L> = format!("(istrue {})", cond_pat).parse().unwrap();
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
+
+
 
         let cond_vars = cond_pat.vars();
         let l_vars = l_pat.vars();
