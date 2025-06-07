@@ -327,6 +327,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
+        let conditional_rules: Ruleset<L> = prior.partition(|r| r.cond.is_some()).0;
+
         let mut candidates = Ruleset::default();
         let extract = Extractor::new(egraph, AstSize);
 
@@ -350,15 +352,16 @@ impl<L: SynthLanguage> Ruleset<L> {
                         let pred_string = pred_pat.to_string();
                         let cond_egraph = cond_to_egraph.entry(pred_string.clone()).or_insert_with(|| {
                              println!("inserting {:?}", pred_string); // this should only show on misses
-                            // Construct the e-graph which has the implication rules propagated through.
-                            let mut egraph = EGraph::default();
 
-                            // 1. add the condition to the egraph
+                            // this is the first part that might get ugly.
+                            let mut egraph = egraph.clone();
+
+                            // 2. add the condition to the egraph
                             let cond_ast = &L::instantiate(pred_pat);
 
                             println!("adding (istrue {})", cond_ast);
 
-                            // 2. run the condition propagation rules
+                            // 3. run the condition propagation rules
                             egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
 
                             let runner: Runner<L, SynthAnalysis> =
@@ -366,19 +369,14 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     .with_egraph(egraph.clone())
                                     .run(&impl_rules.clone())
                                     .with_node_limit(500);
+                            
+                            let egraph = runner.egraph;
 
-                            // 3. add the lhs, rhs of all candidates to the egraph
+                            // 4. run the conditional rules for a snippet, given the ammo that we see above.
+                            //    this is the second part that might get ugly.
+                            let egraph = Scheduler::Saturating(Limits::deriving()).run(&egraph, &conditional_rules);
 
-                            // let mut egraph = runner.egraph;
-
-                            // for (_, rule) in candidates {
-                            //     egraph.add_expr(&L::instantiate(&rule.lhs));
-                            //     egraph.add_expr(&L::instantiate(&rule.rhs));
-                            // }
-
-                            // 4. run the rules
-
-                            runner.egraph
+                            egraph
                         });
 
                         // this is fucking stupid to do this here.
@@ -424,18 +422,13 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 // BEGIN HACK
 
                                 // 1. get the e-graph with the implication rules already there
-                                let mut egraph = cond_egraph.clone();
+                                let egraph = cond_egraph.clone();
 
                                 // 2. Add the rules.
                                 let lexpr = &L::instantiate(&e1.to_string().parse().unwrap());
                                 let rexpr = &L::instantiate(&e2.to_string().parse().unwrap());
 
-                                egraph.add_expr(lexpr);
-                                egraph.add_expr(rexpr);
-
                                 // 3. now, run the existing rules for a lil snippet.
-                                let egraph =
-                                    Scheduler::Saturating(Limits::deriving()).run(&egraph, &prior);
 
                                 let l_id = egraph
                                     .lookup_expr(lexpr)
@@ -464,11 +457,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                     }
                 }
             }
-        }
-
-        println!("Found {} conditional candidates", candidates.len());
-        for (_, rule) in &candidates.0 {
-            println!("  {}", rule.name);
         }
 
         candidates
