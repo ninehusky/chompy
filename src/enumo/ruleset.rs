@@ -601,6 +601,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         by_cond: &IndexMap<String, Ruleset<L>>,
+        most_recent_condition: RecExpr<L>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
@@ -634,6 +635,15 @@ impl<L: SynthLanguage> Ruleset<L> {
             let cond_ast = &L::instantiate(cond_pat);
             println!("adding (istrue {})", cond_ast);
             egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+
+            // see if the most recently added condition is in the e-graph.
+            let cond_expr_id = egraph.lookup_expr(&format!("(istrue {})", most_recent_condition).parse().unwrap());
+            if cond_expr_id.is_none() {
+                println!("couldn't find {} in the egraph where {} is true, so skipping.", 
+                    most_recent_condition, cond_ast);
+                // then it's not relevant
+                continue;
+            }
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
             let mut initial = vec![];
@@ -721,8 +731,6 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
-        // so, it sucks but we already have to do a call to minimize here.
-        self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
 
         // let's give this a shot.
         let step_size = if self.len() > 1000 {
@@ -733,31 +741,25 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         while !self.is_empty() {
             println!("candidates remaining: {}", self.len());
-            let selected = self.select(step_size, &mut invalid);
-            println!(
-                "I have selected these: {:?}",
-                selected
-                    .0
-                    .values()
-                    .map(|rule| rule.name.clone())
-                    .collect::<Vec<_>>()
-            );
+            let selected = self.select(1, &mut invalid);
             if selected.is_empty() {
                 continue;
             }
-            let identifier = selected
+
+            let most_recent_condition = L::instantiate(&selected
                 .0
                 .values()
-                .map(|rule| rule.name.clone())
+                .map(|rule| rule.cond.clone())
                 .collect::<Vec<_>>()
                 .first()
+                .cloned()
                 .unwrap()
-                .to_string();
+                .unwrap());
 
             chosen.extend(selected.clone());
 
             println!("now, calling shrink!");
-            self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
+            self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond, most_recent_condition);
         }
         // Return only the new rules
         chosen.remove_all(prior);
