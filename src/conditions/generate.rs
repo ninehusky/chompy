@@ -116,7 +116,7 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
 
     let int_to_bool_workload = Workload::new(&["(OP2 V V)"])
         .plug("V", &int_workload)
-        .plug("OP2", &Workload::new(&["<", "==", "!="]))
+        .plug("OP2", &Workload::new(&["<", "<=", "==", "!="]))
         .filter(Filter::Canon(vec![
             "a".to_string(),
             "b".to_string(),
@@ -168,10 +168,14 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
 
     let bool_workload = compress(&bool_workload, and_rules.clone());
 
+    let forced = bool_workload.force();
+
     println!("bool workload:");
-    for t in bool_workload.force() {
+    for t in forced.iter() {
         println!("{}", t);
     }
+
+    println!("length: {}", forced.len());
 
     let max_size = 9;
 
@@ -893,6 +897,25 @@ fn prune_rules(rules: Vec<Rewrite<Pred, SynthAnalysis>>) -> Vec<Rewrite<Pred, Sy
     result
 }
 
+// Score on three criteria, in descending order of importance:
+// 1. Number of atoms in the LHS (more atoms = more general)
+// 2. How many trues are in the cvec
+fn condition_score(cond: &Sexp, cvec: &CVec<Pred>) -> f64 {
+    fn size(sexp: &Sexp) -> usize {
+        match sexp {
+            Sexp::Atom(_) => 1,
+            Sexp::List(list) => list.iter().map(size).sum(),
+        }
+    }
+
+    let atom_count = size(cond);
+    let true_count = cvec.iter().filter(|&&x| x.unwrap_or(0) != 0).count();
+    let false_count = cvec.iter().filter(|&&x| x.unwrap_or(0) == 0).count();
+
+
+
+}
+
 fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
     let egraph = workload.to_egraph();
     let compressed = Scheduler::Compress(Limits::minimize()).run(&egraph, &prior);
@@ -902,6 +925,18 @@ fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
     let extractor = Extractor::new(&compressed, AstSize);
     for c in compressed.classes() {
         let (_, best) = extractor.find_best(c.id);
+
+        // let's calculate the score.
+        fn size(sexp: &Sexp) -> usize {
+            match sexp {
+                Sexp::Atom(_) => 1,
+                Sexp::List(list) => list.iter().map(size).sum(),
+            }
+        }
+
+        let atom_count = size(cond);
+        let true_count = cvec.iter().filter(|&&x| x.unwrap_or(0) != 0).count();
+        let false_count = cvec.iter().filter(|&&x| x.unwrap_or(0) == 0).count();
 
         result = result.append(Workload::new(&[best.to_string()]));
     }
