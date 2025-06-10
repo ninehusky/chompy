@@ -741,15 +741,15 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
 
-        // let's give this a shot.
-        let step_size = if self.len() > 1000 { 10 } else { 1 };
 
         while !self.is_empty() {
             println!("candidates remaining: {}", self.len());
-            let selected = self.select(1, &mut invalid);
+            let selected = self.select(step_size, &mut invalid);
             if selected.is_empty() {
                 continue;
             }
+
+            assert_eq!(selected.len(), 1);
 
             let most_recent_condition = &selected
                 .0
