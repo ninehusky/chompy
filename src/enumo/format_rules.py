@@ -1,3 +1,10 @@
+"""
+@ninehusky:
+This script is used as a placeholder!
+Replace `rules` with the actual rules you want to format.
+This removes the `(istrue` bit that `chompy-evaluation` won't accept.
+"""
+
 rules = """
 Learned 99 bidirectional rewrites, and 98 conditional rules (264 total rewrites) in 734.569491917 using 239 prior rewrites
 (- (- ?a)) <=> ?a
