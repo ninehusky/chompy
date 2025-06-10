@@ -531,7 +531,7 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
 
                 let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
                 let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
-                let modulo = z3::ast::Int::modulo(&l_abs, &r_abs);
+                let modulo = z3::ast::Int::rem(&l_abs, &r_abs);
 
                 let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
 
