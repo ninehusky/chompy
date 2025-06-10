@@ -1,4 +1,4 @@
-use egg::{Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner};
+use egg::{Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
@@ -598,6 +598,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         by_cond: &IndexMap<String, Ruleset<L>>,
+        most_recent_condition: &Pattern<L>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
@@ -629,8 +630,10 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 2. Add the condition to the e-graph.
             let cond_pat: &Pattern<L> = &condition.parse().unwrap();
             let cond_ast = &L::instantiate(cond_pat);
-            println!("adding (istrue {})", cond_ast);
+            println!("adding {}", cond_ast);
             egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+
+
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
             let mut initial = vec![];
@@ -647,9 +650,24 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .run(prop_rules)
                 .with_node_limit(500);
 
+            let egraph = runner.egraph.clone();
+
+            // see if the most recently added condition is in the e-graph.
+            if most_recent_condition.search(&egraph).is_empty() {
+                println!("most recent condition {} is not in the egraph representing {}, so skipping.", most_recent_condition, condition);
+                if most_recent_condition.to_string() == condition.to_string() {
+                    // dump e-graph to json.
+                    let serialized = egg_to_serialized_egraph(&egraph);
+                    serialized.to_json_file("uhoh.json");
+                    panic!();
+                }
+                // then it's not relevant
+                continue;
+            }
+
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Saturating(Limits::deriving());
+            let scheduler = Scheduler::Compress(Limits::deriving());
             println!("chosen: ");
             for rule in chosen.0.values() {
                 println!("  {}: {}", rule.name, rule.lhs);
@@ -722,39 +740,31 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
-        // so, it sucks but we already have to do a call to minimize here.
-        self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
 
-        // let's give this a shot.
-        let step_size = if self.len() > 1000 { 10 } else { 1 };
 
         while !self.is_empty() {
             println!("candidates remaining: {}", self.len());
             let selected = self.select(step_size, &mut invalid);
-            println!(
-                "I have selected these: {:?}",
-                selected
-                    .0
-                    .values()
-                    .map(|rule| rule.name.clone())
-                    .collect::<Vec<_>>()
-            );
             if selected.is_empty() {
                 continue;
             }
-            let identifier = selected
+
+            assert_eq!(selected.len(), 1);
+
+            let most_recent_condition = &selected
                 .0
                 .values()
-                .map(|rule| rule.name.clone())
+                .map(|rule| rule.cond.clone())
                 .collect::<Vec<_>>()
                 .first()
+                .cloned()
                 .unwrap()
-                .to_string();
+                .unwrap();
 
             chosen.extend(selected.clone());
 
             println!("now, calling shrink!");
-            self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond);
+            self.shrink_cond(&chosen, scheduler, prop_rules, &by_cond, most_recent_condition);
         }
         // Return only the new rules
         chosen.remove_all(prior);
