@@ -996,6 +996,7 @@ pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
 
 pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
+    let start_time = std::time::Instant::now();
     let mut wkld = conditions::generate::get_condition_workload();
 
     // only want conditions greater than size 2
@@ -1146,6 +1147,10 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
         all_rules.extend(wrapped_rules);
     }
+
+    let end_time = std::time::Instant::now();
+
+    println!("finished recipe (seconds: {})", end_time.duration_since(start_time).as_secs_f64());
 
     all_rules
 }
