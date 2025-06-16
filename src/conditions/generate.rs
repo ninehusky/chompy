@@ -4,6 +4,7 @@ use egg::{AstSize, EClass, Extractor, Id, Pattern, RecExpr, Rewrite, Runner};
 use env_logger::filter;
 use z3::ast::Ast;
 
+use crate::conditions::assumption::Assumption;
 use crate::conditions::derive::{egg_to_egglog, new_impl_egraph};
 use crate::enumo::Sexp;
 use crate::language::SynthLanguage;
@@ -265,8 +266,8 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
             .iter()
             .map(|(_, rule)| Implication {
                 name: rule.name.clone(),
-                lhs: rule.lhs.clone(),
-                rhs: rule.rhs.clone(),
+                lhs: Assumption::new(rule.lhs.to_string()).unwrap(),
+                rhs: Assumption::new(rule.rhs.to_string()).unwrap(),
             })
             .collect();
 
@@ -284,16 +285,6 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
 
         assert!(chosen.iter().all(|i| !implications.contains(i)));
 
-        println!("prior implications: {}", implications.len());
-        for i in implications.iter() {
-            println!("{}: {} -> {}", i.name, i.lhs, i.rhs);
-        }
-
-        println!("chosen implications: {}", chosen.len());
-        for i in chosen.iter() {
-            println!("{}: {} -> {}", i.name, i.lhs, i.rhs);
-        }
-
         // add the chosen implications.
 
         implications.extend(chosen.clone());
@@ -309,8 +300,8 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
         for imp in chosen {
             println!("adding imp to top-level: {}", imp.name);
             // keep these as terms with meta-variables.
-            let lhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&imp.lhs.to_string()).unwrap());
-            let rhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&imp.rhs.to_string()).unwrap());
+            let lhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&Pattern::from(imp.lhs).to_string()).unwrap());
+            let rhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&Pattern::from(imp.rhs).to_string()).unwrap());
 
             impl_egraph
                 .parse_and_run_program(
@@ -367,141 +358,8 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
             .map(|x| {
                 let mut rule = x.clone();
                 let mut cache = Default::default();
-                let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
-                let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
-
-                ImplicationSwitch::new(&parent, &child).rewrite()
-            })
-            .collect(),
-    )
-}
-
-pub fn get_condition_propagation_rules_halide_old(
-    wkld: &Workload,
-) -> (
-    HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
-    Vec<Rewrite<Pred, SynthAnalysis>>,
-) {
-    todo!();
-    // 1. Put the conditional workload into an e-graph.
-    let egraph: EGraph<Pred, SynthAnalysis> = wkld.to_egraph();
-
-    // 2. Use cvec matching
-    let mut candidates = pvec_match(&egraph, &mut Default::default());
-
-    let mut good_candidates = Ruleset::default();
-
-    let mut names = HashSet::default();
-
-    // a really janky filtering pass.
-    for c in candidates {
-        if names.contains(&c.1.rewrite.name.to_string()) {
-        } else {
-            names.insert(c.1.rewrite.name.to_string());
-        }
-        let rw = c.1.clone();
-
-        // TODO (@ninehusky): how should we deal with rules that match on everything? e.g. `?a ==> (&& ?a 1)`
-        let filter_rw = |term: String| -> bool {
-            !(term.starts_with("(<")
-                || term.starts_with("(<=")
-                || term.starts_with("(>")
-                || term.starts_with("(>=")
-                || term.starts_with("(&&")
-                || term.starts_with("(||")
-                || term.starts_with("(==")
-                || term.starts_with("(!="))
-        };
-
-        if !filter_rw(rw.lhs.to_string()) && !filter_rw(rw.rhs.to_string()) {
-            good_candidates.add(c.1);
-        } else {
-            println!("throwing away rule: {}", c.1);
-        }
-    }
-
-    candidates = good_candidates.clone();
-
-    println!("number of candidate_imps: {}", candidates.len());
-
-    let mut candidate_imps: Vec<Implication<Pred>> = candidates
-        .0
-        .iter()
-        .map(|(_, rule)| Implication {
-            name: rule.name.clone(),
-            lhs: rule.lhs.clone(),
-            rhs: rule.rhs.clone(),
-        })
-        .collect();
-
-    for c in &candidates {
-        println!("{}", c.0);
-    }
-
-    println!("step 3 done");
-
-    println!("candidate implications: {}", candidate_imps.len());
-
-    // 4. minimization.
-    let result = minimize_implications(&mut candidate_imps, &mut vec![]);
-
-    println!("implications: {}", result.0.len());
-
-    for r in result.0.clone() {
-        println!("{}", r.name);
-    }
-
-    println!("step 4 done");
-
-    // let's use the workload to get the best candidates for each eclass.
-
-    let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
-
-    let extract = Extractor::new(&egraph, AstSize);
-
-    for (i, class) in egraph.classes().enumerate() {
-        let (_, expr) = extract.find_best(class.id);
-        let pattern: Pattern<Pred> = expr.to_string().parse().unwrap();
-
-        let filter_rw = |term: String| -> bool {
-            !(term.starts_with("(<")
-                || term.starts_with("(<=")
-                || term.starts_with("(>")
-                || term.starts_with("(>=")
-                || term.starts_with("(&&")
-                || term.starts_with("(||")
-                || term.starts_with("(==")
-                || term.starts_with("(!="))
-        };
-
-        if filter_rw(pattern.to_string()) {
-            println!("skipping rule: {}", pattern);
-            continue;
-        }
-
-        let cvec = class
-            .data
-            .cvec
-            .clone()
-            .iter()
-            .map(|x| x.unwrap_or(0) != 0)
-            .collect::<Vec<bool>>();
-        pvec_to_terms
-            .entry(cvec)
-            .or_insert_with(Vec::new)
-            .push(pattern.clone());
-    }
-    (
-        pvec_to_terms,
-        result
-            .0
-            .clone()
-            .iter()
-            .map(|x| {
-                let mut rule = x.clone();
-                let mut cache = Default::default();
-                let parent = Pred::generalize(&Pred::instantiate(&rule.lhs), &mut cache);
-                let child = Pred::generalize(&Pred::instantiate(&rule.rhs), &mut cache);
+                let parent = Pred::generalize(&Pred::instantiate(&rule.lhs.into()), &mut cache);
+                let child = Pred::generalize(&Pred::instantiate(&rule.rhs.into()), &mut cache);
 
                 ImplicationSwitch::new(&parent, &child).rewrite()
             })

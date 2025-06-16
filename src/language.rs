@@ -1,14 +1,18 @@
 use std::{
     fmt::{Debug, Display},
-    hash::Hash, str::FromStr,
+    hash::Hash,
+    str::FromStr,
 };
 
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language, PatternAst, RecExpr, Rewrite, Subst
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language,
+    PatternAst, RecExpr, Rewrite, Subst,
 };
 use enumo::{lookup_pattern, Workload};
 
-use crate::{enumo::{egg_to_serialized_egraph, Sexp}, recipe_utils::Lang, *};
+use crate::{
+    conditions::implication::{Implication, ImplicationValidationResult}, enumo::{egg_to_serialized_egraph, Sexp}, recipe_utils::Lang, *
+};
 
 // An `ImplicationSwitch` models the implication of one condition to another.
 //
@@ -71,7 +75,8 @@ fn search_pat<L: Language, A: Analysis<L>>(
     ids[0]
 }
 
-fn apply_pat<L: Language, A: Analysis<L>>(
+// Given a subst and a pattern, this function adds the substituted pattern to the egraph.
+pub(crate) fn apply_pat<L: Language, A: Analysis<L>>(
     pat: &[ENodeOrVar<L>],
     egraph: &mut EGraph<L, A>,
     subst: &Subst,
@@ -120,7 +125,6 @@ where
                 self.parent_cond, self.my_cond
             );
         }
-
 
         if lookup_pattern(&is_true_my_pattern, egraph, subst) {
             // we already have the condition in the egraph, so no need to add it.
@@ -326,15 +330,25 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     /// Domain value type
     type Constant: Clone + Hash + Eq + Debug + Display + Ord;
 
-    /// Converts a constant to a boolean.
-    /// Returns None when the conversion is not defined for the constant.
-    fn constant_to_bool(_c: &Self::Constant) -> Option<bool> {
-        None
+    /// Returns if the pattern is an assumption.
+    fn pattern_is_assumption<L: SynthLanguage>(pat: &Pattern<L>) -> bool {
+        // TODO(@ninehusky): let's keep tabs on the performance of this.
+        // If for some reason this is bad, we can just convert the pattern to a string.
+        match &pat.ast.as_ref()[0] {
+            egg::ENodeOrVar::ENode(e) => L::node_is_assumption(e),
+            egg::ENodeOrVar::Var(_) => false,
+        }
     }
 
-    // Says if a node in the language is an equality.
-    fn is_equality(&self) -> bool {
+    /// Returns if the node is an assumption.
+    fn node_is_assumption(&self) -> bool {
         false
+    }
+
+    /// Label for assumption nodes.
+    /// Don't mess with this unless you know what you're doing.
+    fn assumption_label() -> &'static str {
+        "assume"
     }
 
     /// Hook into the e-graph analysis modify method
@@ -416,58 +430,6 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         true
     }
 
-    fn get_condition_propagation_rules(conditions: &Workload) -> Vec<Rewrite<Self, SynthAnalysis>> {
-        let forced = conditions.force();
-
-
-        let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
-        let mut cache: HashMap<(String, String), bool> = Default::default();
-        for c in &forced {
-            let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
-            let c_pat = Pattern::from(&c_recexpr.clone());
-            // pairwise checking implication of all conditions
-            for c2 in &forced {
-                if c == c2 {
-                    continue;
-                }
-                let c2_recexpr: RecExpr<Self> = c2.to_string().parse().unwrap();
-                let c2_pat = Pattern::from(&c2_recexpr.clone());
-                let c_vars = c_pat.vars();
-                let c2_vars = c2_pat.vars();
-
-                if c2_vars.iter().any(|v| !c_vars.contains(v)) {
-                    // can't have variables on the right that are not on the left.
-                    continue;
-                }
-
-
-                let rw = ImplicationSwitch {
-                    parent_cond: c_pat.clone(),
-                    my_cond: c2_pat.clone(),
-                }
-                .rewrite();
-                if Self::condition_implies(
-                    &c.to_string().parse().unwrap(),
-                    &c2.to_string().parse().unwrap(),
-                    &mut cache,
-                ) && !result.iter().any(|r| r.name == rw.name)
-                // avoid duplicates
-                {
-                    result.push(rw);
-                }
-            }
-        }
-        result
-    }
-
-    fn condition_implies(
-        _lhs: &Pattern<Self>,
-        _rhs: &Pattern<Self>,
-        _cache: &mut HashMap<(String, String), bool>,
-    ) -> bool {
-        false
-    }
-
     /// Used by fast-forwarding
     ///
     /// Determines whether a rewrite rule may be selected.
@@ -534,11 +496,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                         1
                     }
                 }
-                Sexp::List(l) => {
-                    l.into_iter()
-                        .map(|s| sexp_to_cost(s))
-                        .sum::<i32>()
-                }
+                Sexp::List(l) => l.into_iter().map(|s| sexp_to_cost(s)).sum::<i32>(),
             }
         }
 
@@ -643,6 +601,12 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     }
 
     fn validate(lhs: &Pattern<Self>, rhs: &Pattern<Self>) -> ValidationResult;
+
+    fn validate_implication(_implication: Implication<Self>) -> ImplicationValidationResult {
+        // TODO: when we delete old ruler code, let's make this
+        // a required method to implement.
+        ImplicationValidationResult::Invalid
+    }
 
     fn validate_with_cond(
         _lhs: &Pattern<Self>,
@@ -917,15 +881,20 @@ pub mod tests {
             .with_egraph(egraph.clone())
             .run(&[rule.rewrite()]);
 
-    let egraph = runner.egraph.clone();
+        let egraph = runner.egraph.clone();
 
-    let serialized = egg_to_serialized_egraph(&egraph);
-    serialized.to_json_file("implication_toggle_equality_simple.json").unwrap();
+        let serialized = egg_to_serialized_egraph(&egraph);
+        serialized
+            .to_json_file("implication_toggle_equality_simple.json")
+            .unwrap();
 
+        assert!(egraph
+            .lookup_expr(&"(istrue (== (/ x x) 1))".parse().unwrap())
+            .is_some());
 
-    assert!(egraph.lookup_expr(&"(istrue (== (/ x x) 1))".parse().unwrap()).is_some());
-
-    assert_eq!(egraph.lookup_expr(&"(/ x x)".parse().unwrap()), egraph.lookup_expr(&"1".parse().unwrap()));
-
+        assert_eq!(
+            egraph.lookup_expr(&"(/ x x)".parse().unwrap()),
+            egraph.lookup_expr(&"1".parse().unwrap())
+        );
     }
 }

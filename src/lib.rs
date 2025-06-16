@@ -14,7 +14,7 @@ pub mod conditions;
 mod bv;
 pub mod enumo;
 pub mod halide;
-mod language;
+pub mod language;
 pub mod llm;
 pub mod logger;
 pub mod recipe_utils;

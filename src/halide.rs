@@ -41,17 +41,13 @@ egg::define_language! {
     "min" = Min([Id; 2]),
     "max" = Max([Id; 2]),
     "select" = Select([Id; 3]),
-    "istrue" = IsTrue(Id),
+    "assume" = Assume(Id),
     Var(Symbol),
   }
 }
 
 impl SynthLanguage for Pred {
     type Constant = Constant;
-
-    fn constant_to_bool(c: &Self::Constant) -> Option<bool> {
-        Some(c != &0)
-    }
 
     fn eval<'a, F>(&'a self, cvec_len: usize, mut get_cvec: F) -> CVec<Self>
     where
@@ -146,7 +142,7 @@ impl SynthLanguage for Pred {
               if xbool {Some(*y)} else {Some(*z)}
             }),
             Pred::Var(_) => vec![],
-            Pred::IsTrue(_) => {
+            Pred::Assume(_) => {
                 // TODO: @ninehusky - I actually kind of want to panic here, because
                 // cvec matching on `istrue` is just a bad thing waiting to happen.
                 // I'm actually not sure what a more principled fix would be, however,
@@ -155,13 +151,6 @@ impl SynthLanguage for Pred {
                 vec![None, None, None]
             }
         }
-    }
-
-    fn is_equality(&self) -> bool {
-        println!("seeing if {} is equality", self);
-        let result = matches!(self, Pred::Eq(_));
-        println!("the result is: {}", result);
-        result
     }
 
     fn initialize_vars(egraph: &mut EGraph<Self, SynthAnalysis>, vars: &[String]) {
@@ -209,65 +198,65 @@ impl SynthLanguage for Pred {
         Pred::Lit(c)
     }
 
-    fn condition_implies(
-        lhs: &Pattern<Self>,
-        rhs: &Pattern<Self>,
-        cache: &mut HashMap<(String, String), bool>,
-    ) -> bool {
-        let lhs_str = lhs.to_string();
-        let rhs_str = rhs.to_string();
-        if cache.contains_key(&(lhs_str.clone(), rhs_str.clone())) {
-            return *cache.get(&(lhs_str, rhs_str)).unwrap();
-        }
+    // fn condition_implies(
+    //     lhs: &Pattern<Self>,
+    //     rhs: &Pattern<Self>,
+    //     cache: &mut HashMap<(String, String), bool>,
+    // ) -> bool {
+    //     let lhs_str = lhs.to_string();
+    //     let rhs_str = rhs.to_string();
+    //     if cache.contains_key(&(lhs_str.clone(), rhs_str.clone())) {
+    //         return *cache.get(&(lhs_str, rhs_str)).unwrap();
+    //     }
 
-        let mut cfg = z3::Config::new();
-        cfg.set_timeout_msec(1000);
-        let ctx = z3::Context::new(&cfg);
-        let solver = z3::Solver::new(&ctx);
-        let zero = z3::ast::Int::from_i64(&ctx, 0);
+    //     let mut cfg = z3::Config::new();
+    //     cfg.set_timeout_msec(1000);
+    //     let ctx = z3::Context::new(&cfg);
+    //     let solver = z3::Solver::new(&ctx);
+    //     let zero = z3::ast::Int::from_i64(&ctx, 0);
 
-        // given that the lhs is true, can we make the rhs false?
+    //     // given that the lhs is true, can we make the rhs false?
 
-        let lhs = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref())
-            ._eq(&zero)
-            .not();
+    //     let lhs = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref())
+    //         ._eq(&zero)
+    //         .not();
 
-        let rhs = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref())
-            ._eq(&zero)
-            .not();
+    //     let rhs = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref())
+    //         ._eq(&zero)
+    //         .not();
 
-        let assertion = &lhs;
+    //     let assertion = &lhs;
 
-        solver.assert(assertion);
+    //     solver.assert(assertion);
 
-        if matches!(solver.check(), z3::SatResult::Unsat) {
-            // don't want something that is always false
-            cache.insert((lhs_str, rhs_str), false);
-            return false;
-        }
+    //     if matches!(solver.check(), z3::SatResult::Unsat) {
+    //         // don't want something that is always false
+    //         cache.insert((lhs_str, rhs_str), false);
+    //         return false;
+    //     }
 
-        solver.reset();
-        let assertion = &rhs;
+    //     solver.reset();
+    //     let assertion = &rhs;
 
-        solver.assert(&assertion.not());
+    //     solver.assert(&assertion.not());
 
-        if matches!(solver.check(), z3::SatResult::Unsat) {
-            // don't want something that is always true
-            cache.insert((lhs_str, rhs_str), false);
-            return false;
-        }
+    //     if matches!(solver.check(), z3::SatResult::Unsat) {
+    //         // don't want something that is always true
+    //         cache.insert((lhs_str, rhs_str), false);
+    //         return false;
+    //     }
 
-        solver.reset();
+    //     solver.reset();
 
-        let assertion = &z3::ast::Bool::implies(&lhs, &rhs).not();
+    //     let assertion = &z3::ast::Bool::implies(&lhs, &rhs).not();
 
-        solver.assert(assertion);
+    //     solver.assert(assertion);
 
-        let res = solver.check();
-        let implies = matches!(res, z3::SatResult::Unsat);
-        cache.insert((lhs_str, rhs_str), implies);
-        implies
-    }
+    //     let res = solver.check();
+    //     let implies = matches!(res, z3::SatResult::Unsat);
+    //     cache.insert((lhs_str, rhs_str), implies);
+    //     implies
+    // }
 
     fn validate(lhs: &Pattern<Self>, rhs: &Pattern<Self>) -> ValidationResult {
         let mut cfg = z3::Config::new();
@@ -564,8 +553,8 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ))
             }
             Pred::Var(v) => buf.push(z3::ast::Int::new_const(ctx, v.to_string())),
-            Pred::IsTrue(x) => {
-                panic!("IsTrue should not be used in egg_to_z3");
+            Pred::Assume(x) => {
+                panic!("assumption nodes should not be used in egg_to_z3");
             }
         }
     }
@@ -867,7 +856,8 @@ pub fn compute_conditional_structures(
     let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
     let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
 
-    let cond_prop_ruleset = Pred::get_condition_propagation_rules(conditional_soup);
+    // TODO: nuke this
+    let cond_prop_ruleset = vec![];
 
     for cond in conditional_soup.force() {
         let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
