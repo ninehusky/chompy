@@ -198,6 +198,25 @@ impl SynthLanguage for Pred {
         Pred::Lit(c)
     }
 
+    fn is_assumption(&self) -> bool {
+        matches!(self, Pred::Assume(_))
+    }
+
+    fn is_predicate(&self) -> bool {
+        matches!(
+            self,
+            Pred::And(_)
+                | Pred::Or(_)
+                | Pred::Not(_)
+                | Pred::Lt(_)
+                | Pred::Leq(_)
+                | Pred::Gt(_)
+                | Pred::Geq(_)
+                | Pred::Eq(_)
+                | Pred::Neq(_)
+        )
+    }
+
     // fn condition_implies(
     //     lhs: &Pattern<Self>,
     //     rhs: &Pattern<Self>,
@@ -527,11 +546,7 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 buf.push(z3::ast::Bool::ite(
                     &r._eq(&zero),
                     &zero,
-                    &z3::ast::Bool::ite(
-                        &signs_differ,
-                        &z3::ast::Int::unary_minus(&rem),
-                        &rem,
-                    ),
+                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&rem), &rem),
                 ));
             }
             Pred::Min([x, y]) => {
@@ -1140,7 +1155,10 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     let end_time = std::time::Instant::now();
 
-    println!("finished recipe (seconds: {})", end_time.duration_since(start_time).as_secs_f64());
+    println!(
+        "finished recipe (seconds: {})",
+        end_time.duration_since(start_time).as_secs_f64()
+    );
 
     all_rules
 }

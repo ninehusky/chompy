@@ -16,8 +16,8 @@ use super::assumption::Assumption;
 #[derive(Clone, PartialEq, Debug)]
 pub struct Implication<L: SynthLanguage> {
     pub name: Arc<str>,
-    pub lhs: Assumption<L>,
-    pub rhs: Assumption<L>,
+    pub(crate) lhs: Assumption<L>,
+    pub(crate) rhs: Assumption<L>,
 }
 
 impl<L: SynthLanguage> Implication<L> {

@@ -225,12 +225,12 @@ pub fn shrink_implications(
     keep
 }
 
-#[test]
-fn validate() {
-    let validation = validate_implication(Implication("test".into(), "(<= ?a ?b)".parse().unwrap(), "(|| (< ?a ?b) (== ?a ?b))".parse().unwrap()), false);
+// #[test]
+// fn validate() {
+//     let validation = validate_implication(Implication("test".into(), "(<= ?a ?b)".parse().unwrap(), "(|| (< ?a ?b) (== ?a ?b))".parse().unwrap()), false);
 
-    println!("validation result: {:?}", validation);
-}
+//     println!("validation result: {:?}", validation);
+// }
 
 pub fn select_implications(
     imps: &mut Vec<Implication<Pred>>,

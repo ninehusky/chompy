@@ -10,9 +10,23 @@ pub(crate) struct Assumption<L: SynthLanguage> {
 }
 
 impl<L: SynthLanguage> Assumption<L> {
-    /// Creates a new `Assumption` from the given pattern string.
-    /// The pattern must be a valid predicate in the language `L`.
-    /// If the pattern is already an assumption, it returns an error.
+    /// Attempts to construct a new `Assumption` from the provided pattern string.
+    ///
+    /// # Arguments
+    ///
+    /// * `assumption` - A string representing the pattern to be wrapped as an assumption.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Self)` if the pattern is a valid predicate and not already an assumption.
+    /// * `Err(String)` if the pattern is invalid, not a predicate, or already an assumption.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The pattern cannot be parsed.
+    /// - The pattern is already marked as an assumption.
+    /// - The pattern is not recognized as a valid predicate in the language `L`.
     pub fn new(assumption: String) -> Result<Self, String> {
         let pat: Result<Pattern<L>, _> = assumption.parse();
         if pat.is_err() {
@@ -24,6 +38,11 @@ impl<L: SynthLanguage> Assumption<L> {
         let pat = pat.unwrap();
         if L::pattern_is_assumption(&pat) {
             return Err(format!("Pattern is already an assumption: {}", pat));
+        } else if !L::pattern_is_predicate(&pat) {
+            return Err(format!(
+                "Pattern is not a valid predicate: {}",
+                pat
+            ));
         }
 
         Ok(Self {
@@ -60,7 +79,7 @@ pub mod tests {
         let assumption: Assumption<Pred> = Assumption::new(assumption_str).unwrap();
         let pattern: Pattern<Pred> = assumption.into();
 
-        let expected_pattern: Pattern<Pred> = "(> x 0)".parse().unwrap();
+        let expected_pattern: Pattern<Pred> = "(assume (> x 0))".parse().unwrap();
 
         assert_eq!(
             pattern, expected_pattern,

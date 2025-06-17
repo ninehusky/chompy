@@ -334,14 +334,26 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     fn pattern_is_assumption<L: SynthLanguage>(pat: &Pattern<L>) -> bool {
         // TODO(@ninehusky): let's keep tabs on the performance of this.
         // If for some reason this is bad, we can just convert the pattern to a string.
-        match &pat.ast.as_ref()[0] {
-            egg::ENodeOrVar::ENode(e) => L::node_is_assumption(e),
+        match &pat.ast.as_ref().last().unwrap() {
+            egg::ENodeOrVar::ENode(e) => L::is_assumption(e),
             egg::ENodeOrVar::Var(_) => false,
         }
     }
 
+    fn pattern_is_predicate<L: SynthLanguage>(pat: &Pattern<L>) -> bool {
+        // TODO(@ninehusky): let's keep tabs on the performance of this. (see above)
+        match &pat.ast.as_ref().last().unwrap() {
+            egg::ENodeOrVar::ENode(e) => e.is_predicate(),
+            egg::ENodeOrVar::Var(_) => false,
+        }
+    }
+
+    fn is_predicate(&self) -> bool {
+        false
+    }
+
     /// Returns if the node is an assumption.
-    fn node_is_assumption(&self) -> bool {
+    fn is_assumption(&self) -> bool {
         false
     }
 
