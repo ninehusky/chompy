@@ -130,7 +130,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 
         // 0. As a prior step, add the equalities and prior implications to the egraph.
         add_all_rws_to_egglog_egraph(&equalities, &mut egraph);
-        add_all_to_egglog_egraph(&prior, &mut egraph);
+        add_all_imps_to_egglog_egraph(&prior, &mut egraph);
 
         // 1. Add the lhs, rhs of all candidates to the e-graph.
         for (_, candidate) in &self.0 {
@@ -247,12 +247,17 @@ fn impl_to_egglog_rule<L: SynthLanguage>(imp: &Implication<L>) -> String {
     )
 }
 
-fn add_all_to_egglog_egraph<L: SynthLanguage>(imps: &ImplicationSet<L>, egraph: &mut EgglogEGraph) {
+/// Adds all implications in the set to the egraph.
+fn add_all_imps_to_egglog_egraph<L: SynthLanguage>(
+    imps: &ImplicationSet<L>,
+    egraph: &mut EgglogEGraph,
+) {
     for implication in imps.0.values() {
         add_implication(implication, egraph);
     }
 }
 
+/// Adds a single implication to the egraph.
 fn add_implication<L: SynthLanguage>(imp: &Implication<L>, egraph: &mut EgglogEGraph) {
     let rule_def = impl_to_egglog_rule(imp);
     egraph
@@ -266,12 +271,17 @@ fn add_implication<L: SynthLanguage>(imp: &Implication<L>, egraph: &mut EgglogEG
         });
 }
 
-fn add_all_rws_to_egglog_egraph<L: SynthLanguage>(rewrites: &Ruleset<L>, egraph: &mut EgglogEGraph) {
+/// Adds all rewrites in the set to the egraph.
+fn add_all_rws_to_egglog_egraph<L: SynthLanguage>(
+    rewrites: &Ruleset<L>,
+    egraph: &mut EgglogEGraph,
+) {
     for rewrite in rewrites.iter() {
         add_rw(rewrite, egraph);
     }
 }
 
+/// Adds a single rewrite to the egraph.
 fn add_rw<L: SynthLanguage>(rewrite: &Rule<L>, egraph: &mut EgglogEGraph) {
     let rule_def = rw_to_egglog_rule(rewrite);
     egraph
