@@ -76,21 +76,22 @@ impl<L: SynthLanguage> Implication<L> {
     ///   "(> x 0) -> (!= x 0)".into(),
     ///   Assumption::new("(> x 0)".to_string()).unwrap(),
     ///   Assumption::new("(!= x 0)".to_string()).unwrap(),
-    /// );
+    /// ).unwrap();
     ///
     /// let rewrite: Rewrite<Pred, SynthAnalysis> = imp.rewrite();
     ///
     /// let mut egraph = egg::EGraph::<Pred, SynthAnalysis>::default();
-    /// imp.lhs.insert_into_egraph(&mut egraph);
+    /// imp.lhs().insert_into_egraph(&mut egraph);
     ///
     ///
     /// let runner = egg::Runner::default().with_egraph(egraph.clone()).run(&[rewrite]);
     ///
     /// let result = runner.egraph;
     /// // Let's check if the right-hand assumption is present in the egraph.
-    /// assert!(result.lookup_expr(&imp.rhs.clone().into()).is_some());
+    /// assert!(result.lookup_expr(&imp.rhs().clone().into()).is_some());
     /// // Observe also that the left-hand and right-hand assumptions are not equal.
-    /// assert_ne!(result.lookup_expr(&imp.lhs.clone().into()), result.lookup_expr(&imp.rhs.clone().into()));
+    /// assert_ne!(result.lookup_expr(&imp.lhs().clone().into()),
+    ///            result.lookup_expr(&imp.rhs().clone().into()));
     /// ```
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
         assert!(self.is_valid(), "Implication is not valid: {}", self.name);
