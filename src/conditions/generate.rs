@@ -264,17 +264,18 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
         let candidate_impls: Vec<Implication<Pred>> = candidates
             .0
             .iter()
-            .map(|(_, rule)| Implication {
-                name: rule.name.clone(),
-                lhs: Assumption::new(rule.lhs.to_string()).unwrap(),
-                rhs: Assumption::new(rule.rhs.to_string()).unwrap(),
-            })
+            .map(|(_, rule)| Implication::new(
+                rule.name.clone(),
+                Assumption::new(rule.lhs.to_string()).unwrap(),
+                Assumption::new(rule.rhs.to_string()).unwrap(),
+            // TODO: this unwrap will blow up if rhs has free vars
+            ).unwrap())
             .collect();
 
         if !candidate_impls.is_empty() {
             println!("found {} candidate implications", candidate_impls.len());
             for rule in candidate_impls.iter() {
-                println!("{}", rule.name);
+                println!("{}", rule.name());
             }
         } else {
             println!("no candidate implications found");
@@ -294,14 +295,17 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
             assert!(!implications.is_empty());
         }
 
-        implications.sort_by(|a, b| a.name.cmp(&b.name));
-        implications.dedup_by(|a, b| a.name == b.name);
+        implications.sort_by(|a, b| a.name().cmp(&b.name()));
+        implications.dedup_by(|a, b| a.name() == b.name());
 
         for imp in chosen {
-            println!("adding imp to top-level: {}", imp.name);
+            println!("adding imp to top-level: {}", imp.name());
             // keep these as terms with meta-variables.
-            let lhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&Pattern::from(imp.lhs).to_string()).unwrap());
-            let rhs = egg_to_egglog(&crate::enumo::Sexp::from_str(&Pattern::from(imp.rhs).to_string()).unwrap());
+            let lhs_sexp = Sexp::from_str(&imp.lhs().to_string()).unwrap();
+            let rhs_sexp = Sexp::from_str(&imp.rhs().to_string()).unwrap();
+
+            let lhs = egg_to_egglog(&lhs_sexp);
+            let rhs = egg_to_egglog(&rhs_sexp);
 
             impl_egraph
                 .parse_and_run_program(
@@ -323,7 +327,7 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
 
     println!("implications found: {}", implications.len());
     for imp in implications.iter() {
-        println!("{}", imp.name);
+        println!("{}", imp.name());
     }
 
     // now we have a set of implications that we can use to generate the rules.
@@ -358,8 +362,8 @@ pub fn get_condition_propagation_rules_halide(_dummy: &Workload) -> (
             .map(|x| {
                 let mut rule = x.clone();
                 let mut cache = Default::default();
-                let parent = Pred::generalize(&Pred::instantiate(&rule.lhs.into()), &mut cache);
-                let child = Pred::generalize(&Pred::instantiate(&rule.rhs.into()), &mut cache);
+                let parent = Pred::generalize(&Pred::instantiate(&rule.lhs().into()), &mut cache);
+                let child = Pred::generalize(&Pred::instantiate(&rule.rhs().into()), &mut cache);
 
                 ImplicationSwitch::new(&parent, &child).rewrite()
             })

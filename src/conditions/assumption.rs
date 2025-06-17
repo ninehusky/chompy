@@ -1,12 +1,12 @@
 use egg::{Pattern, RecExpr};
 
-use crate::SynthLanguage;
-use std::fmt::Display;
+use crate::{enumo::Sexp, SynthLanguage};
+use std::{fmt::Display, str::FromStr};
 
 /// Represents an assumption over a language `L`.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub(crate) struct Assumption<L: SynthLanguage> {
-    pat: String,
+pub struct Assumption<L: SynthLanguage> {
+    pub pat: String,
     _marker: std::marker::PhantomData<L>,
 }
 
@@ -47,6 +47,34 @@ impl<L: SynthLanguage> Assumption<L> {
             pat: assumption,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    /// Inserts the assumption as an expression into the provided e-graph.
+    pub fn insert_into_egraph(&self, egraph: &mut egg::EGraph<L, crate::SynthAnalysis>) {
+        let expr: RecExpr<L> = self.clone().into();
+        egraph.add_expr(&expr);
+    }
+
+    // Ditches the parent "(assume ...)" that is added to assumptions.
+    pub(crate) fn chop_assumption(pat: &Pattern<L>) -> Pattern<L> {
+        let sexp = Sexp::from_str(&pat.to_string()).unwrap();
+        match sexp {
+            Sexp::Atom(_) => {
+                // if it's an atom, we can just use it as is.
+                panic!("Expected assumption pattern, got `{}`", sexp);
+            }
+            Sexp::List(ref l) => {
+                assert_eq!(l.len(), 2);
+                let child_expr = &l[1];
+                if let Sexp::Atom(op) = &l[0] {
+                    assert_eq!(op, L::assumption_label());
+                    let pat: Pattern<L> = Pattern::from_str(&child_expr.to_string()).unwrap();
+                    pat
+                } else {
+                    panic!("Expected assumption pattern, got `{}`", sexp);
+                }
+            }
+        }
     }
 }
 

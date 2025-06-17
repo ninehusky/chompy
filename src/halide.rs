@@ -1,7 +1,9 @@
 use std::{convert::TryInto, str::FromStr};
 
 use crate::{
-    conditions::merge_eqs,
+    conditions::{
+        assumption::Assumption, implication::{Implication, ImplicationValidationResult}, merge_eqs
+    },
     enumo::{egg_to_serialized_egraph, Rule},
     *,
 };
@@ -215,6 +217,55 @@ impl SynthLanguage for Pred {
                 | Pred::Eq(_)
                 | Pred::Neq(_)
         )
+    }
+
+    fn validate_implication(imp: Implication<Pred>) -> ImplicationValidationResult {
+        let mut cfg = z3::Config::new();
+        cfg.set_timeout_msec(1000);
+        let ctx = z3::Context::new(&cfg);
+        let solver = z3::Solver::new(&ctx);
+
+        let lexpr: Pattern<Pred> = Assumption::chop_assumption(&imp.lhs().clone().into());
+        let rexpr: Pattern<Pred> = Assumption::chop_assumption(&imp.rhs().clone().into());
+
+        // chop off the assumptions, by taking everything except the last element.
+        // we should definitely test this.
+        let lexpr = egg_to_z3(&ctx, &Pred::instantiate(&lexpr).as_ref());
+        let rexpr = egg_to_z3(&ctx, &Pred::instantiate(&rexpr).as_ref());
+
+        let zero = z3::ast::Int::from_i64(&ctx, 0);
+        let one = z3::ast::Int::from_i64(&ctx, 1);
+
+        // ask the solver to find a model where the LHS is true.
+        solver.assert(&lexpr._eq(&zero).not());
+
+        // if it can't, then the LHS is trivially false
+        if matches!(solver.check(), z3::SatResult::Unsat) {
+            return ImplicationValidationResult::LhsFalse;
+        }
+
+        solver.reset();
+
+        // ask the solver to find a model where the RHS is false.
+        solver.assert(&one._eq(&rexpr).not());
+
+        // if it can't, then the RHS is trivially true.
+        if matches!(solver.check(), z3::SatResult::Unsat) {
+            return ImplicationValidationResult::RhsTrue;
+        }
+
+        solver.reset();
+        solver.assert(
+            &z3::ast::Bool::implies(&lexpr._eq(&zero).not(), &rexpr._eq(&zero).not()).not(),
+        );
+
+        let result = solver.check();
+
+        match result {
+            z3::SatResult::Unsat => ImplicationValidationResult::NonTrivialValid,
+            z3::SatResult::Unknown => ImplicationValidationResult::Unknown,
+            z3::SatResult::Sat => ImplicationValidationResult::Invalid,
+        }
     }
 
     // fn condition_implies(

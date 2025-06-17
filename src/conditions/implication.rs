@@ -15,12 +15,44 @@ use super::assumption::Assumption;
 /// which is seeded into an empty e-graph to prune derivable rewrites.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Implication<L: SynthLanguage> {
-    pub name: Arc<str>,
-    pub(crate) lhs: Assumption<L>,
-    pub(crate) rhs: Assumption<L>,
+    name: Arc<str>,
+    lhs: Assumption<L>,
+    rhs: Assumption<L>,
 }
 
 impl<L: SynthLanguage> Implication<L> {
+    /// Creates a new implication from the given name, left-hand side, and right-hand side assumptions.
+    /// 
+    /// # Errors
+    /// Returns an error if the right-hand side contains variables not present in the left-hand side.
+    pub fn new(name: Arc<str>, lhs: Assumption<L>, rhs: Assumption<L>) -> Result<Self, String> {
+        let lhs_pat: Pattern<L> = lhs.clone().into();
+        let rhs_pat: Pattern<L> = rhs.clone().into();
+
+        let lhs_vars = lhs_pat.vars();
+        let rhs_vars = rhs_pat.vars();
+
+        if rhs_vars.iter().any(|v| !lhs_vars.contains(v)) {
+            return Err(format!(
+                "Right-hand side of implication '{}' contains variables not present in the left-hand side: {:?}",
+                name, rhs_vars
+            ));
+        }
+
+        Ok(Implication { name, lhs, rhs })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn lhs(&self) -> Assumption<L> {
+        self.lhs.clone()
+    }
+
+    pub fn rhs(&self) -> Assumption<L> {
+        self.rhs.clone()
+    }
     /// Whether the implication is valid, i.e., whether the left-hand side implies the right-hand side.
     pub fn is_valid(&self) -> bool {
         matches!(L::validate_implication(self.clone()), ImplicationValidationResult::NonTrivialValid)
@@ -32,7 +64,8 @@ impl<L: SynthLanguage> Implication<L> {
     /// these are **not** traditional rewrites that represent equalities.
     ///
     /// ```
-    /// use ruler::conditions::Implication;
+    /// use ruler::conditions::implication::Implication;
+    /// use ruler::conditions::assumption::Assumption;
     /// use ruler::halide::Pred;
     /// use ruler::language::{SynthLanguage, SynthAnalysis};
     /// use egg::{Rewrite, RecExpr};
@@ -40,24 +73,24 @@ impl<L: SynthLanguage> Implication<L> {
     /// use std::str::FromStr;
     ///
     /// let imp: Implication<Pred> = Implication::new(
-    ///    "(> x 0) -> (!= x 0)",
-    ///   "(> x 0)".parse().unwrap(),
-    ///   "(!= x 0)".parse().unwrap(),
+    ///   "(> x 0) -> (!= x 0)".into(),
+    ///   Assumption::new("(> x 0)".to_string()).unwrap(),
+    ///   Assumption::new("(!= x 0)".to_string()).unwrap(),
     /// );
     ///
     /// let rewrite: Rewrite<Pred, SynthAnalysis> = imp.rewrite();
     ///
-    /// let egraph = &mut egg::EGraph::<Pred, SynthAnalysis>::default();
-    /// let assume_p_expr: RecExpr<Pred> = Pred::make_assumption(&"(> x 0)".parse().unwrap()).to_string().parse().unwrap();
-    /// egraph.add_expr(assume_p_expr.to_string().parse().unwrap());
+    /// let mut egraph = egg::EGraph::<Pred, SynthAnalysis>::default();
+    /// imp.lhs.insert_into_egraph(&mut egraph);
     ///
     ///
-    /// let runner = egg::Runner::default().with_egraph(egraph.clone());
-    /// runner.run(&[rewrite]);
+    /// let runner = egg::Runner::default().with_egraph(egraph.clone()).run(&[rewrite]);
     ///
     /// let result = runner.egraph;
-    /// let assume_q: egg::RecExpr<Pred> = Pred::make_assumption(&"q".parse().unwrap()).to_string().parse().unwrap();
-    /// let assume_q_id = result.lookup_expr(&assume_q);
+    /// // Let's check if the right-hand assumption is present in the egraph.
+    /// assert!(result.lookup_expr(&imp.rhs.clone().into()).is_some());
+    /// // Observe also that the left-hand and right-hand assumptions are not equal.
+    /// assert_ne!(result.lookup_expr(&imp.lhs.clone().into()), result.lookup_expr(&imp.rhs.clone().into()));
     /// ```
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
         assert!(self.is_valid(), "Implication is not valid: {}", self.name);

@@ -9,7 +9,7 @@ use crate::{SynthAnalysis, SynthLanguage, ValidationResult};
 
 mod derive;
 pub mod generate;
-pub(crate) mod assumption;
+pub mod assumption;
 pub mod implication;
 
 pub fn merge_eqs() -> Rewrite<Pred, SynthAnalysis> {
