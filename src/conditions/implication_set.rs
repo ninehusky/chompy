@@ -37,6 +37,11 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         self.0.len()
     }
 
+    pub fn contains(&self, val: &Implication<L>) -> bool {
+        let key = val.name();
+        self.0.contains_key(&Arc::<str>::from(key))
+    }
+
     pub fn add(&mut self, val: Implication<L>) {
         let key = val.name();
         self.0.insert(key.into(), val);
@@ -94,8 +99,8 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     pub fn select(&mut self, step_size: usize, invalid: &mut ImplicationSet<L>) -> Self {
         let mut chosen: Self = Default::default();
         self.0.sort_by(|_, imp1, _, imp2| {
-            imp1.score()
-                .partial_cmp(&imp2.score())
+            imp2.score()
+                .partial_cmp(&imp1.score())
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
@@ -318,4 +323,76 @@ fn run_egglog_rules(ruleset_name: &'static str, egraph: &mut EgglogEGraph) {
                 e
             );
         });
+}
+
+
+/// TESTS
+
+
+#[cfg(test)]
+mod select_tests {
+    use crate::{conditions::assumption::Assumption, halide::Pred};
+
+    use super::*;
+
+    #[test]
+    fn test_select() {
+        let mut imp_set: ImplicationSet<Pred> = ImplicationSet::new();
+
+        let simple_imp = Implication::new(
+            "imp1".into(),
+            Assumption::<Pred>::new("(< ?x 5)".to_string()).unwrap(),
+            Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
+        ).unwrap();
+
+        let verbose_imp = Implication::new(
+            "imp2".into(),
+            Assumption::<Pred>::new("(< ?x (+ 4 1))".to_string()).unwrap(),
+            Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
+        ).unwrap();
+
+        imp_set.add(simple_imp.clone());
+        imp_set.add(verbose_imp);
+
+        let mut invalid = ImplicationSet::new();
+        let selected = imp_set.select(1, &mut invalid);
+        assert_eq!(selected.len(), 1);
+        assert!(invalid.is_empty());
+        assert_eq!(selected.0.values().next().unwrap(), &simple_imp);
+
+        assert!(!imp_set.contains(&simple_imp));
+    }
+
+    #[test]
+    fn test_select_filters_invalid() {
+        let mut imp_set: ImplicationSet<Pred> = ImplicationSet::new();
+
+        let invalid_imp = Implication::new(
+            "imp1".into(),
+            Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
+            Assumption::<Pred>::new("(< ?x 5)".to_string()).unwrap(),
+        ).unwrap();
+
+        let valid_imp = Implication::new(
+            "imp2".into(),
+            Assumption::<Pred>::new("(< ?x (+ 4 1))".to_string()).unwrap(),
+            Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
+        ).unwrap();
+
+        imp_set.add(invalid_imp.clone());
+        imp_set.add(valid_imp.clone());
+
+        let mut invalid = ImplicationSet::new();
+        let selected = imp_set.select(1, &mut invalid);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(invalid.len(), 1);
+        assert_eq!(selected.0.values().next().unwrap(), &valid_imp);
+        assert_eq!(invalid.0.values().next().unwrap(), &invalid_imp);
+
+        // it should have chosen the invalid imp, filtered it, and then
+        // selected the valid one (thus removing both from the original set).
+        assert!(imp_set.is_empty());
+    }
+
+
 }
