@@ -1,6 +1,7 @@
 use egg::{Pattern, RecExpr};
 
 use crate::SynthLanguage;
+use std::fmt::Display;
 
 /// Represents an assumption over a language `L`.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -39,10 +40,7 @@ impl<L: SynthLanguage> Assumption<L> {
         if L::pattern_is_assumption(&pat) {
             return Err(format!("Pattern is already an assumption: {}", pat));
         } else if !L::pattern_is_predicate(&pat) {
-            return Err(format!(
-                "Pattern is not a valid predicate: {}",
-                pat
-            ));
+            return Err(format!("Pattern is not a valid predicate: {}", pat));
         }
 
         Ok(Self {
@@ -68,6 +66,14 @@ impl<L: SynthLanguage> From<Assumption<L>> for RecExpr<L> {
     }
 }
 
+impl<L: SynthLanguage> Display for Assumption<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // just display the pattern
+        write!(f, "{}", self.pat)
+    }
+}
+
+#[allow(unused_imports)]
 pub mod tests {
     use super::*;
     use crate::halide::Pred;
@@ -112,6 +118,16 @@ pub mod tests {
         assert!(
             result.is_err(),
             "Expected error for pattern that is already an assumption"
+        );
+    }
+
+    #[test]
+    fn test_assumption_is_actually_assumption() {
+        let assumption_str = "(> x 0)".to_string();
+        let assumption_pat: Pattern<Pred> = Assumption::<Pred>::new(assumption_str).unwrap().into();
+        assert!(
+            Pred::pattern_is_assumption(&assumption_pat),
+            "Pattern should be recognized as an assumption"
         );
     }
 }

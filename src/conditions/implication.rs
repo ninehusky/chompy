@@ -21,25 +21,6 @@ pub struct Implication<L: SynthLanguage> {
 }
 
 impl<L: SynthLanguage> Implication<L> {
-    /// Returns a human-readable name for the implication.
-    #[inline]
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns the left-hand side pattern of the implication.
-    #[inline]
-    pub fn lhs(&self) -> Pattern<L> {
-        self.lhs.clone().into()
-    }
-
-    /// Returns a reference to the right-hand side pattern of the implication.
-    #[inline]
-    pub fn rhs(&self) -> Pattern<L> {
-        self.rhs.clone().into()
-    }
-    
-
     /// Whether the implication is valid, i.e., whether the left-hand side implies the right-hand side.
     pub fn is_valid(&self) -> bool {
         matches!(L::validate_implication(self.clone()), ImplicationValidationResult::NonTrivialValid)
@@ -48,8 +29,7 @@ impl<L: SynthLanguage> Implication<L> {
     /// Converts the implication into a rewrite rule.
     ///
     /// Even though the type of the rewrite is `Rewrite<L, SynthAnalysis>`,
-    /// these are **not** traditional rewrites that represent equalities
-    /// assumption pattern is added to the e-graph as well.
+    /// these are **not** traditional rewrites that represent equalities.
     ///
     /// ```
     /// use ruler::conditions::Implication;
@@ -80,7 +60,7 @@ impl<L: SynthLanguage> Implication<L> {
     /// let assume_q_id = result.lookup_expr(&assume_q);
     /// ```
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
-        assert!(self.is_valid(), "Implication is not valid: {}", self.name());
+        assert!(self.is_valid(), "Implication is not valid: {}", self.name);
         Rewrite::new(
             format!("impl: {}", self.name),
             Pattern::<L>::from(self.lhs.clone()),
@@ -108,12 +88,12 @@ where
         _searcher_ast: Option<&PatternAst<L>>,
         _rule_name: egg::Symbol,
     ) -> Vec<egg::Id> {
-        let lhs = self.implication.lhs();
-        let rhs = self.implication.rhs();
+        let lhs: Pattern<L> = self.implication.lhs.clone().into();
+        let rhs: Pattern<L> = self.implication.rhs.clone().into();
 
         // First, search for the left-hand side pattern in the egraph.
         // If it's not there, something terrible happened.
-        assert!(lookup_pattern(&lhs, egraph, subst), "For implication {}, could not find {}", self.implication.name(), lhs);
+        assert!(lookup_pattern(&lhs, egraph, subst), "For implication {}, could not find {}", self.implication.name, lhs);
 
         // TODO: if this is expensive, we might be able to comment this out?
         if lookup_pattern(&rhs, egraph, subst) {

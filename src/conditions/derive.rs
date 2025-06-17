@@ -29,8 +29,8 @@ fn score<L: SynthLanguage>(imp: &Implication<L>) -> f64 {
         }
     }
 
-    let lhs = enumo::Sexp::from_str(&imp.lhs().to_string()).unwrap();
-    let rhs = enumo::Sexp::from_str(&imp.rhs().to_string()).unwrap();
+    let lhs = enumo::Sexp::from_str(&imp.lhs.to_string()).unwrap();
+    let rhs = enumo::Sexp::from_str(&imp.rhs.to_string()).unwrap();
 
     size(&lhs) + size(&rhs)
 }
@@ -55,7 +55,7 @@ pub fn minimize_implications(
         let selected = select_implications(&mut mut_imps, step_size, &mut invalid);
         // println!("i have selected these impls:");
         // for imp in &selected {
-        //     println!("  {}: {} -> {}", imp.name(), imp.lhs(), imp.rhs());
+        //     println!("  {}: {} -> {}", imp.name(), imp.lhs, imp.rhs);
         // }
 
         chosen.extend(selected.clone());
@@ -156,11 +156,11 @@ pub fn shrink_implications(
     // 2. add the prior implications as rules to the egraph.
     println!("prior implications: {}", chosen.len());
     for imp in chosen {
-        println!("adding prior implication: {}: {} -> {}", imp.name, imp.lhs(), imp.rhs());
+        println!("adding prior implication: {}: {} -> {}", imp.name, imp.lhs, imp.rhs);
 
         // keep these as terms with meta-variables.
-        let lhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.lhs().to_string()).unwrap());
-        let rhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.rhs().to_string()).unwrap());
+        let lhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.lhs.to_string()).unwrap());
+        let rhs = egg_to_egglog(&enumo::Sexp::from_str(&imp.rhs.to_string()).unwrap());
 
 
         egraph
@@ -184,10 +184,10 @@ pub fn shrink_implications(
     // now, attempt to derive the selected implications.
     for imp in imps.iter().chain(chosen.iter()) {
         let lhs = egg_to_egglog(
-            &enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs()).to_string()).unwrap(),
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs.clone().into()).to_string()).unwrap(),
         );
         let rhs = egg_to_egglog(
-            &enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs()).to_string()).unwrap(),
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs.clone().into()).to_string()).unwrap(),
         );
 
         // add lhs, rhs to egraph
@@ -204,10 +204,10 @@ pub fn shrink_implications(
     // step 4
     for imp in imps {
         let lhs = egg_to_egglog(
-            &enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs()).to_string()).unwrap(),
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.lhs.clone().into()).to_string()).unwrap(),
         );
         let rhs = egg_to_egglog(
-            &enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs()).to_string()).unwrap(),
+            &enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs.clone().into()).to_string()).unwrap(),
         );
 
         if !egraph
