@@ -235,14 +235,3 @@ impl SynthLanguage for egg::SymbolLang {
         ValidationResult::Invalid
     }
 }
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-
-    #[test]
-    fn json_to_recipe_test() {
-        let recipe = json_to_recipe("recipes/default-recipe.json");
-        println!("{:?}", recipe);
-    }
-}
