@@ -103,12 +103,12 @@ impl <L: SynthLanguage> From<String> for Assumption<L> {
 impl<L: SynthLanguage> Display for Assumption<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // just display the pattern
-        write!(f, "{}", self.pat)
+        write!(f, "({} {})", L::assumption_label(), self.pat)
     }
 }
 
 #[allow(unused_imports)]
-pub mod tests {
+mod tests {
     use super::*;
     use crate::halide::Pred;
     use crate::SynthLanguage;

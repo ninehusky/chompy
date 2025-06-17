@@ -1,8 +1,13 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use egg::{Analysis, Applier, Language, Pattern, PatternAst, Rewrite, Var};
 
-use crate::{apply_pat, enumo::lookup_pattern, halide::Pred, SynthAnalysis, SynthLanguage};
+use crate::{
+    apply_pat,
+    enumo::{lookup_pattern, Sexp},
+    halide::Pred,
+    SynthAnalysis, SynthLanguage,
+};
 
 use super::assumption::Assumption;
 
@@ -63,6 +68,46 @@ impl<L: SynthLanguage> Implication<L> {
             L::validate_implication(self.clone()),
             ImplicationValidationResult::NonTrivialValid
         )
+    }
+
+    /// Returns the score of the implication.
+    /// By default, the score is 2 + the sum of the sizes of the left-hand side and right-hand side assumptions,
+    /// with a slight penalty for literals (numbers). See below for why we add the 2.
+    /// ```
+    /// use ruler::conditions::implication::Implication;
+    /// use ruler::conditions::assumption::Assumption;
+    /// use ruler::halide::Pred;
+    /// use ruler::language::{SynthLanguage, SynthAnalysis};
+    /// use std::str::FromStr;
+    /// 
+    /// 
+    /// // (assume (> x 0)): 3 atoms, 1 literal: 3 + 1.1 = 4.1
+    /// let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+    /// // (assume (== (/ x x) 1)): 5 atoms, 1 literal: 5 + 1.1 = 6.1
+    /// let rhs: Assumption<Pred> = Assumption::new("(== (/ x x) 1)".to_string()).unwrap();
+    /// let imp: Implication<Pred> = Implication::new("my imp!".into(), lhs, rhs).unwrap();
+    /// 
+    /// assert_eq!(imp.score(), 10.2);
+    /// ```
+    pub fn score(&self) -> f64 {
+        fn size(sexp: &Sexp) -> f64 {
+            match sexp {
+                Sexp::Atom(a) => {
+                    if let Ok(_) = a.parse::<i64>() {
+                        // slight penalty for literals.
+                        return 1.1;
+                    } else {
+                        return 1.0;
+                    }
+                }
+                Sexp::List(l) => l.iter().map(size).sum(),
+            }
+        }
+
+        let lhs = Sexp::from_str(&self.lhs().to_string()).unwrap();
+        let rhs = Sexp::from_str(&self.rhs().to_string()).unwrap();
+
+        size(&lhs) + size(&rhs)
     }
 
     /// Converts the implication into a rewrite rule.
@@ -210,8 +255,9 @@ pub fn merge_eqs() -> Rewrite<Pred, SynthAnalysis> {
 #[allow(unused_imports)]
 mod implication_tests {
     use crate::conditions::assumption::Assumption;
-    use crate::conditions::implication::Implication;
+    use crate::conditions::implication::{Implication, ImplicationValidationResult};
     use crate::halide::Pred;
+    use crate::SynthLanguage;
 
     #[test]
     fn implication_fields_ok() {
@@ -254,7 +300,7 @@ mod implication_tests {
 
         // (assume (> x 0)) should be in the egraph.
         assert_eq!(egraph.number_of_classes(), 4);
-        assert!(egraph.lookup_expr(&lhs.into()).is_some());
+        assert!(egraph.lookup_expr(&lhs.clone().into()).is_some());
 
         let runner = egg::Runner::default()
             .with_egraph(egraph.clone())
@@ -264,7 +310,70 @@ mod implication_tests {
 
         // The right-hand side assumption should now be in the egraph.
         assert_eq!(result.number_of_classes(), 6);
-        assert!(result.lookup_expr(&rhs.into()).is_some());
+        assert!(result.lookup_expr(&rhs.clone().into()).is_some());
+
+        assert_ne!(
+            result.lookup_expr(&lhs.into()),
+            result.lookup_expr(&rhs.into()),
+            "Left-hand and right-hand assumptions should not be equal"
+        );
+    }
+
+    // Halide-specific tests for implications.
+    #[test]
+    fn implication_validate_valid() {
+        let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+        let rhs: Assumption<Pred> = Assumption::new("(!= x 0)".to_string()).unwrap();
+
+        let implication = Implication::new("imp1".into(), lhs, rhs).unwrap();
+
+        assert_eq!(
+            Pred::validate_implication(implication.clone()),
+            ImplicationValidationResult::NonTrivialValid
+        );
+        assert!(implication.is_valid());
+    }
+
+    #[test]
+    fn implication_validate_lhs_false() {
+        let lhs: Assumption<Pred> = Assumption::new("(!= x x)".to_string()).unwrap();
+        let rhs: Assumption<Pred> = Assumption::new("(!= x 0)".to_string()).unwrap();
+
+        let implication = Implication::new("imp2".into(), lhs, rhs).unwrap();
+
+        assert_eq!(
+            Pred::validate_implication(implication.clone()),
+            ImplicationValidationResult::LhsFalse
+        );
+        assert!(!implication.is_valid());
+    }
+
+    #[test]
+    fn implication_validate_rhs_true() {
+        let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+        let rhs: Assumption<Pred> = Assumption::new("(== x x)".to_string()).unwrap();
+
+        let implication = Implication::new("imp3".into(), lhs, rhs).unwrap();
+
+        assert_eq!(
+            Pred::validate_implication(implication.clone()),
+            ImplicationValidationResult::RhsTrue
+        );
+        assert!(!implication.is_valid());
+    }
+
+    #[test]
+    fn implication_validate_invalid() {
+        let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+        let rhs: Assumption<Pred> = Assumption::new("(< x 0)".to_string()).unwrap();
+
+        let implication = Implication::new("imp4".into(), lhs, rhs).unwrap();
+
+        assert_eq!(
+            Pred::validate_implication(implication.clone()),
+            ImplicationValidationResult::Invalid
+        );
+        assert!(!implication.is_valid());
     }
 }
 
@@ -283,7 +392,7 @@ mod eq_tests {
 
         let egraph = &mut EGraph::<Pred, SynthAnalysis>::default();
 
-        egraph.add_expr(&"(istrue (!= x 0))".parse().unwrap());
+        egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
@@ -292,7 +401,7 @@ mod eq_tests {
         let egraph = runner.egraph.clone();
 
         assert!(egraph
-            .lookup_expr(&"(istrue (== (/ x x) 1))".parse().unwrap())
+            .lookup_expr(&"(assume (== (/ x x) 1))".parse().unwrap())
             .is_some());
 
         assert_eq!(
