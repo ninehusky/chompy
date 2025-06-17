@@ -56,8 +56,8 @@ impl<L: SynthLanguage> Assumption<L> {
     }
 
     // Ditches the parent "(assume ...)" that is added to assumptions.
-    pub(crate) fn chop_assumption(pat: &Pattern<L>) -> Pattern<L> {
-        let sexp = Sexp::from_str(&pat.to_string()).unwrap();
+    pub(crate) fn chop_assumption(&self) -> Pattern<L> {
+        let sexp = Sexp::from_str(&self.to_string()).unwrap();
         match sexp {
             Sexp::Atom(_) => {
                 // if it's an atom, we can just use it as is.

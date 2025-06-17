@@ -225,8 +225,8 @@ impl SynthLanguage for Pred {
         let ctx = z3::Context::new(&cfg);
         let solver = z3::Solver::new(&ctx);
 
-        let lexpr: Pattern<Pred> = Assumption::chop_assumption(&imp.lhs().clone().into());
-        let rexpr: Pattern<Pred> = Assumption::chop_assumption(&imp.rhs().clone().into());
+        let lexpr: Pattern<Pred> = imp.lhs().clone().chop_assumption();
+        let rexpr: Pattern<Pred> = imp.rhs().clone().chop_assumption();
 
         // chop off the assumptions, by taking everything except the last element.
         // we should definitely test this.

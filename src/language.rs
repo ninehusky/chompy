@@ -11,7 +11,10 @@ use egg::{
 use enumo::{lookup_pattern, Workload};
 
 use crate::{
-    conditions::implication::{Implication, ImplicationValidationResult}, enumo::{egg_to_serialized_egraph, Sexp}, recipe_utils::Lang, *
+    conditions::implication::{Implication, ImplicationValidationResult},
+    enumo::{egg_to_serialized_egraph, Sexp},
+    recipe_utils::Lang,
+    *,
 };
 
 // An `ImplicationSwitch` models the implication of one condition to another.
@@ -357,6 +360,18 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         false
     }
 
+    /// Returns the egglog definition for this language.
+    /// See the implementation of [`crate::halide::Pred`] for an example of how to do this.
+    fn egglog_lang_def() -> String {
+        unimplemented!()
+    }
+
+    /// Returns the egglog representation of a pattern in this language.
+    /// See the implementation of [`crate::halide::Pred`] for an example of how to do this.
+    fn to_egglog_term(pat: Pattern<Self>) -> String {
+        unimplemented!()
+    }
+
     /// Label for assumption nodes.
     /// Don't mess with this unless you know what you're doing.
     fn assumption_label() -> &'static str {
@@ -465,7 +480,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                     .or_insert_with(|| format!("?{}", letter(len)).parse().unwrap());
                 let s = var.to_string();
                 Self::mk_var(s[1..].into())
-            }
+        }
             None => node.clone(),
         };
         let root = rename_node(expr.as_ref().last().unwrap());

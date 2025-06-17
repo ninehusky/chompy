@@ -79,17 +79,17 @@ impl<L: SynthLanguage> Implication<L> {
     /// use ruler::halide::Pred;
     /// use ruler::language::{SynthLanguage, SynthAnalysis};
     /// use std::str::FromStr;
-    /// 
-    /// 
+    ///
+    ///
     /// // (assume (> x 0)): 3 atoms, 1 literal: 3 + 1.1 = 4.1
     /// let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
     /// // (assume (== (/ x x) 1)): 5 atoms, 1 literal: 5 + 1.1 = 6.1
     /// let rhs: Assumption<Pred> = Assumption::new("(== (/ x x) 1)".to_string()).unwrap();
     /// let imp: Implication<Pred> = Implication::new("my imp!".into(), lhs, rhs).unwrap();
-    /// 
-    /// assert_eq!(imp.score(), 10.2);
+    ///
+    /// assert_eq!(imp.score(), [10.2]);
     /// ```
-    pub fn score(&self) -> f64 {
+    pub fn score(&self) -> [f64; 1] {
         fn size(sexp: &Sexp) -> f64 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -107,7 +107,7 @@ impl<L: SynthLanguage> Implication<L> {
         let lhs = Sexp::from_str(&self.lhs().to_string()).unwrap();
         let rhs = Sexp::from_str(&self.rhs().to_string()).unwrap();
 
-        size(&lhs) + size(&rhs)
+        [size(&lhs) + size(&rhs)]
     }
 
     /// Converts the implication into a rewrite rule.
@@ -317,6 +317,17 @@ mod implication_tests {
             result.lookup_expr(&rhs.into()),
             "Left-hand and right-hand assumptions should not be equal"
         );
+    }
+
+    #[test]
+    fn implication_score_correct() {
+        // (assume (> x 0)): 3 atoms, 1 literal: 3 + 1.1 = 4.1
+        let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+        // (assume (== (/ x x) 1)): 5 atoms, 1 literal: 5 + 1.1 = 6.1
+        let rhs: Assumption<Pred> = Assumption::new("(== (/ x x) 1)".to_string()).unwrap();
+        let imp: Implication<Pred> = Implication::new("my imp!".into(), lhs, rhs).unwrap();
+
+        assert_eq!(imp.score(), [10.2]);
     }
 
     // Halide-specific tests for implications.

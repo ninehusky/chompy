@@ -11,6 +11,7 @@ mod derive;
 pub mod generate;
 pub mod assumption;
 pub mod implication;
+pub mod implication_set;
 
 pub fn merge_eqs() -> Rewrite<Pred, SynthAnalysis> {
     let searcher: Pattern<Pred> = "(istrue (== ?a ?b))".parse().unwrap();
