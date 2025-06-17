@@ -94,6 +94,12 @@ impl<L: SynthLanguage> From<Assumption<L>> for RecExpr<L> {
     }
 }
 
+impl <L: SynthLanguage> From<String> for Assumption<L> {
+    fn from(assumption: String) -> Self {
+        Assumption::new(assumption).expect("Failed to create assumption from string")
+    }
+}
+
 impl<L: SynthLanguage> Display for Assumption<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // just display the pattern

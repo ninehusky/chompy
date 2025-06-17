@@ -6,9 +6,12 @@ use crate::{apply_pat, enumo::lookup_pattern, halide::Pred, SynthAnalysis, Synth
 
 use super::assumption::Assumption;
 
-
-/// Represents a logical implication between two assumptions, e.g.,
-/// `(> x 0) -> (!= x 0)`.
+/// Represents a logical implication between two assumptions.
+/// Implications can either be concrete, e.g.,
+/// `(> x 0) -> (!= x 0)`, or symbolic, e.g.,
+/// `(> ?x 0) -> (!= ?x 0)`. It's up to the users to make sure that
+/// the left and right sides of the implications are both either concrete or symbolic;
+/// combining the two results in undefined behavior.
 ///
 /// Each assumption is represented as a pattern over the language `L`.
 /// Implications are primarily used to propagate a root condition,
@@ -22,12 +25,13 @@ pub struct Implication<L: SynthLanguage> {
 
 impl<L: SynthLanguage> Implication<L> {
     /// Creates a new implication from the given name, left-hand side, and right-hand side assumptions.
-    /// 
+    ///
     /// # Errors
     /// Returns an error if the right-hand side contains variables not present in the left-hand side.
     pub fn new(name: Arc<str>, lhs: Assumption<L>, rhs: Assumption<L>) -> Result<Self, String> {
-        let lhs_pat: Pattern<L> = lhs.clone().into();
-        let rhs_pat: Pattern<L> = rhs.clone().into();
+        let mut map = Default::default();
+        let lhs_pat: Pattern<L> = L::generalize(&lhs.clone().into(), &mut map);
+        let rhs_pat: Pattern<L> = L::generalize(&rhs.clone().into(), &mut map);
 
         let lhs_vars = lhs_pat.vars();
         let rhs_vars = rhs_pat.vars();
@@ -55,7 +59,10 @@ impl<L: SynthLanguage> Implication<L> {
     }
     /// Whether the implication is valid, i.e., whether the left-hand side implies the right-hand side.
     pub fn is_valid(&self) -> bool {
-        matches!(L::validate_implication(self.clone()), ImplicationValidationResult::NonTrivialValid)
+        matches!(
+            L::validate_implication(self.clone()),
+            ImplicationValidationResult::NonTrivialValid
+        )
     }
 
     /// Converts the implication into a rewrite rule.
@@ -127,7 +134,12 @@ where
 
         // First, search for the left-hand side pattern in the egraph.
         // If it's not there, something terrible happened.
-        assert!(lookup_pattern(&lhs, egraph, subst), "For implication {}, could not find {}", self.implication.name, lhs);
+        assert!(
+            lookup_pattern(&lhs, egraph, subst),
+            "For implication {}, could not find {}",
+            self.implication.name,
+            lhs
+        );
 
         // TODO: if this is expensive, we might be able to comment this out?
         if lookup_pattern(&rhs, egraph, subst) {
@@ -135,16 +147,11 @@ where
             return vec![];
         }
 
-        let new_id = apply_pat(
-            rhs.ast.as_ref().iter().as_slice(),
-            egraph,
-            subst,
-        );
+        let new_id = apply_pat(rhs.ast.as_ref().iter().as_slice(), egraph, subst);
 
         vec![new_id]
     }
 }
-
 
 /// Result of validating an implication.
 #[derive(Debug, PartialEq, Eq)]
@@ -160,7 +167,6 @@ pub enum ImplicationValidationResult {
     /// The validity of the implication is unknown.
     Unknown,
 }
-
 
 // A helper applier that unions two terms in the e-graph, given
 // an assumption node which indicates their equality.
@@ -201,10 +207,71 @@ pub fn merge_eqs() -> Rewrite<Pred, SynthAnalysis> {
     Rewrite::new("istrue-eqs", searcher, applier).unwrap()
 }
 
-pub mod tests {
-    use egg::{EGraph, Runner};
+#[allow(unused_imports)]
+mod implication_tests {
+    use crate::conditions::assumption::Assumption;
+    use crate::conditions::implication::Implication;
+    use crate::halide::Pred;
 
+    #[test]
+    fn implication_fields_ok() {
+        let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+        let rhs: Assumption<Pred> = Assumption::new("(!= x 0)".to_string()).unwrap();
+
+        let implication = Implication::new("imp1".into(), lhs.clone(), rhs.clone()).unwrap();
+
+        assert_eq!(implication.name(), "imp1");
+        assert_eq!(implication.lhs(), lhs);
+        assert_eq!(implication.rhs(), rhs);
+    }
+
+    #[test]
+    fn implication_fails_with_unbound_vars() {
+        let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+        let rhs: Assumption<Pred> = Assumption::new("(!= y 0)".to_string()).unwrap();
+
+        let result = Implication::new("imp2".into(), lhs, rhs);
+
+        assert!(
+            result.is_err(),
+            "Expected error for unbound variable in RHS"
+        );
+    }
+
+    #[test]
+    fn implication_rewrite_ok() {
+        let lhs: Assumption<Pred> = Assumption::new("(> x 0)".to_string()).unwrap();
+        let rhs: Assumption<Pred> = Assumption::new("(!= x 0)".to_string()).unwrap();
+
+        let implication = Implication::new("imp1".into(), lhs.clone(), rhs.clone()).unwrap();
+
+        let rewrite = implication.rewrite();
+
+        let mut egraph = egg::EGraph::<Pred, crate::SynthAnalysis>::default();
+
+        // Insert the left-hand side assumption into the egraph.
+        implication.lhs().insert_into_egraph(&mut egraph);
+
+        // (assume (> x 0)) should be in the egraph.
+        assert_eq!(egraph.number_of_classes(), 4);
+        assert!(egraph.lookup_expr(&lhs.into()).is_some());
+
+        let runner = egg::Runner::default()
+            .with_egraph(egraph.clone())
+            .run(&[rewrite]);
+
+        let result = runner.egraph;
+
+        // The right-hand side assumption should now be in the egraph.
+        assert_eq!(result.number_of_classes(), 6);
+        assert!(result.lookup_expr(&rhs.into()).is_some());
+    }
+}
+
+#[allow(unused_imports)]
+mod eq_tests {
     use crate::{enumo::egg_to_serialized_egraph, ImplicationSwitch};
+    use egg::{EGraph, Runner};
 
     use super::*;
     #[test]
