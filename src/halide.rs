@@ -89,6 +89,17 @@ impl SynthLanguage for Pred {
         )
     }
 
+    fn to_bool(c: Self::Constant) -> Option<bool> {
+        // This is a pretty stringent definition of what
+        // it means to be true.
+        match c {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
+    }
+
+
     fn to_egglog_term(pat: Pattern<Self>) -> String {
         // TODO(@ninehusky):
         // we can do something probably where we take the pattern,

@@ -377,6 +377,11 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         unimplemented!()
     }
 
+    /// Convert a constant to a bool if possible.
+    fn to_bool(c: Self::Constant) -> Option<bool> {
+        None
+    }
+
     /// Label for assumption nodes.
     /// Don't mess with this unless you know what you're doing.
     fn assumption_label() -> &'static str {

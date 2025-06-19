@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
-use egg::EGraph;
+use egg::{AstSize, EGraph, Extractor, Id};
+use indexmap::IndexMap;
 
-use crate::conditions::{assumption::Assumption, manager::EGraphManager};
 #[allow(unused_imports)]
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
     enumo::Ruleset,
     IndexMap, SynthAnalysis, SynthLanguage,
+};
+use crate::{
+    conditions::{assumption::Assumption, manager::EGraphManager},
+    CVec,
 };
 
 /// A set of implications. Like a `Ruleset<L>`, but with implications instead of rewrites.
@@ -91,7 +95,104 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     // Dev Note: It's really important that the set that's returned from this consists of
     // **generalized rules**.
     pub fn pvec_match(&self, egraph: &mut EGraph<L, SynthAnalysis>) -> (Self, Ruleset<L>) {
-        todo!()
+        // Returns true iff cvec1 --> cvec2, i.e., forall i, !cvec[i] or cvec2[i].
+        let compare = |cvec1: &CVec<L>, cvec2: &CVec<L>| -> bool {
+            for tup in cvec1.iter().zip(cvec2) {
+                match tup {
+                    (Some(a), Some(b)) => match (L::to_bool(a.clone()), L::to_bool(b.clone())) {
+                        (Some(false), Some(true)) => {
+                            return false;
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+            true
+        };
+
+        // we need to do pairwise comparisons of e-classes, because for each pair of eclasses
+        // (i, j), we need to check both i --> j and j --> i.
+        let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::new();
+        for class in egraph.classes() {
+            if class.data.is_defined() {
+                by_cvec.entry(&class.data.cvec).or_default().push(class.id);
+            }
+        }
+
+        let mut imp_candidates = ImplicationSet::new();
+        let mut eq_candidates: Ruleset<L> = Ruleset::default();
+
+        let extract = Extractor::new(egraph, AstSize);
+
+        // 1. Attempt to find equalities.
+        for ids in by_cvec.values() {
+            let exprs: Vec<_> = ids.iter().map(|&id| extract.find_best(id).1).collect();
+
+            for (idx, e1) in exprs.iter().enumerate() {
+                for e2 in exprs[(idx + 1)..].iter() {
+                    eq_candidates.add_from_recexprs(e1, e2);
+                }
+            }
+        }
+
+        // 2. Attempt to find implications.
+        for pvec1 in by_cvec.keys() {
+            for pvec2 in by_cvec.keys() {
+                if compare(pvec1, pvec2) {
+                    let first_exprs: Vec<_> = by_cvec[pvec1]
+                        .iter()
+                        .map(|&id| extract.find_best(id).1)
+                        .collect();
+                    let second_exprs: Vec<_> = by_cvec[pvec2]
+                        .iter()
+                        .map(|&id| extract.find_best(id).1)
+                        .collect();
+                    for e1 in &first_exprs {
+                        for e2 in &second_exprs {
+                            let name = format!("pvec-imp-{}-to-{}", e1, e2);
+                            // attempt to make an implication, and if it doesn't work, skip it.
+
+                            match (
+                                Assumption::new(e1.to_string()),
+                                Assumption::new(e2.to_string()),
+                            ) {
+                                (Ok(lhs), Ok(rhs)) => {
+                                    let imp = Implication::new(name.into(), lhs, rhs);
+                                    match imp {
+                                        Ok(imp) => {
+                                            imp_candidates.add(imp);
+                                        }
+                                        Err(_) => {
+                                            // skip it.
+                                        }
+                                    }
+                                }
+                                // if building the implication failed, it better be because the exprs are
+                                // not predicates, and not for some other terrible reason.
+                                (a, b) => {
+                                    if a.is_err() {
+                                        assert!(a
+                                            .err()
+                                            .unwrap()
+                                            .to_string()
+                                            .contains("not a valid predicate"))
+                                    }
+                                    if b.is_err() {
+                                        assert!(b
+                                            .err()
+                                            .unwrap()
+                                            .to_string()
+                                            .contains("not a valid predicate"))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        (imp_candidates, eq_candidates)
     }
 
     /// Pops up to `step_size` best implications from the set.
