@@ -1,18 +1,14 @@
 use std::sync::Arc;
 
-use egg::{EGraph, Pattern, RecExpr};
-use egglog::EGraph as EgglogEGraph;
+use egg::EGraph;
 
-use crate::{conditions::manager::EGraphManager, enumo::Rule};
+use crate::conditions::manager::EGraphManager;
 #[allow(unused_imports)]
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
     enumo::Ruleset,
     IndexMap, SynthAnalysis, SynthLanguage,
 };
-
-const EGGLOG_REWRITE_RULESET_NAME: &'static str = "rewrites";
-const EGGLOG_IMPLICATION_RULESET_NAME: &'static str = "path-finding";
 
 /// A set of implications. Like a `Ruleset<L>`, but with implications instead of rewrites.
 #[derive(Debug, Clone)]
@@ -135,7 +131,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         let mut invalid = ImplicationSet::new();
         let mut chosen = prior.clone();
         let mut manager: EGraphManager<L> = EGraphManager::new();
-        let step_size = 10;
+        let step_size = 1;
 
         // 0. As a prior step, add the equalities and prior implications to the egraph.
 
@@ -154,10 +150,13 @@ impl<L: SynthLanguage> ImplicationSet<L> {
             manager.run_rewrite_rules();
             manager.run_implication_rules();
             let selected = self.select(step_size, &mut invalid);
+            println!("adding: {selected:?}");
             chosen.add_all(selected);
 
+            manager.add_implications(&chosen).unwrap();
+
             // 3. See what merged!
-            self.shrink(&mut EgglogEGraph::default());
+            self.shrink(&mut manager);
         }
 
         // Return only the new implications.
@@ -168,28 +167,17 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     /// Removes implications from the set that are subsumed by any of the rules present in the e-graph.
     /// It's really important that before calling `shrink`, you run some chosen implications
     /// and equalities: otherwise this is a really expensive no-op!
-    fn shrink(&mut self, egraph: &mut EgglogEGraph) {
+    fn shrink(&mut self, manager: &mut EGraphManager<L>) {
         //    For each candidate: if there is a path from lhs --> rhs
         //    (i.e., the assumption does not contribute to the proving power of this implication set),
         //    remove it.
         for (_, imp) in &self.clone().0 {
-            let lhs = imp.lhs().chop_assumption();
-            let rhs = imp.rhs().chop_assumption();
-            // If we can find a path from lhs to rhs, then we can remove this implication.
-            match egraph.parse_and_run_program(None, &format!("(check (path {} {}))", lhs, rhs)) {
-                Ok(_) => {
-                    // Redundant! Get it out of here.
-                    self.remove(imp.clone());
-                }
-                Err(e) => {
-                    assert!(
-                        e.to_string().contains("CheckError"),
-                        "Something terrible happened while checking {}: {}",
-                        imp.name(),
-                        e
-                    );
-                }
-            };
+            println!("exists path b/w {} and {}?", imp.lhs(), imp.rhs());
+            if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap() {
+                // Redundant! Get it out of here.
+                self.remove(imp.clone());
+                continue;
+            }
         }
     }
 }
@@ -209,13 +197,15 @@ mod select_tests {
             "imp1".into(),
             Assumption::<Pred>::new("(< ?x 5)".to_string()).unwrap(),
             Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let verbose_imp = Implication::new(
             "imp2".into(),
             Assumption::<Pred>::new("(< ?x (+ 4 1))".to_string()).unwrap(),
             Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         imp_set.add(simple_imp.clone());
         imp_set.add(verbose_imp);
@@ -237,13 +227,15 @@ mod select_tests {
             "imp1".into(),
             Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
             Assumption::<Pred>::new("(< ?x 5)".to_string()).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let valid_imp = Implication::new(
             "imp2".into(),
             Assumption::<Pred>::new("(< ?x (+ 4 1))".to_string()).unwrap(),
             Assumption::<Pred>::new("(< ?x 10)".to_string()).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         imp_set.add(invalid_imp.clone());
         imp_set.add(valid_imp.clone());
@@ -262,36 +254,47 @@ mod select_tests {
 }
 
 #[cfg(test)]
-mod shrink_tests {
+mod minimize_tests {
     use super::*;
     use crate::{conditions::assumption::Assumption, halide::Pred};
 
     #[test]
-    fn shrink_filters_identical_impl() {
-        let imp = Implication::<Pred>::new(
-            "imp1".into(),
-            Assumption::<Pred>::new("(< ?x 0)".to_string()).unwrap(),
-            Assumption::<Pred>::new("(!= ?x 0)".to_string()).unwrap(),
-        ).unwrap();
+    fn minimize_filters_identical_impl() {
+        let mut candidate_set: ImplicationSet<Pred> = ImplicationSet::new();
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp1".into(),
+                Assumption::<Pred>::new("(< x 0)".to_string()).unwrap(),
+                Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
+            ).unwrap()
+        );
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp2".into(),
+                Assumption::<Pred>::new("(< x 0)".to_string()).unwrap(),
+                Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
+            ).unwrap()
+        );
 
+        let existing_set = ImplicationSet::new();
 
-        let mut imp_set: ImplicationSet<Pred> = ImplicationSet::new();
-        // (x < 0) -> (x != 0)
-        imp_set.add(imp.clone());
-
-        let mut egraph = EgglogEGraph::default();
+        let mut manager: EGraphManager<Pred> = EGraphManager::new();
+        manager.add_implications(&existing_set).unwrap();
+        let (remaining, invalid) = candidate_set.minimize(existing_set, Ruleset::default());
+        assert!(invalid.is_empty());
+        // there should be one implication that is new.
+        assert_eq!(remaining.len(), 1);
     }
 
     #[test]
-    fn shrink_filters_redundant_impl() {
+    fn minimize_filters_redundant_impl() {
         // given (p -> q), (q -> r), we should be able to remove (p -> r)
         todo!()
     }
 
     #[test]
-    fn shrink_keeps_useful_impl() {
+    fn minimize_keeps_useful_impl() {
         // given (p -> q), (q -> r), we should keep (p -> s)
         todo!()
     }
-
 }

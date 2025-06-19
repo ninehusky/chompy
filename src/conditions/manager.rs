@@ -1,15 +1,13 @@
-use std::str::FromStr;
 
 use crate::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
     },
-    enumo::{Rule, Ruleset, Sexp},
-    halide::Pred,
-    SynthAnalysis, SynthLanguage,
+    enumo::{Rule, Ruleset},
+    SynthLanguage,
 };
 
-use egg::{Language, Pattern, RecExpr};
+use egg::{Pattern, RecExpr};
 use egglog::EGraph as EgglogEGraph;
 
 const IMPL_RULESET_NAME: &str = "path-finding";
@@ -92,6 +90,7 @@ impl<L: SynthLanguage> EGraphManager<L> {
         }
 
         let term_str = L::to_egglog_term(term.clone());
+        println!("adding assumption: {term_str}");
 
         match self.egraph.parse_and_run_program(None, &term_str) {
             Ok(_) => Ok(()),
@@ -151,16 +150,30 @@ impl<L: SynthLanguage> EGraphManager<L> {
         }
     }
 
-    /// The assumption should be generalized.
-    pub fn check_path(&mut self, from: &Assumption<L>, to: &Assumption<L>) -> bool {
+    /// The assumption should be concrete.
+    pub fn check_path(&mut self, from: &Assumption<L>, to: &Assumption<L>) -> Result<bool, String> {
+        if !is_concrete(&from.clone().into()) {
+            return Err(format!(
+                "Assumption must be concrete (no symbolic variables): {}",
+                from
+            ));
+        }
+
+        if !is_concrete(&to.clone().into()) {
+            return Err(format!(
+                "Assumption must be concrete (no symbolic variables): {}",
+                to
+            ));
+        }
+
         let lhs = L::to_egglog_term(from.clone().chop_assumption());
         let rhs = L::to_egglog_term(to.clone().chop_assumption());
         let query = format!("(check (path {lhs} {rhs}))");
         match self.egraph.parse_and_run_program(None, &query) {
-            Ok(_) => true,
+            Ok(_) => Ok(true),
             Err(e) => {
                 assert!(e.to_string().contains("Check failed"));
-                false
+                Ok(false)
             }
         }
     }
@@ -351,12 +364,13 @@ mod tests {
         let mut manager: EGraphManager<Pred> = EGraphManager::new();
 
         manager.add_rewrite(&rule).unwrap();
-        manager.add_assumption("(!= a b)".parse().unwrap()).unwrap();
+        manager.add_assumption("(== a b)".parse().unwrap()).unwrap();
+        manager.add_assumption("(== b c)".parse().unwrap()).unwrap();
 
         manager.run_rewrite_rules();
 
-        let lhs: Assumption<Pred> = "(!= a b)".parse().unwrap();
-        let rhs: Assumption<Pred> = "(!= b a)".parse().unwrap();
+        let lhs: Assumption<Pred> = "(== a b)".parse().unwrap();
+        let rhs: Assumption<Pred> = "(== b c)".parse().unwrap();
         assert!(!check_equal(&mut manager, &lhs, &rhs));
     }
 
@@ -376,7 +390,7 @@ mod tests {
 
         let lhs: Assumption<Pred> = "(< a 0)".parse().unwrap();
         let rhs: Assumption<Pred> = "(< a 1)".parse().unwrap();
-        assert!(manager.check_path(&lhs, &rhs));
+        assert!(manager.check_path(&lhs, &rhs).unwrap());
     }
 
     #[test]
@@ -395,7 +409,7 @@ mod tests {
 
         let lhs: Assumption<Pred> = "(< a 0)".parse().unwrap();
         let rhs: Assumption<Pred> = "(< a 1)".parse().unwrap();
-        assert!(!manager.check_path(&lhs, &rhs));
+        assert!(!manager.check_path(&lhs, &rhs).unwrap());
     }
 
     #[test]
