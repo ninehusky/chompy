@@ -90,7 +90,6 @@ impl<L: SynthLanguage> EGraphManager<L> {
         }
 
         let term_str = L::to_egglog_term(term.clone());
-        println!("adding assumption: {term_str}");
 
         match self.egraph.parse_and_run_program(None, &term_str) {
             Ok(_) => Ok(()),

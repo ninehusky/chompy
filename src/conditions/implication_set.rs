@@ -146,11 +146,11 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         }
 
         while !self.is_empty() {
-            // 2. Run the implications and rewrites.
+            // 2. Pick some candidates to include.
             let selected = self.select(step_size, &mut invalid);
-            println!("adding: {selected:?}");
 
             let mut actual_selected = ImplicationSet::new();
+            // there's this stupid step in the middle where we have to generalize the rules.
             for imp in selected.iter() {
                 let mut cache = Default::default();
                 let lhs = L::generalize(&L::instantiate(&imp.lhs().chop_assumption()), &mut cache);
@@ -163,17 +163,17 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                     rhs_assumption,
                 )
                 .unwrap();
-                println!("adding generalized: {generalized_imp:?}");
                 actual_selected.add(generalized_imp);
             }
 
+            // 3. Add the implications to the manager, and run rewrites/implications.
             manager.add_implications(&actual_selected).unwrap();
             chosen.add_all(actual_selected);
 
             manager.run_rewrite_rules();
             manager.run_implication_rules();
 
-            // 3. See what merged!
+            // 4. See what merged!
             self.shrink(&mut manager);
         }
 
@@ -190,7 +190,6 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         //    (i.e., the assumption does not contribute to the proving power of this implication set),
         //    remove it.
         for (_, imp) in &self.clone().0 {
-            println!("exists path b/w {} and {}?", imp.lhs(), imp.rhs());
             if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap() {
                 // Redundant! Get it out of here.
                 self.remove(imp.clone());
@@ -308,13 +307,83 @@ mod minimize_tests {
 
     #[test]
     fn minimize_filters_redundant_impl() {
-        // given (p -> q), (q -> r), we should be able to remove (p -> r)
-        todo!()
+        let mut candidate_set: ImplicationSet<Pred> = ImplicationSet::new();
+        // Rules look weird af because I want to make sure that it picks `imp1` and `imp2` before `imp3`.
+        // Byeah.
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp1".into(),
+                Assumption::<Pred>::new("(< x (+ 0 0))".to_string()).unwrap(),
+                Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp2".into(),
+                Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
+                Assumption::<Pred>::new("(!= x (+ 0 (+ 0 0)))".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp3".into(),
+                Assumption::<Pred>::new("(< x (+ 0 0))".to_string()).unwrap(),
+                Assumption::<Pred>::new("(!= x (+ 0 (+ 0 0)))".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let existing_set = ImplicationSet::new();
+
+        let mut manager: EGraphManager<Pred> = EGraphManager::new();
+        manager.add_implications(&existing_set).unwrap();
+        let (remaining, invalid) = candidate_set.minimize(existing_set, Ruleset::default());
+        assert!(invalid.is_empty());
+        // there should be one implication that is new.
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining.iter().all(|imp| imp.name() != "imp3"));
     }
 
     #[test]
     fn minimize_keeps_useful_impl() {
         // given (p -> q), (q -> r), we should keep (p -> s)
-        todo!()
+        let mut candidate_set: ImplicationSet<Pred> = ImplicationSet::new();
+        // Rules look weird af because I want to make sure that it picks `imp1` and `imp2` before `imp3`.
+        // Byeah.
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp1".into(),
+                Assumption::<Pred>::new("(< x (+ 0 0))".to_string()).unwrap(),
+                Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp2".into(),
+                Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
+                Assumption::<Pred>::new("(!= x (+ 0 (+ 0 0)))".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+        candidate_set.add(
+            Implication::<Pred>::new(
+                "imp3".into(),
+                Assumption::<Pred>::new("(< x (+ 0 0))".to_string()).unwrap(),
+                Assumption::<Pred>::new("(< x 1)".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let existing_set = ImplicationSet::new();
+
+        let mut manager: EGraphManager<Pred> = EGraphManager::new();
+        manager.add_implications(&existing_set).unwrap();
+        let (remaining, invalid) = candidate_set.minimize(existing_set, Ruleset::default());
+        assert!(invalid.is_empty());
+        // there should be one implication that is new.
+        assert_eq!(remaining.len(), 3);
     }
 }
