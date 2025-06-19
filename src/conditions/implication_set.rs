@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use egg::EGraph;
 
-use crate::conditions::manager::EGraphManager;
+use crate::conditions::{assumption::Assumption, manager::EGraphManager};
 #[allow(unused_imports)]
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
@@ -147,13 +147,31 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 
         while !self.is_empty() {
             // 2. Run the implications and rewrites.
-            manager.run_rewrite_rules();
-            manager.run_implication_rules();
             let selected = self.select(step_size, &mut invalid);
             println!("adding: {selected:?}");
-            chosen.add_all(selected);
 
-            manager.add_implications(&chosen).unwrap();
+            let mut actual_selected = ImplicationSet::new();
+            for imp in selected.iter() {
+                let mut cache = Default::default();
+                let lhs = L::generalize(&L::instantiate(&imp.lhs().chop_assumption()), &mut cache);
+                let rhs = L::generalize(&L::instantiate(&imp.rhs().chop_assumption()), &mut cache);
+                let lhs_assumption = Assumption::new(lhs.to_string()).unwrap();
+                let rhs_assumption = Assumption::new(rhs.to_string()).unwrap();
+                let generalized_imp = Implication::new(
+                    Arc::<str>::from(imp.name().to_string()),
+                    lhs_assumption,
+                    rhs_assumption,
+                )
+                .unwrap();
+                println!("adding generalized: {generalized_imp:?}");
+                actual_selected.add(generalized_imp);
+            }
+
+            manager.add_implications(&actual_selected).unwrap();
+            chosen.add_all(actual_selected);
+
+            manager.run_rewrite_rules();
+            manager.run_implication_rules();
 
             // 3. See what merged!
             self.shrink(&mut manager);
@@ -266,14 +284,16 @@ mod minimize_tests {
                 "imp1".into(),
                 Assumption::<Pred>::new("(< x 0)".to_string()).unwrap(),
                 Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
-            ).unwrap()
+            )
+            .unwrap(),
         );
         candidate_set.add(
             Implication::<Pred>::new(
                 "imp2".into(),
                 Assumption::<Pred>::new("(< x 0)".to_string()).unwrap(),
                 Assumption::<Pred>::new("(!= x 0)".to_string()).unwrap(),
-            ).unwrap()
+            )
+            .unwrap(),
         );
 
         let existing_set = ImplicationSet::new();
