@@ -2,7 +2,9 @@ use std::{convert::TryInto, str::FromStr};
 
 use crate::{
     conditions::{
-        assumption::Assumption, implication::{Implication, ImplicationValidationResult}, merge_eqs
+        assumption::Assumption,
+        implication::{Implication, ImplicationValidationResult},
+        merge_eqs,
     },
     enumo::{egg_to_serialized_egraph, Rule},
     *,
@@ -50,6 +52,109 @@ egg::define_language! {
 
 impl SynthLanguage for Pred {
     type Constant = Constant;
+
+    fn name() -> &'static str {
+        "Halide"
+    }
+
+    fn egglog_lang_def() -> String {
+        let name = Self::name();
+        format!(
+            r#"
+            (datatype {name})
+            (constructor Lit (i64) {name})
+            (constructor Abs ({name}) {name})
+            (constructor Lt ({name} {name}) {name})
+            (constructor Leq ({name} {name}) {name})
+            (constructor Gt ({name} {name}) {name})
+            (constructor Geq ({name} {name}) {name})
+            (constructor Eq ({name} {name}) {name})
+            (constructor Neq ({name} {name}) {name})
+            (constructor Implies ({name} {name}) {name})
+            (constructor Not ({name}) {name})
+            (constructor Neg ({name}) {name})
+            (constructor And ({name} {name}) {name})
+            (constructor Or ({name} {name}) {name})
+            (constructor Xor ({name} {name}) {name})
+            (constructor Add ({name} {name}) {name})
+            (constructor Sub ({name} {name}) {name})
+            (constructor Mul ({name} {name}) {name})
+            (constructor Div ({name} {name}) {name})
+            (constructor Mod ({name} {name}) {name})
+            (constructor Min ({name} {name}) {name})
+            (constructor Max ({name} {name}) {name})
+            (constructor Select ({name} {name} {name}) {name})
+            (constructor Var (String) {name})
+        "#
+        )
+    }
+
+    fn to_egglog_term(pat: Pattern<Self>) -> String {
+        // TODO(@ninehusky):
+        // we can do something probably where we take the pattern,
+        // convert it to a RecExpr (AST), and "interpret" it backwards.
+        // that seems easy to mess up, so we'll do it a bad way for now.
+        pub fn sexp_to_egglog(term: &Sexp) -> Sexp {
+            match term {
+                Sexp::Atom(a) => {
+                    if let Ok(num) = a.parse::<i64>() {
+                        return Sexp::Atom(format!("(Lit {})", num.to_string()));
+                    } else if a.starts_with("?") {
+                        // a is a meta-variable, leave it alone.
+                        return Sexp::Atom(a.into());
+                    } else {
+                        return Sexp::Atom(format!("(Var \"{}\")", a).into());
+                    }
+                }
+                Sexp::List(l) => {
+                    assert!(l.len() > 1);
+                    let op = if let Some(Sexp::Atom(a)) = l.first() {
+                        match a.as_ref() {
+                            "abs" => "Abs",
+                            "<" => "Lt",
+                            "<=" => "Leq",
+                            ">" => "Gt",
+                            ">=" => "Geq",
+                            "==" => "Eq",
+                            "!=" => "Neq",
+                            "->" => "Implies",
+                            "!" => "Not",
+                            "-" => {
+                                if l.len() == 2 {
+                                    "Neg"
+                                } else if l.len() == 3 {
+                                    "Sub"
+                                } else {
+                                    panic!("expected unary negation")
+                                }
+                            }
+                            "&&" => "And",
+                            "||" => "Or",
+                            "^" => "Xor",
+                            "+" => "Add",
+                            "*" => "Mul",
+                            "/" => "Div",
+                            "%" => "Mod",
+                            "min" => "Min",
+                            "max" => "Max",
+                            "select" => "Select",
+                            _ => panic!("unknown operator: {}", a),
+                        }
+                    } else {
+                        panic!("expected first element to be an atom")
+                    };
+
+                    let mut new_list = vec![Sexp::Atom(op.into())];
+                    for item in &l[1..] {
+                        new_list.push(sexp_to_egglog(item));
+                    }
+                    Sexp::List(new_list)
+                }
+            }
+        }
+        let sexp: Sexp = Sexp::from_str(&pat.to_string()).unwrap();
+        sexp_to_egglog(&sexp).to_string()
+    }
 
     fn eval<'a, F>(&'a self, cvec_len: usize, mut get_cvec: F) -> CVec<Self>
     where

@@ -333,6 +333,11 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     /// Domain value type
     type Constant: Clone + Hash + Eq + Debug + Display + Ord;
 
+    /// The name of the language (egglog name).
+    fn name() -> &'static str {
+        unimplemented!()
+    }
+
     /// Returns if the pattern is an assumption.
     fn pattern_is_assumption<L: SynthLanguage>(pat: &Pattern<L>) -> bool {
         // TODO(@ninehusky): let's keep tabs on the performance of this.

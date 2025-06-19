@@ -336,11 +336,6 @@ pub fn new_impl_egraph() -> egglog::EGraph {
                 (edge (And ?a ?b) ?b))
             :ruleset find-path)
 
-        (rule
-            ((Or ?a ?b))
-            ((edge (Or ?a ?b) ?a)
-                (edge (Or ?a ?b) ?b))
-            :ruleset find-path)
 
         ;;; the inductive cases.
         (rule

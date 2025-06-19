@@ -10,6 +10,14 @@ pub struct Assumption<L: SynthLanguage> {
     _marker: std::marker::PhantomData<L>,
 }
 
+impl<L: SynthLanguage> FromStr for Assumption<L> {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Assumption::new(s.to_string())
+    }
+}
+
 impl<L: SynthLanguage> Assumption<L> {
     /// Attempts to construct a new `Assumption` from the provided pattern string.
     ///
@@ -99,6 +107,14 @@ impl <L: SynthLanguage> From<String> for Assumption<L> {
         Assumption::new(assumption).expect("Failed to create assumption from string")
     }
 }
+
+impl <L: SynthLanguage> From<&str> for Assumption<L> {
+    fn from(assumption: &str) -> Self {
+        Assumption::new(assumption.to_string()).expect("Failed to create assumption from string")
+    }
+}
+
+        
 
 impl<L: SynthLanguage> Display for Assumption<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

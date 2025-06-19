@@ -7,11 +7,12 @@ use crate::conditions::implication::{EqApplier, Implication};
 use crate::halide::{egg_to_z3, Pred};
 use crate::{SynthAnalysis, SynthLanguage, ValidationResult};
 
+pub mod assumption;
 mod derive;
 pub mod generate;
-pub mod assumption;
 pub mod implication;
 pub mod implication_set;
+mod manager;
 
 pub fn merge_eqs() -> Rewrite<Pred, SynthAnalysis> {
     let searcher: Pattern<Pred> = "(istrue (== ?a ?b))".parse().unwrap();

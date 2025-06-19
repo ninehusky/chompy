@@ -3,7 +3,7 @@ use std::sync::Arc;
 use egg::{EGraph, Pattern, RecExpr};
 use egglog::EGraph as EgglogEGraph;
 
-use crate::enumo::Rule;
+use crate::{conditions::manager::EGraphManager, enumo::Rule};
 #[allow(unused_imports)]
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
@@ -27,6 +27,10 @@ impl<L: SynthLanguage> Default for ImplicationSet<L> {
 impl<L: SynthLanguage> ImplicationSet<L> {
     pub fn new() -> Self {
         Self(IndexMap::default())
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Implication<L>> {
+        self.0.values()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -130,26 +134,25 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     pub fn minimize(&mut self, prior: ImplicationSet<L>, equalities: Ruleset<L>) -> (Self, Self) {
         let mut invalid = ImplicationSet::new();
         let mut chosen = prior.clone();
-        let mut egraph = EgglogEGraph::default();
+        let mut manager: EGraphManager<L> = EGraphManager::new();
         let step_size = 10;
 
         // 0. As a prior step, add the equalities and prior implications to the egraph.
-        add_all_rws_to_egglog_egraph(&equalities, &mut egraph);
-        add_all_imps_to_egglog_egraph(&prior, &mut egraph);
+
+        manager.add_rewrites(&equalities.clone()).unwrap();
+        manager.add_implications(&prior.clone()).unwrap();
 
         // 1. Add the lhs, rhs of all candidates to the e-graph.
         for (_, candidate) in &self.0 {
             // this assumes that the lhs, rhs are concrete.
-            let lhs = candidate.lhs().chop_assumption();
-            let rhs = candidate.rhs().chop_assumption();
-            add_term(&mut egraph, lhs);
-            add_term(&mut egraph, rhs);
+            manager.add_assumption(candidate.lhs().clone()).unwrap();
+            manager.add_assumption(candidate.rhs().clone()).unwrap();
         }
 
         while !self.is_empty() {
             // 2. Run the implications and rewrites.
-            run_implication_rules(&mut egraph);
-            run_rewrite_rules(&mut egraph);
+            manager.run_rewrite_rules();
+            manager.run_implication_rules();
             let selected = self.select(step_size, &mut invalid);
             chosen.add_all(selected);
 
@@ -191,144 +194,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     }
 }
 
-/// EGGLOG HELPER FUNCTIONS
-/// Adds a term to the egraph. This concretizes the pattern.
-fn add_term<L: SynthLanguage>(egraph: &mut EgglogEGraph, term: Pattern<L>) {
-    let recexpr: RecExpr<L> = L::instantiate(&term).to_string().parse().unwrap();
-    let pattern: Pattern<L> = recexpr.to_string().parse().unwrap();
-    // ^ this is ridiculous. I think new egg has a way of just doing `into` to go from recexpr <-> pattern
-    //   without this crazy string conversion bs.
-    let term_str = L::to_egglog_term(pattern);
-    egraph
-        .parse_and_run_program(None, &term_str)
-        .unwrap_or_else(|e| {
-            panic!(
-                "Something terrible happened while adding term {}: {}",
-                term_str, e
-            );
-        });
-}
-
-/// Converts a Rule<L> to a String representation.
-fn rw_to_egglog_rule<L: SynthLanguage>(rw: &Rule<L>) -> String {
-    assert!(
-        !L::pattern_is_assumption(&rw.lhs),
-        "You shouldn't pass an implication with an assumption as the LHS: {}",
-        rw.lhs
-    );
-    assert!(
-        !L::pattern_is_assumption(&rw.rhs),
-        "You shouldn't pass an implication with an assumption as the RHS: {}",
-        rw.rhs
-    );
-    let lhs = L::to_egglog_term(rw.lhs.clone());
-    let rhs = L::to_egglog_term(rw.rhs.clone());
-    format!(
-        r#"
-        (rewrite
-            {}
-            {}
-            :ruleset {})
-        "#,
-        lhs, rhs, EGGLOG_REWRITE_RULESET_NAME
-    )
-}
-
-/// Converts an implication to an egglog rule.
-/// Implications should **never** add new predicates to the egraph; it should only
-/// link together existing ones.
-fn impl_to_egglog_rule<L: SynthLanguage>(imp: &Implication<L>) -> String {
-    let lhs = L::to_egglog_term(imp.lhs().clone().chop_assumption());
-    let rhs = L::to_egglog_term(imp.rhs().clone().chop_assumption());
-    // if you're able to match on lhs, rhs, draw an edge between them.
-    format!(
-        r#"
-        (rule
-            ({lhs}
-                {rhs})
-            ((edge {lhs} {rhs}))
-            :ruleset {EGGLOG_IMPLICATION_RULESET_NAME})
-        "#,
-    )
-}
-
-/// Adds all implications in the set to the egraph.
-fn add_all_imps_to_egglog_egraph<L: SynthLanguage>(
-    imps: &ImplicationSet<L>,
-    egraph: &mut EgglogEGraph,
-) {
-    for implication in imps.0.values() {
-        add_implication(implication, egraph);
-    }
-}
-
-/// Adds a single implication to the egraph.
-fn add_implication<L: SynthLanguage>(imp: &Implication<L>, egraph: &mut EgglogEGraph) {
-    let rule_def = impl_to_egglog_rule(imp);
-    egraph
-        .parse_and_run_program(None, &rule_def)
-        .unwrap_or_else(|e| {
-            panic!(
-                "Something terrible happened while defining implication {}: {}",
-                imp.name(),
-                e
-            );
-        });
-}
-
-/// Adds all rewrites in the set to the egraph.
-fn add_all_rws_to_egglog_egraph<L: SynthLanguage>(
-    rewrites: &Ruleset<L>,
-    egraph: &mut EgglogEGraph,
-) {
-    for rewrite in rewrites.iter() {
-        add_rw(rewrite, egraph);
-    }
-}
-
-/// Adds a single rewrite to the egraph.
-fn add_rw<L: SynthLanguage>(rewrite: &Rule<L>, egraph: &mut EgglogEGraph) {
-    let rule_def = rw_to_egglog_rule(rewrite);
-    egraph
-        .parse_and_run_program(None, &rule_def)
-        .unwrap_or_else(|e| {
-            panic!(
-                "Something terrible happened while defining rewrite {}: {}",
-                rewrite.name, e
-            );
-        });
-}
-
-/// Runs this set of implications on the egraph.
-/// Expects the egraph to have the implication rules already added to it.
-fn run_implication_rules(egraph: &mut EgglogEGraph) {
-    run_egglog_rules(EGGLOG_IMPLICATION_RULESET_NAME, egraph);
-}
-
-/// Runs the rewrites on the egraph.
-/// Expects the egraph to have the rewrites already added to it.
-fn run_rewrite_rules(egraph: &mut EgglogEGraph) {
-    run_egglog_rules(EGGLOG_REWRITE_RULESET_NAME, egraph);
-}
-
-fn run_egglog_rules(ruleset_name: &'static str, egraph: &mut EgglogEGraph) {
-    egraph
-        .parse_and_run_program(
-            None,
-            &format!(r#"(run-schedule (saturate {}))"#, ruleset_name),
-        )
-        .unwrap_or_else(|e| {
-            panic!(
-                "Something terrible happened while running egglog rules: {}",
-                e
-            );
-        });
-}
-
-
 /// TESTS
-
-
 #[cfg(test)]
 mod select_tests {
     use crate::{conditions::assumption::Assumption, halide::Pred};
@@ -393,6 +259,39 @@ mod select_tests {
         // selected the valid one (thus removing both from the original set).
         assert!(imp_set.is_empty());
     }
+}
 
+#[cfg(test)]
+mod shrink_tests {
+    use super::*;
+    use crate::{conditions::assumption::Assumption, halide::Pred};
+
+    #[test]
+    fn shrink_filters_identical_impl() {
+        let imp = Implication::<Pred>::new(
+            "imp1".into(),
+            Assumption::<Pred>::new("(< ?x 0)".to_string()).unwrap(),
+            Assumption::<Pred>::new("(!= ?x 0)".to_string()).unwrap(),
+        ).unwrap();
+
+
+        let mut imp_set: ImplicationSet<Pred> = ImplicationSet::new();
+        // (x < 0) -> (x != 0)
+        imp_set.add(imp.clone());
+
+        let mut egraph = EgglogEGraph::default();
+    }
+
+    #[test]
+    fn shrink_filters_redundant_impl() {
+        // given (p -> q), (q -> r), we should be able to remove (p -> r)
+        todo!()
+    }
+
+    #[test]
+    fn shrink_keeps_useful_impl() {
+        // given (p -> q), (q -> r), we should keep (p -> s)
+        todo!()
+    }
 
 }
