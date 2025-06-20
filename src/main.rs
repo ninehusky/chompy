@@ -3,7 +3,6 @@ use ruler::halide::Pred;
 use ruler::enumo::{Ruleset, Workload};
 use ruler::json_to_recipe;
 
-use ruler::halide::recipe_to_rules;
 use ruler::halide::{og_recipe, og_recipe_no_conditions};
 use ruler::{ConditionRecipe, Recipe};
 
@@ -88,8 +87,9 @@ pub async fn main() {
                     }
                 },
                 (None, Some(recipe_path)) => {
-                    let recipe = json_to_recipe(recipe_path.to_str().unwrap());
-                    recipe_to_rules(&recipe)
+                    // let recipe = json_to_recipe(recipe_path.to_str().unwrap());
+                    // recipe_to_rules(&recipe)
+                    Default::default()
                 }
                 (Some(_), Some(_)) => panic!("both recipe types provided."),
                 (None, None) => panic!("no recipe type provided.")
@@ -180,12 +180,13 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
             // we append `vars` here because without them, we don't get the correct cvec length.
             cond_r = Some(c.append(Workload::new(vars.clone())));
         }
-        let ruleset = halide::soup_to_rules(
-            &workload,
-            cond_r.as_ref(),
-            &prior_ruleset,
-            recipe.max_size
-        );
+        // let ruleset = halide::soup_to_rules(
+        //     &workload,
+        //     cond_r.as_ref(),
+        //     &prior_ruleset,
+        //     recipe.max_size
+        // );
+        let ruleset = Default::default();
 
         prior_ruleset.extend(ruleset);
     }

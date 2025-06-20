@@ -1066,105 +1066,7 @@ pub fn compute_conditional_structures(
     (pvec_to_terms, cond_prop_ruleset)
 }
 
-/// Incrementally construct a ruleset by running rule inference up to a size bound,
-/// using previously-learned rules at each step.
-/// Importantly, this function is different from `recursive_rules_cond` in that it does not
-/// actually generate the terms that it derives equivalences for.
-pub fn soup_to_rules(
-    soup: &Workload,
-    conditions: Option<&Workload>,
-    prior_rules: &Ruleset<Pred>,
-    n: usize,
-) -> Ruleset<Pred> {
-    let (pvec_to_terms, cond_prop_ruleset) = if let Some(conditions) = conditions {
-        // If we have a workload of conditions, compute the conditional structures
-        // to help with rule inference.
-        let (fst, snd) = compute_conditional_structures(&conditions);
-        (Some(fst), Some(snd))
-    } else {
-        (None, None)
-    };
 
-    let mut ruleset = Ruleset::<Pred>::default();
-    for i in 1..n {
-        let workload = soup.clone().filter(Filter::MetricLt(Metric::Atoms, i + 1));
-
-        if workload.force().is_empty() {
-            continue;
-        }
-
-        let rules = run_workload(
-            workload,
-            prior_rules.clone(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            pvec_to_terms.clone(),
-            cond_prop_ruleset.clone(),
-        );
-        ruleset.extend(rules);
-    }
-    ruleset
-}
-
-pub fn recipe_to_rules(recipes: &Vec<Recipe>) -> Ruleset<Pred> {
-    let mut ruleset: Ruleset<Pred> = Ruleset::default();
-    for r in recipes {
-        let rules = match &r.conditions {
-            Some(c) => {
-                let cond_lang = Lang {
-                    vars: r.vars.clone(),
-                    vals: c.vals.clone(),
-                    ops: c.ops.clone(),
-                };
-
-                let base_lang = if cond_lang.ops.len() == 2 {
-                    base_lang(2)
-                } else {
-                    base_lang(3)
-                };
-
-                let mut wkld = iter_metric(base_lang, "EXPR", Metric::Atoms, 3)
-                    .filter(Filter::Contains("VAR".parse().unwrap()))
-                    .plug("VAR", &Workload::new(cond_lang.vars))
-                    .plug("VAL", &Workload::new(cond_lang.vals));
-                for (i, ops) in cond_lang.ops.iter().enumerate() {
-                    wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-                }
-
-                // only want conditions greater than size 2
-                wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
-
-                let (pvec_to_terms, cond_prop_ruleset) = compute_conditional_structures(&wkld);
-
-                recursive_rules_cond(
-                    Metric::Atoms,
-                    r.max_size,
-                    Lang {
-                        vars: r.vars.clone(),
-                        vals: r.vals.clone(),
-                        ops: r.ops.clone(),
-                    },
-                    ruleset.clone(),
-                    &pvec_to_terms,
-                    &cond_prop_ruleset,
-                )
-            }
-            None => recursive_rules(
-                Metric::Atoms,
-                r.max_size,
-                Lang {
-                    vars: r.vars.clone(),
-                    vals: r.vals.clone(),
-                    ops: r.ops.clone(),
-                },
-                ruleset.clone(),
-            ),
-        };
-        ruleset.extend(rules);
-    }
-    ruleset
-}
 
 pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
@@ -1174,65 +1076,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // only want conditions greater than size 2
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
-    let (pvec_to_terms, mut cond_prop_ruleset) =
-        conditions::generate::get_condition_propagation_rules_halide(&wkld);
-
-    cond_prop_ruleset.push(merge_eqs());
-    cond_prop_ruleset.push(
-        ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?a".parse().unwrap()).rewrite(),
-    );
-    cond_prop_ruleset.push(
-        ImplicationSwitch::new(&"(&& ?a ?b)".parse().unwrap(), &"?b".parse().unwrap()).rewrite(),
-    );
-    // for c in cond_prop_ruleset.clone() {
-    //     println!("   {}", c.name);
-    // }
-
-    // TODO: put this as a test
-    // let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
-
-    // egraph.add_expr(&"(istrue (&& (!= b 0) (== b a)))".parse().unwrap());
-
-    // let runner: Runner<Pred, SynthAnalysis> = Runner::default()
-    //         .with_egraph(egraph.clone())
-    //         .run(&cond_prop_ruleset.clone());
-
-    // assert!(runner.egraph.lookup_expr(&"(istrue (== b a))".parse().unwrap()).is_some());
-    // assert!(runner.egraph.lookup_expr(&"(istrue (!= a 0))".parse().unwrap()).is_some());
-
-    // let egraph = egg_to_serialized_egraph(&runner.egraph);
-    // egraph.to_json_file("impls.json").unwrap();
-
     let mut all_rules = Ruleset::default();
-
-    // let equality = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-    //     all_rules.clone(),
-    // );
-
-    // all_rules.extend(equality);
-
-    // let comparisons = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     3,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-    //     all_rules.clone(),
-    //     &pvec_to_terms,
-    //     &cond_prop_ruleset,
-    // );
-
-    // all_rules.extend(comparisons);
-
-    // let bool_only = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-    //     all_rules.clone(),
-    // );
-
-    // all_rules.extend(bool_only);
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
@@ -1243,8 +1087,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             &[&["-"], &["+", "-", "*", "/"]],
         ),
         Ruleset::default(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
+        wkld.clone(),
     );
 
     all_rules.extend(arith_basic.clone());
@@ -1258,8 +1101,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             &[&[], &["*", "/", "%"]],
         ),
         all_rules.clone(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
+        wkld.clone(),
     );
 
     all_rules.extend(mul_div.clone());
@@ -1269,8 +1111,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         5,
         Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max"]]),
         Ruleset::default(),
-        &pvec_to_terms,
-        &cond_prop_ruleset,
+        wkld.clone(),
     );
 
     all_rules.extend(min_max);
@@ -1305,7 +1146,8 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
         let wrapped_rules = run_workload(
             big_wkld,
-            all_rules.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
+            Some(wkld.clone()),
+            arith_basic.clone(),
             Limits::synthesis(),
             Limits {
                 iter: 1,
@@ -1313,8 +1155,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 match_: 100_000,
             },
             true,
-            Some(pvec_to_terms.clone()),
-            Some(cond_prop_ruleset.clone()),
         );
 
         all_rules.extend(wrapped_rules);

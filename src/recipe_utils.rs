@@ -1,10 +1,12 @@
 use std::time::Instant;
 
-use egg::{EGraph, Pattern, Rewrite, Runner};
+use egg::{AstSize, EGraph, Extractor, Pattern, Rewrite, Runner};
+use indexmap::IndexMap;
 
 use crate::{
+    conditions::implication_set::ImplicationSet,
     enumo::{Filter, Metric, Ruleset, Scheduler, Workload},
-    HashMap, Limits, SynthAnalysis, SynthLanguage,
+    HashMap, Limits, PVec, SynthAnalysis, SynthLanguage,
 };
 
 /// Iterate a grammar (represented as a workload) up to a certain size metric
@@ -57,21 +59,18 @@ fn get_cond_egraphs<L: SynthLanguage>(
 
 fn run_workload_internal<L: SynthLanguage>(
     workload: Workload,
+    cond_workload: Workload,
     prior: Ruleset<L>,
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
     allow_empty: bool,
-    // pvec -> list of conditions with that pvec
-    conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
-    // rules for how other conditions become true from other conditions which are true
-    propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
     let t = Instant::now();
     let num_prior = prior.len();
 
-    // TODO @ninehusky: this will break non-Halide tests.
-    let egraph = workload.append(Workload::new(&["0", "1"])).to_egraph::<L>();
+    // TODO: have option to add constants or special things to the workload.
+    let egraph = workload.to_egraph::<L>();
     let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
 
     let mut candidates = if fast_match {
@@ -79,8 +78,6 @@ fn run_workload_internal<L: SynthLanguage>(
     } else {
         Ruleset::cvec_match(&compressed)
     };
-
-    println!("cvec matching finished");
 
     let mut chosen: Ruleset<L> = prior.clone();
 
@@ -94,56 +91,64 @@ fn run_workload_internal<L: SynthLanguage>(
 
     let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
-    if let Some(conditions) = conditions {
-        // let used_conditions = chosen
-        //     .0
-        //     .iter()
-        //     .filter_map(|(_, r)| {
-        //         // if the rule has a condition, return it
-        //         r.cond.as_ref().map(|c| c.clone().to_string())
-        //     })
-        //     .collect::<Vec<_>>();
+    let max_cond_size = 7;
+    let mut impls: ImplicationSet<L> = ImplicationSet::new();
+    let mut pvec_to_patterns: HashMap<Vec<bool>, Vec<Pattern<L>>> = HashMap::default();
 
-        // println!("the conditions used in the rules are:");
-        // for cond in &used_conditions {
-        //     println!("  {}", cond);
-        // }
-        // let cond_egraphs = get_cond_egraphs(
-        //     // only use the conditions for which we actually have rules
-        //     &used_conditions,
-        //     &compressed,
-        //     &chosen,
-        //     &propagation_rules.as_ref().unwrap(),
-        // );
+    for cond_size in 1..max_cond_size {
+        let curr_wkld = cond_workload
+            .clone()
+            .filter(Filter::MetricEq(Metric::Atoms, cond_size));
 
-        let max_cond_size = 7;
+        let cond_egraph = curr_wkld.to_egraph::<L>();
+        let cond_egraph = Scheduler::Compress(prior_limits).run(&cond_egraph, &prior);
 
-        let mut map = Default::default();
+        let extractor = Extractor::new(&cond_egraph, AstSize);
 
-        for cond_size in 1..max_cond_size {
-            // now, try to add some conditions into tha mix!
-            let mut conditional_candidates = Ruleset::conditional_cvec_match(
-                &compressed,
-                &conditions,
-                cond_size as usize,
-                &mut map,
-                &chosen,
-                propagation_rules.as_ref().unwrap(),
-            );
+        let (mut candidates, _) = ImplicationSet::pvec_match(&cond_egraph.clone());
+        let (new_impls, _) = candidates.minimize(impls.clone(), prior.clone());
+        impls.add_all(new_impls);
 
-            println!("conditional candidates:");
-
-            for r in conditional_candidates.0.iter() {
-                println!("  {}", r.0);
+        for c in cond_egraph.classes() {
+            let pat = L::generalize(&extractor.find_best(c.id).1, &mut Default::default());
+            if !L::pattern_is_predicate(&pat) {
+                continue;
             }
 
-            let (chosen_cond, _) = conditional_candidates.minimize_cond(
-                chosen.clone(),
-                Scheduler::Compress(minimize_limits),
-                propagation_rules.as_ref().unwrap(),
-            );
-            chosen.extend(chosen_cond.clone());
+            let pvec = c
+                .data
+                .cvec
+                .iter()
+                .map(|x| {
+                    if let Some(p) = x.as_ref() {
+                        L::to_bool(p.clone()).unwrap()
+                    } else {
+                        false
+                    }
+                })
+                .collect::<PVec>();
+
+            pvec_to_patterns
+                .entry(pvec.clone())
+                .or_default()
+                .push(pat.clone());
         }
+
+        let mut conditional_candidates = Ruleset::conditional_cvec_match(
+            &compressed,
+            &pvec_to_patterns,
+            cond_size as usize,
+            &mut Default::default(),
+            &chosen,
+            &impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>(),
+        );
+
+        let (chosen_cond, _) = conditional_candidates.minimize_cond(
+            chosen.clone(),
+            Scheduler::Compress(minimize_limits),
+            &impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>(),
+        );
+        chosen.extend(chosen_cond.clone());
     }
 
     // let (chosen, _) = candidates.minimize(prior, Scheduler::Compress(minimize_limits));
@@ -174,26 +179,20 @@ fn run_workload_internal<L: SynthLanguage>(
 ///     4. Minimize the candidates with respect to the prior rules
 pub fn run_workload<L: SynthLanguage>(
     workload: Workload,
+    cond_workload: Option<Workload>,
     prior: Ruleset<L>,
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
-    // pvec -> list of conditions with that pvec
-    conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
-    // rules for how other conditions become true from other conditions which are true
-    propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
     run_workload_internal(
         workload,
+        cond_workload.unwrap_or_else(|| Workload::empty()),
         prior,
         prior_limits,
         minimize_limits,
         fast_match,
-        // TODO: @ninehusky -- just checking this.
         true,
-        // false,
-        conditions,
-        propagation_rules,
     )
 }
 
@@ -277,8 +276,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     n: usize,
     lang: Lang,
     prior: Ruleset<L>,
-    conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
-    propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
+    conditions: Workload,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
@@ -288,8 +286,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             n - 1,
             lang.clone(),
             prior.clone(),
-            conditions,
-            propagation_rules,
+            conditions.clone(),
         );
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
@@ -310,13 +307,12 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
 
         let new = run_workload_internal(
             wkld,
+            conditions,
             rec.clone(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
             allow_empty,
-            Some(conditions.clone()),
-            Some(propagation_rules.clone()),
         );
         let mut all = new;
         all.extend(rec);
@@ -354,13 +350,12 @@ pub fn recursive_rules<L: SynthLanguage>(
 
         let new = run_workload_internal(
             wkld,
+            Workload::empty(),
             rec.clone(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
             allow_empty,
-            None,
-            None,
         );
         let mut all = new;
         all.extend(rec);

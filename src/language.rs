@@ -325,6 +325,10 @@ impl<L: SynthLanguage> Analysis<L> for SynthAnalysis {
 /// Characteristic Vector. Concrete evaluation on a sample of terms from the
 /// domain, used to identify rule candidates.
 pub type CVec<L> = Vec<Option<<L as SynthLanguage>::Constant>>;
+
+/// Predicate Vector. Like a CVec, but used for predicates.
+pub type PVec = Vec<bool>;
+
 /// Value type in the domain.
 pub type Constant<L> = <L as SynthLanguage>::Constant;
 
