@@ -175,14 +175,14 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
         _eclass: egg::Id,
         subst: &Subst,
     ) -> bool {
-        // let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
+        // let is_true_pat: Pattern<L> = format!("(assume {})", self.cond).parse().unwrap();
         lookup_pattern(&self.cond, egraph, subst)
     }
 }
 
 impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
-        let cond_pat: Pattern<L> = format!("(istrue {})", cond_pat).parse().unwrap();
+        let cond_pat: Pattern<L> = format!("(assume {})", cond_pat).parse().unwrap();
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
 
 
@@ -344,7 +344,7 @@ mod test {
         egraph.add_expr(&"(/ x x)".parse().unwrap());
         egraph.add_expr(&"1".parse().unwrap());
 
-        egraph.add_expr(&"(istrue (!= x 0))".parse().unwrap());
+        egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph)
@@ -368,7 +368,7 @@ mod test {
         egraph.add_expr(&"(/ x x)".parse().unwrap());
         egraph.add_expr(&"1".parse().unwrap());
 
-        egraph.add_expr(&"(istrue (== x 0))".parse().unwrap());
+        egraph.add_expr(&"(assume (== x 0))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph)
@@ -405,7 +405,7 @@ mod test {
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
 
-        egraph.add_expr(&"(istrue (> x 5))".parse().unwrap());
+        egraph.add_expr(&"(assume (> x 5))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
@@ -413,7 +413,7 @@ mod test {
 
         let mut result = runner.egraph.clone();
         assert!(result
-            .lookup_expr(&"(istrue (!= x 0))".parse().unwrap())
+            .lookup_expr(&"(assume (!= x 0))".parse().unwrap())
             .is_some());
 
         result.add_expr(&"(/ x x)".parse().unwrap());

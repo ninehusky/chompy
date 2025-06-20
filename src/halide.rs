@@ -262,10 +262,10 @@ impl SynthLanguage for Pred {
             Pred::Var(_) => vec![],
             Pred::Assume(_) => {
                 // TODO: @ninehusky - I actually kind of want to panic here, because
-                // cvec matching on `istrue` is just a bad thing waiting to happen.
+                // cvec matching on `assume` is just a bad thing waiting to happen.
                 // I'm actually not sure what a more principled fix would be, however,
                 // so leaving it as is for now. Maybe we can kick the can to later --
-                // if a rule is generated with `istrue`, we can panic then?
+                // if a rule is generated with `assume`, we can panic then?
                 vec![None, None, None]
             }
         }
@@ -486,13 +486,13 @@ impl SynthLanguage for Pred {
 
         // ugh there's some stupid string conversion thing i'm going to try first.
         // eventually we'll probably want to snip out the underlying child expression
-        // from `istrue`.
+        // from `assume`.
 
         let cond_expr = Sexp::from_str(&cond.to_string()).unwrap();
         let cond: Pattern<Self> = match cond_expr {
             Sexp::Atom(_) => {
                 // if it's an atom, we can just use it as is.
-                panic!("Expected `(istrue <cond>)`, got `{}`", cond_expr);
+                panic!("Expected `(assume <cond>)`, got `{}`", cond_expr);
             }
             Sexp::List(l) => {
                 assert_eq!(l.len(), 2);
@@ -1077,6 +1077,10 @@ pub fn og_recipe() -> Ruleset<Pred> {
     wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
 
     let mut all_rules = Ruleset::default();
+
+    // here, make sure wkld is non empty
+    assert_ne!(wkld, Workload::empty());
+    println!("hi");
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,

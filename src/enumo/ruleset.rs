@@ -359,10 +359,10 @@ impl<L: SynthLanguage> Ruleset<L> {
                             // 2. add the condition to the egraph
                             let cond_ast = &L::instantiate(pred_pat);
 
-                            println!("adding (istrue {})", cond_ast);
+                            println!("adding (assume {})", cond_ast);
 
                             // 3. run the condition propagation rules
-                            egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+                            egraph.add_expr(&format!("(assume {})", cond_ast).parse().unwrap());
 
                             let runner: Runner<L, SynthAnalysis> =
                                 Runner::new(SynthAnalysis::default())
@@ -631,7 +631,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             let cond_pat: &Pattern<L> = &condition.parse().unwrap();
             let cond_ast = &L::instantiate(cond_pat);
             println!("adding {}", cond_ast);
-            egraph.add_expr(&format!("(istrue {})", cond_ast).parse().unwrap());
+            egraph.add_expr(&format!("(assume {})", cond_ast).parse().unwrap());
 
 
 
@@ -815,7 +815,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let cond = &L::instantiate(&rule.cond.clone().unwrap());
 
-        egraph.add_expr(&format!("(istrue {})", cond).parse().unwrap());
+        egraph.add_expr(&format!("(assume {})", cond).parse().unwrap());
 
         match derive_type {
             DeriveType::Lhs => {
@@ -845,12 +845,12 @@ impl<L: SynthLanguage> Ruleset<L> {
         if let Some(r_id) = r_id {
             if l_id == r_id {
                 // this should never happen.
-                // this means that an `istrue` node merged
+                // this means that an `assume` node merged
                 // with the lhs or rhs of the rule.
                 assert_ne!(
                     out_egraph.number_of_classes(),
                     1,
-                    "an istrue node merged with somethin else!"
+                    "an assume node merged with somethin else!"
                 );
             }
             l_id == r_id
@@ -1014,7 +1014,7 @@ pub mod tests {
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
         let og_id = egraph.add_expr(&"(max a b)".parse().unwrap());
-        egraph.add_expr(&"(istrue (<= a b))".parse().unwrap());
+        egraph.add_expr(&"(assume (<= a b))".parse().unwrap());
 
         let egraph = scheduler.run(&egraph, &ruleset);
 
@@ -1135,7 +1135,7 @@ pub mod tests {
             Ruleset::conditional_cvec_match(&egraph, &cond_map, 8, &mut Default::default(),  &prior, &impl_rules);
 
         // no candidates should have been discovered.
-        // in the world where (istrue (!= a 0)), (/ a a) ==> 1.
+        // in the world where (assume (!= a 0)), (/ a a) ==> 1.
         // thus (+ 0 1) ==> 1 will fire.
         println!("candidates:");
         for c in candidates.clone() {

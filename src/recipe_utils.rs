@@ -41,8 +41,8 @@ fn get_cond_egraphs<L: SynthLanguage>(
     for cond in conditions {
         let mut egraph = black_egraph.clone();
 
-        // Add `(istrue ?cond)` to the egraph.
-        egraph.add_expr(&format!("(istrue {})", cond.to_string()).parse().unwrap());
+        // Add `(assume ?cond)` to the egraph.
+        egraph.add_expr(&format!("(assume {})", cond.to_string()).parse().unwrap());
 
         let runner: Runner<L, SynthAnalysis> = Runner::default()
             .with_egraph(egraph.clone())
@@ -95,12 +95,28 @@ fn run_workload_internal<L: SynthLanguage>(
     let mut impls: ImplicationSet<L> = ImplicationSet::new();
     let mut pvec_to_patterns: HashMap<Vec<bool>, Vec<Pattern<L>>> = HashMap::default();
 
-    for cond_size in 1..max_cond_size {
+    if cond_workload == Workload::empty() {
+        // If there are no conditions, we can just return the chosen rules.
+        return chosen;
+    }
+
+    println!("full wkld");
+    for c in cond_workload.clone().force() {
+        println!("  - {}", c);
+    }
+
+    for cond_size in 1..=max_cond_size {
         let curr_wkld = cond_workload
             .clone()
-            .filter(Filter::MetricEq(Metric::Atoms, cond_size));
-
+            .filter(Filter::MetricLt(Metric::Atoms, cond_size + 1));
+        println!("[{}] Running condition size {}", cond_size, cond_size);
+        println!("size of workload: {}", curr_wkld.force().len());
+        if curr_wkld.force().is_empty() {
+            println!("No conditions of size {}", cond_size);
+            continue;
+        }
         let cond_egraph = curr_wkld.to_egraph::<L>();
+        println!("and we are done now :3");
         let cond_egraph = Scheduler::Compress(prior_limits).run(&cond_egraph, &prior);
 
         let extractor = Extractor::new(&cond_egraph, AstSize);

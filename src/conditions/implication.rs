@@ -216,7 +216,7 @@ pub enum ImplicationValidationResult {
 
 // A helper applier that unions two terms in the e-graph, given
 // an assumption node which indicates their equality.
-// For example, given the pattern (istrue (== ?a ?b)), this applier
+// For example, given the pattern (assume (== ?a ?b)), this applier
 // will union ?a and ?b in the e-graph.
 pub(crate) struct EqApplier {
     pub(crate) a: Var,
@@ -243,14 +243,14 @@ impl<L: Language, N: Analysis<L>> Applier<L, N> for EqApplier {
 }
 
 pub fn merge_eqs() -> Rewrite<Pred, SynthAnalysis> {
-    let searcher: Pattern<Pred> = "(istrue (== ?a ?b))".parse().unwrap();
+    let searcher: Pattern<Pred> = "(assume (== ?a ?b))".parse().unwrap();
     // union ?a and ?b.
     let applier = EqApplier {
         a: "?a".parse().unwrap(),
         b: "?b".parse().unwrap(),
     };
 
-    Rewrite::new("istrue-eqs", searcher, applier).unwrap()
+    Rewrite::new("assume-eqs", searcher, applier).unwrap()
 }
 
 #[allow(unused_imports)]

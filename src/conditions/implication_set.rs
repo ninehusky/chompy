@@ -245,6 +245,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         // 1. Add the lhs, rhs of all candidates to the e-graph.
         for (_, candidate) in &self.0 {
             // this assumes that the lhs, rhs are concrete.
+
             manager.add_assumption(candidate.lhs().clone()).unwrap();
             manager.add_assumption(candidate.rhs().clone()).unwrap();
         }
