@@ -296,7 +296,6 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         for (_, imp) in &self.clone().0 {
             if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap() {
                 // Redundant! Get it out of here.
-                println!("removing {} because it is redundant", imp.name());
                 self.remove(imp.clone());
                 continue;
             }
@@ -498,7 +497,11 @@ mod pvec_match_tests {
     use egg::EGraph;
 
     use crate::{
-        conditions::implication_set::ImplicationSet, enumo::{Ruleset, Scheduler, Workload}, halide::Pred, recipe_utils::run_workload, Limits, SynthAnalysis
+        conditions::implication_set::ImplicationSet,
+        enumo::{Ruleset, Scheduler, Workload},
+        halide::Pred,
+        recipe_utils::run_workload,
+        Limits, SynthAnalysis,
     };
 
     // A big ass integration test that puts it all together and sees if given a moderate
@@ -507,12 +510,16 @@ mod pvec_match_tests {
     fn pvec_match_ok() {
         // Define a workload of predicates.
         let the_ints = Workload::new(&["V", "(OP2 V V)"])
-            .plug("V", &Workload::new(&["a", "b"]))
+            .plug("V", &Workload::new(&["a", "b", "0"]))
             .plug("OP2", &Workload::new(&["min", "max", "+"]));
 
         let the_bools = Workload::new(&["(OP2 V V)"])
             .plug("V", &the_ints)
-            .plug("OP2", &Workload::new(&["<=", "<"]));
+            .plug("OP2", &Workload::new(&["<=", "<"]))
+            .append(
+                Workload::new(&["(&& (OP2 a 0) (OP2 b 0))"])
+                    .plug("OP2", &Workload::new(&["<", "<=", ">", ">="])),
+            );
 
         println!("wkld length: {}", the_bools.force().len());
         let rules: Ruleset<Pred> = run_workload(
@@ -522,14 +529,13 @@ mod pvec_match_tests {
             Limits::minimize(),
             true,
             None,
-            None
+            None,
         );
 
         let egraph: EGraph<Pred, SynthAnalysis> = the_bools.to_egraph();
-        println!("egraph size: {}", egraph.total_size());
+        println!("egraph size: {}", egraph.number_of_classes());
         let egraph = Scheduler::Compress(Limits::minimize()).run(&egraph, &rules);
-        println!("egraph size after compression: {}", egraph.total_size());
-
+        println!("egraph size after compression: {}", egraph.number_of_classes());
 
         let (mut imps, rules) = ImplicationSet::pvec_match(&egraph);
 
