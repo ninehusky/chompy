@@ -301,7 +301,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         //    (i.e., the assumption does not contribute to the proving power of this implication set),
         //    remove it.
         for (_, imp) in &self.clone().0 {
-            if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap) {
+            if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap() {
                 // Redundant! Get it out of here.
                 self.remove(imp.clone());
                 continue;
@@ -531,12 +531,11 @@ mod pvec_match_tests {
         println!("wkld length: {}", the_bools.force().len());
         let rules: Ruleset<Pred> = run_workload(
             the_bools.clone(),
+            None,
             Ruleset::default(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
-            None,
-            None,
         );
 
         let egraph: EGraph<Pred, SynthAnalysis> = the_bools.to_egraph();

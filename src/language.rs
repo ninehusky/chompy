@@ -494,7 +494,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                     .or_insert_with(|| format!("?{}", letter(len)).parse().unwrap());
                 let s = var.to_string();
                 Self::mk_var(s[1..].into())
-        }
+            }
             None => node.clone(),
         };
         let root = rename_node(expr.as_ref().last().unwrap());
@@ -525,7 +525,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         RecExpr::from(nodes)
     }
 
-    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> [i32; 1] {
+    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> [i32; 2] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -556,7 +556,13 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             vars.extend(cond.vars());
         }
 
-        [-(l_cost + r_cost + c_cost)]
+        let lhs_bigger = if AstSize.cost_rec(&lhs.ast) as i32 > AstSize.cost_rec(&rhs.ast) as i32 {
+            1
+        } else {
+            0
+        };
+
+        [-(l_cost + r_cost + c_cost), lhs_bigger]
     }
 
     #[allow(dead_code)]

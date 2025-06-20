@@ -125,7 +125,9 @@ fn run_workload_internal<L: SynthLanguage>(
         impls.add_all(new_impls);
 
         for c in cond_egraph.classes() {
-            let pat = L::generalize(&extractor.find_best(c.id).1, &mut Default::default());
+            let recexpr_tuple = extractor.find_best(c.id);
+            let recexpr = &recexpr_tuple.1;
+            let pat: Pattern<L> = L::generalize(recexpr, &mut Default::default());
             if !L::pattern_is_predicate(&pat) {
                 continue;
             }
@@ -146,7 +148,7 @@ fn run_workload_internal<L: SynthLanguage>(
             pvec_to_patterns
                 .entry(pvec.clone())
                 .or_default()
-                .push(pat.clone());
+                .push(recexpr.to_string().parse().unwrap());
         }
 
         let mut conditional_candidates = Ruleset::conditional_cvec_match(
@@ -162,10 +164,19 @@ fn run_workload_internal<L: SynthLanguage>(
             },
         );
 
+        println!("conditional candidates: {}", conditional_candidates.len());
+        for c in conditional_candidates.clone() {
+            println!("  - {}", c.0);
+        }
+
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
             chosen.clone(),
             Scheduler::Compress(minimize_limits),
-            &impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>(),
+            &{
+                let mut v = impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>();
+                v.push(merge_eqs());
+                v
+            },
         );
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());

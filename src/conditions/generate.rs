@@ -63,11 +63,6 @@ fn well_typed(exp: &Sexp, expected_type: Type) -> bool {
         }
     }
 }
-#[test]
-fn test_it() {
-    let wkld = get_condition_workload();
-    get_condition_propagation_rules_halide(&wkld);
-}
 
 fn add_term(egraph: &mut egglog::EGraph, term: &crate::enumo::Sexp) {
     egraph

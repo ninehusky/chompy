@@ -190,6 +190,9 @@ impl<L: SynthLanguage> Rule<L> {
         let cond_vars = cond_pat.vars();
         let l_vars = l_pat.vars();
 
+        println!("cond vars: {:?}", cond_vars);
+        println!("l_vars: {:?}", l_vars);
+
         if cond_vars.iter().any(|v| !l_vars.contains(v)) {
             return None; // Condition variables must be a subset of the left-hand side variables
         }

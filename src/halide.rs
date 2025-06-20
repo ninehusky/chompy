@@ -1096,24 +1096,23 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(arith_basic.clone());
 
-    let mul_div = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(
-            &["-1", "0", "1"],
-            &["a", "b", "c"],
-            &[&[], &["*", "/", "%"]],
-        ),
-        all_rules.clone(),
-        wkld.clone(),
-    );
-
-    all_rules.extend(mul_div.clone());
+    // let mul_div = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(
+    //         &["-1", "0", "1"],
+    //         &["a", "b", "c"],
+    //         &[&[], &["*", "/", "%"]],
+    //     ),
+    //     all_rules.clone(),
+    //     wkld.clone(),
+    // );
+    // all_rules.extend(mul_div.clone());
 
     let min_max = recursive_rules_cond(
         Metric::Atoms,
         5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
         Ruleset::default(),
         wkld.clone(),
     );
@@ -1164,7 +1163,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
         all_rules.extend(wrapped_rules);
     }
 
+
     let end_time = std::time::Instant::now();
+
+
+    all_rules.pretty_print();
 
     println!(
         "finished recipe (seconds: {})",
