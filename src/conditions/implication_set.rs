@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use egg::{AstSize, EGraph, Extractor, Id};
-use indexmap::IndexMap;
 
 #[allow(unused_imports)]
 use crate::{
@@ -94,13 +93,13 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     /// Returns a new `ImplicationSet` and the corresponding synthesized rules.
     // Dev Note: It's really important that the set that's returned from this consists of
     // **generalized rules**.
-    pub fn pvec_match(&self, egraph: &mut EGraph<L, SynthAnalysis>) -> (Self, Ruleset<L>) {
+    pub fn pvec_match(egraph: &EGraph<L, SynthAnalysis>) -> (Self, Ruleset<L>) {
         // Returns true iff cvec1 --> cvec2, i.e., forall i, !cvec[i] or cvec2[i].
         let compare = |cvec1: &CVec<L>, cvec2: &CVec<L>| -> bool {
             for tup in cvec1.iter().zip(cvec2) {
                 match tup {
                     (Some(a), Some(b)) => match (L::to_bool(a.clone()), L::to_bool(b.clone())) {
-                        (Some(false), Some(true)) => {
+                        (Some(true), Some(false)) => {
                             return false;
                         }
                         _ => {}
@@ -113,7 +112,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 
         // we need to do pairwise comparisons of e-classes, because for each pair of eclasses
         // (i, j), we need to check both i --> j and j --> i.
-        let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::new();
+        let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::default();
         for class in egraph.classes() {
             if class.data.is_defined() {
                 by_cvec.entry(&class.data.cvec).or_default().push(class.id);
@@ -150,7 +149,11 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                         .collect();
                     for e1 in &first_exprs {
                         for e2 in &second_exprs {
-                            let name = format!("pvec-imp-{}-to-{}", e1, e2);
+                            if e1 == e2 {
+                                // skip self-implications.
+                                continue;
+                            }
+                            let name = format!("{} --> {}", e1, e2);
                             // attempt to make an implication, and if it doesn't work, skip it.
 
                             match (
@@ -279,7 +282,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         }
 
         // Return only the new implications.
-        chosen.remove_all(self.clone());
+        chosen.remove_all(prior.clone());
         (chosen, invalid)
     }
 
@@ -293,6 +296,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         for (_, imp) in &self.clone().0 {
             if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap() {
                 // Redundant! Get it out of here.
+                println!("removing {} because it is redundant", imp.name());
                 self.remove(imp.clone());
                 continue;
             }
@@ -486,5 +490,54 @@ mod minimize_tests {
         assert!(invalid.is_empty());
         // there should be one implication that is new.
         assert_eq!(remaining.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod pvec_match_tests {
+    use egg::EGraph;
+
+    use crate::{
+        conditions::implication_set::ImplicationSet, enumo::{Ruleset, Scheduler, Workload}, halide::Pred, recipe_utils::run_workload, Limits, SynthAnalysis
+    };
+
+    // A big ass integration test that puts it all together and sees if given a moderate
+    // workload, it can synthesize implications and equalities AND minimize them.
+    #[test]
+    fn pvec_match_ok() {
+        // Define a workload of predicates.
+        let the_ints = Workload::new(&["V", "(OP2 V V)"])
+            .plug("V", &Workload::new(&["a", "b"]))
+            .plug("OP2", &Workload::new(&["min", "max", "+"]));
+
+        let the_bools = Workload::new(&["(OP2 V V)"])
+            .plug("V", &the_ints)
+            .plug("OP2", &Workload::new(&["<=", "<"]));
+
+        println!("wkld length: {}", the_bools.force().len());
+        let rules: Ruleset<Pred> = run_workload(
+            the_bools.clone(),
+            Ruleset::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+            None,
+            None
+        );
+
+        let egraph: EGraph<Pred, SynthAnalysis> = the_bools.to_egraph();
+        println!("egraph size: {}", egraph.total_size());
+        let egraph = Scheduler::Compress(Limits::minimize()).run(&egraph, &rules);
+        println!("egraph size after compression: {}", egraph.total_size());
+
+
+        let (mut imps, rules) = ImplicationSet::pvec_match(&egraph);
+
+        let (imps, _invalid) = imps.minimize(ImplicationSet::new(), rules.clone());
+
+        println!("imps:");
+        for imp in imps.iter() {
+            println!("{}", imp.name());
+        }
     }
 }

@@ -64,6 +64,8 @@ impl<L: SynthLanguage> Implication<L> {
     }
     /// Whether the implication is valid, i.e., whether the left-hand side implies the right-hand side.
     pub fn is_valid(&self) -> bool {
+        let res = L::validate_implication(self.clone());
+        println!("result for {}: {:?}", self.name, res);
         matches!(
             L::validate_implication(self.clone()),
             ImplicationValidationResult::NonTrivialValid
