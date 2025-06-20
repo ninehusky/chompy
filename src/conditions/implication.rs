@@ -242,8 +242,8 @@ impl<L: Language, N: Analysis<L>> Applier<L, N> for EqApplier {
     }
 }
 
-pub fn merge_eqs() -> Rewrite<Pred, SynthAnalysis> {
-    let searcher: Pattern<Pred> = "(assume (== ?a ?b))".parse().unwrap();
+pub fn merge_eqs<L: SynthLanguage>() -> Rewrite<L, SynthAnalysis> {
+    let searcher: Pattern<L> = "(assume (== ?a ?b))".parse().unwrap();
     // union ?a and ?b.
     let applier = EqApplier {
         a: "?a".parse().unwrap(),

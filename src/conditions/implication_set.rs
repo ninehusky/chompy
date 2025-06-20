@@ -245,11 +245,17 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         // 1. Add the lhs, rhs of all candidates to the e-graph.
         for (_, candidate) in &self.0 {
             // this assumes that the lhs, rhs are concrete.
-
             manager.add_assumption(candidate.lhs().clone()).unwrap();
             manager.add_assumption(candidate.rhs().clone()).unwrap();
         }
 
+        // We shrink here just in case the best candidate is subsumed by the prior implications.
+        self.shrink(&mut manager);
+
+        println!("prior:");
+        for imp in prior.iter() {
+            println!("  {}", imp.name());
+        }
         while !self.is_empty() {
             // 2. Pick some candidates to include.
             let selected = self.select(step_size, &mut invalid);
@@ -263,7 +269,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                 let lhs_assumption = Assumption::new(lhs.to_string()).unwrap();
                 let rhs_assumption = Assumption::new(rhs.to_string()).unwrap();
                 let generalized_imp = Implication::new(
-                    Arc::<str>::from(imp.name().to_string()),
+                    format!("{} -> {}", lhs, rhs).into(),
                     lhs_assumption,
                     rhs_assumption,
                 )
@@ -271,12 +277,10 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                 actual_selected.add(generalized_imp);
             }
 
-            // 3. Add the implications to the manager, and run rewrites/implications.
+            // 3. Add the implications to the manager.
             manager.add_implications(&actual_selected).unwrap();
             chosen.add_all(actual_selected);
 
-            manager.run_rewrite_rules();
-            manager.run_implication_rules();
 
             // 4. See what merged!
             self.shrink(&mut manager);
@@ -291,11 +295,13 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     /// It's really important that before calling `shrink`, you run some chosen implications
     /// and equalities: otherwise this is a really expensive no-op!
     fn shrink(&mut self, manager: &mut EGraphManager<L>) {
+        manager.run_rewrite_rules();
+        manager.run_implication_rules();
         //    For each candidate: if there is a path from lhs --> rhs
         //    (i.e., the assumption does not contribute to the proving power of this implication set),
         //    remove it.
         for (_, imp) in &self.clone().0 {
-            if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap() {
+            if manager.check_path(&imp.lhs(), &imp.rhs()).unwrap) {
                 // Redundant! Get it out of here.
                 self.remove(imp.clone());
                 continue;

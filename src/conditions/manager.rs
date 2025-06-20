@@ -1,4 +1,3 @@
-
 use crate::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
@@ -100,13 +99,33 @@ impl<L: SynthLanguage> EGraphManager<L> {
     /// Adds the given rewrites to the e-graph.
     pub fn add_rewrites(&mut self, rws: &Ruleset<L>) -> Result<(), String> {
         for rw in rws.iter() {
-            self.add_rewrite(rw)?
+            match self.add_rewrite(rw) {
+                Ok(_) => continue,
+                Err(e) => {
+                    if e.to_string()
+                        .contains("No support for rewriting on anything")
+                    {
+                        // this is a special case where the rule is just a variable, so we skip it.
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
         }
         Ok(())
     }
 
     /// Adds the given rewrite to the e-graph.
     pub fn add_rewrite(&mut self, rw: &Rule<L>) -> Result<(), String> {
+        if rw.lhs.ast.as_ref().len() == 1
+            && matches!(rw.lhs.ast.as_ref()[0], egg::ENodeOrVar::Var(_))
+        {
+            return Err(format!(
+                "No support for rewriting on anything: {:?}",
+                rw.lhs
+            ));
+        }
         // the rule's pattern better be generalized!
         let lhs = L::to_egglog_term(rw.lhs.clone());
         let rhs = L::to_egglog_term(rw.rhs.clone());
@@ -120,6 +139,7 @@ impl<L: SynthLanguage> EGraphManager<L> {
         "#,
             lhs, rhs, RW_RULESET_NAME
         );
+        println!("running: {rw_prog}");
         match self.egraph.parse_and_run_program(None, &rw_prog) {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to add rewrite: {rw_name} :{e}")),

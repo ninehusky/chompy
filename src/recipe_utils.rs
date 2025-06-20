@@ -4,7 +4,7 @@ use egg::{AstSize, EGraph, Extractor, Pattern, Rewrite, Runner};
 use indexmap::IndexMap;
 
 use crate::{
-    conditions::implication_set::ImplicationSet,
+    conditions::{implication::merge_eqs, implication_set::ImplicationSet},
     enumo::{Filter, Metric, Ruleset, Scheduler, Workload},
     HashMap, Limits, PVec, SynthAnalysis, SynthLanguage,
 };
@@ -91,7 +91,7 @@ fn run_workload_internal<L: SynthLanguage>(
 
     let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
-    let max_cond_size = 7;
+    let max_cond_size = 5;
     let mut impls: ImplicationSet<L> = ImplicationSet::new();
     let mut pvec_to_patterns: HashMap<Vec<bool>, Vec<Pattern<L>>> = HashMap::default();
 
@@ -116,7 +116,6 @@ fn run_workload_internal<L: SynthLanguage>(
             continue;
         }
         let cond_egraph = curr_wkld.to_egraph::<L>();
-        println!("and we are done now :3");
         let cond_egraph = Scheduler::Compress(prior_limits).run(&cond_egraph, &prior);
 
         let extractor = Extractor::new(&cond_egraph, AstSize);
@@ -156,7 +155,11 @@ fn run_workload_internal<L: SynthLanguage>(
             cond_size as usize,
             &mut Default::default(),
             &chosen,
-            &impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>(),
+            &{
+                let mut v = impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>();
+                v.push(merge_eqs());
+                v
+            },
         );
 
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
@@ -164,6 +167,7 @@ fn run_workload_internal<L: SynthLanguage>(
             Scheduler::Compress(minimize_limits),
             &impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>(),
         );
+        chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
     }
 
