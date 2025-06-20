@@ -89,6 +89,7 @@ impl<L: SynthLanguage> Implication<L> {
     ///
     /// assert_eq!(imp.score(), [10.2]);
     /// ```
+    // TODO: let's make the score prioritize implications with more variables.
     pub fn score(&self) -> [f64; 1] {
         fn size(sexp: &Sexp) -> f64 {
             match sexp {
