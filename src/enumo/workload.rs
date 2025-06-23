@@ -32,6 +32,23 @@ impl Workload {
         )
     }
 
+    /// Check if the workload is empty.
+    /// ```
+    /// use enumo::Workload;
+    /// let wkld = Workload::new(["a", "b"]);
+    /// assert!(!wkld.is_empty());
+    /// let wkld = Workload::empty();
+    /// assert!(wkld.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Workload::Set(xs) => xs.is_empty(),
+            Workload::Plug(_, _, pegs) => pegs.is_empty(),
+            Workload::Filter(_, wkld) => wkld.is_empty(),
+            Workload::Append(wklds) => wklds.is_empty(),
+        }
+    }
+
     pub fn empty() -> Self {
         Self::Set(vec![])
     }

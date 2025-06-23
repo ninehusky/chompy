@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use crate::{
     conditions::{implication::merge_eqs, implication_set::ImplicationSet},
-    enumo::{Filter, Metric, Ruleset, Scheduler, Workload},
+    enumo::{ChompyState, Filter, Metric, Ruleset, Scheduler, Workload},
     HashMap, Limits, PVec, SynthAnalysis, SynthLanguage,
 };
 
@@ -58,19 +58,20 @@ fn get_cond_egraphs<L: SynthLanguage>(
 }
 
 fn run_workload_internal<L: SynthLanguage>(
-    workload: Workload,
-    cond_workload: Workload,
-    prior: Ruleset<L>,
+    state: &mut ChompyState<L>,
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
     allow_empty: bool,
 ) -> Ruleset<L> {
+    let prior: Ruleset<L> = state.chosen.clone();
+    let cond_workload = state.predicates.clone();
+
     let t = Instant::now();
     let num_prior = prior.len();
 
     // TODO: have option to add constants or special things to the workload.
-    let egraph = workload.to_egraph::<L>();
+    let egraph = &state.term_egraph;
     let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
 
     let mut candidates = if fast_match {
@@ -216,15 +217,14 @@ pub fn run_workload<L: SynthLanguage>(
     minimize_limits: Limits,
     fast_match: bool,
 ) -> Ruleset<L> {
-    run_workload_internal(
-        workload,
-        cond_workload.unwrap_or_else(|| Workload::empty()),
-        prior,
-        prior_limits,
-        minimize_limits,
-        fast_match,
-        true,
-    )
+    let mut state: ChompyState<L> = ChompyState {
+        term_egraph: workload.to_egraph::<L>(),
+        chosen: prior.clone(),
+        predicates: cond_workload.clone().unwrap_or_else(|| Workload::empty()),
+        implications: ImplicationSet::new(),
+    };
+
+    run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true)
 }
 
 /// The fast-forwarding algorithm
@@ -336,10 +336,15 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
         rec.extend(prior);
         let allow_empty = n < 3;
 
+        let mut state: ChompyState<L> = ChompyState {
+            term_egraph: wkld.to_egraph::<L>(),
+            chosen: rec.clone(),
+            predicates: conditions.clone(),
+            implications: ImplicationSet::new(),
+        };
+
         let new = run_workload_internal(
-            wkld,
-            conditions,
-            rec.clone(),
+            &mut state,
             Limits::synthesis(),
             Limits::minimize(),
             true,
@@ -359,39 +364,7 @@ pub fn recursive_rules<L: SynthLanguage>(
     lang: Lang,
     prior: Ruleset<L>,
 ) -> Ruleset<L> {
-    if n < 1 {
-        Ruleset::default()
-    } else {
-        let mut rec = recursive_rules(metric, n - 1, lang.clone(), prior.clone());
-        let base_lang = if lang.ops.len() == 2 {
-            base_lang(2)
-        } else {
-            base_lang(3)
-        };
-        let mut wkld = iter_metric(base_lang, "EXPR", metric, n)
-            .filter(Filter::Contains("VAR".parse().unwrap()))
-            .plug("VAR", &Workload::new(lang.vars))
-            .plug("VAL", &Workload::new(lang.vals));
-        // let ops = vec![lang.uops, lang.bops, lang.tops];
-        for (i, ops) in lang.ops.iter().enumerate() {
-            wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-        }
-        rec.extend(prior);
-        let allow_empty = n < 3;
-
-        let new = run_workload_internal(
-            wkld,
-            Workload::empty(),
-            rec.clone(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            allow_empty,
-        );
-        let mut all = new;
-        all.extend(rec);
-        all
-    }
+    recursive_rules_cond(metric, n, lang, prior, Workload::empty())
 }
 
 /// Util function for making a grammar with variables, values, and operators with up to n arguments.
