@@ -414,10 +414,15 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                                 let egraph = runner.egraph;
 
-                                    // 4. run the conditional rules for a snippet, given the ammo that we see above.
+                                    // 4. run the rules for a snippet, given the ammo that we see above.
                                     //    this is the second part that might get ugly.
-                                    let egraph = Scheduler::Saturating(Limits::deriving())
-                                        .run(&egraph, &conditional_rules);
+                                let runner: Runner<L, SynthAnalysis> =
+                                    Runner::new(SynthAnalysis::default())
+                                        .with_egraph(egraph.clone())
+                                        .run(&prior.iter().map(|rule| rule.rewrite.clone()).collect::<Vec<_>>())
+                                        .with_node_limit(egraph.total_size() + 1000);
+
+                                let egraph = runner.egraph;
 
                                 egraph
                             });
