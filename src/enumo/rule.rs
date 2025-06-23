@@ -19,6 +19,8 @@ pub struct Rule<L: SynthLanguage> {
     pub cond: Option<Pattern<L>>,
     /// egg::Rewrite
     pub rewrite: Rewrite<L, SynthAnalysis>,
+    // The number of times the rule's condition is true, which you usually get via fuzzing.
+    pub true_count: Option<usize>,
 }
 
 impl<L: SynthLanguage> Display for Rule<L> {
@@ -54,7 +56,7 @@ impl<L: SynthLanguage> Rule<L> {
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
             let forwards = if cond.is_some() {
-                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap()).unwrap()
+                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None).unwrap()
             } else {
                 Self {
                     name: name.clone().into(),
@@ -63,6 +65,7 @@ impl<L: SynthLanguage> Rule<L> {
                     cond: cond.clone(),
                     rewrite: Rewrite::new(name.clone(), l_pat.clone(), Rhs { rhs: r_pat.clone() })
                         .unwrap(),
+                    true_count: None,
                 }
             };
 
@@ -79,6 +82,7 @@ impl<L: SynthLanguage> Rule<L> {
                     cond: cond.clone(),
                     rewrite: Rewrite::new(Symbol::from(backwards_name), r_pat, Rhs { rhs: l_pat })
                         .unwrap(),
+                    true_count: None,
                 };
                 Ok((forwards, Some(backwards)))
             } else {
@@ -181,17 +185,12 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
 }
 
 impl<L: SynthLanguage> Rule<L> {
-    pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
+    pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>, true_count: Option<usize>) -> Option<Self> {
         let cond_pat: Pattern<L> = format!("(assume {})", cond_pat).parse().unwrap();
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
 
-
-
         let cond_vars = cond_pat.vars();
         let l_vars = l_pat.vars();
-
-        println!("cond vars: {:?}", cond_vars);
-        println!("l_vars: {:?}", l_vars);
 
         if cond_vars.iter().any(|v| !l_vars.contains(v)) {
             return None; // Condition variables must be a subset of the left-hand side variables
@@ -215,6 +214,7 @@ impl<L: SynthLanguage> Rule<L> {
             rhs: r_pat.clone(),
             cond: Some(cond_pat.clone()),
             rewrite: rw,
+            true_count,
         })
     }
 
@@ -229,6 +229,7 @@ impl<L: SynthLanguage> Rule<L> {
             rhs: r_pat.clone(),
             cond: None,
             rewrite: rw,
+            true_count: None,
         })
     }
 
@@ -249,7 +250,7 @@ impl<L: SynthLanguage> Rule<L> {
     }
 
     pub fn score(&self) -> impl Ord + Debug {
-        L::score(&self.lhs, &self.rhs, &self.cond)
+        L::score(&self.lhs, &self.rhs, &self.cond, self.true_count)
     }
 
     /// Whether the rule is sound

@@ -78,23 +78,6 @@ fn add_term(egraph: &mut egglog::EGraph, term: &crate::enumo::Sexp) {
         .unwrap();
 }
 
-#[test]
-fn test_validate_implication() {
-    let rule: Rule<Pred> = Rule {
-        name: "test".into(),
-        lhs: "(> x 0)".parse().unwrap(),
-        rhs: "(> (abs x) 0)".parse().unwrap(),
-        rewrite: ImplicationSwitch::new(
-            &"(> x 0)".parse().unwrap(),
-            &"(> (abs x) 0)".parse().unwrap(),
-        )
-        .rewrite(),
-        cond: None,
-    };
-
-    let result = validate_implication(rule.clone(), false);
-}
-
 fn validate_implication(imp: Rule<Pred>, filter_equalities: bool) -> ValidationResult {
     let mut cfg = z3::Config::new();
     cfg.set_timeout_msec(1000);
@@ -360,6 +343,7 @@ pub fn pvec_match(
                         rhs: r_pat.clone(),
                         rewrite: ImplicationSwitch::new(&l_pat, &r_pat).rewrite(),
                         cond: None,
+                        true_count: None,
                     });
                 }
             }

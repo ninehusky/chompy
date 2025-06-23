@@ -99,6 +99,10 @@ impl<L: SynthLanguage> EGraphManager<L> {
     /// Adds the given rewrites to the e-graph.
     pub fn add_rewrites(&mut self, rws: &Ruleset<L>) -> Result<(), String> {
         for rw in rws.iter() {
+            if rw.cond.is_some() {
+                // skip rules with conditions for now.
+                continue;
+            }
             match self.add_rewrite(rw) {
                 Ok(_) => continue,
                 Err(e) => {
@@ -139,7 +143,6 @@ impl<L: SynthLanguage> EGraphManager<L> {
         "#,
             lhs, rhs, RW_RULESET_NAME
         );
-        println!("running: {rw_prog}");
         match self.egraph.parse_and_run_program(None, &rw_prog) {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to add rewrite: {rw_name} :{e}")),

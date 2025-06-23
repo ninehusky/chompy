@@ -132,7 +132,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 continue;
             }
             let reverse = if let Some(c) = &rule.cond {
-                Rule::new_cond(&rule.rhs, &rule.lhs, &c)
+                Rule::new_cond(&rule.rhs, &rule.lhs, &c, rule.true_count)
             } else {
                 Rule::new(&rule.rhs, &rule.lhs)
             };
@@ -153,8 +153,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         self.0.insert(rule.name.clone(), rule);
     }
 
-    fn add_cond_from_recexprs(&mut self, e1: &RecExpr<L>, e2: &RecExpr<L>, cond: &RecExpr<L>) {
-        println!("hi: {}", cond);
+    fn add_cond_from_recexprs(&mut self, e1: &RecExpr<L>, e2: &RecExpr<L>, cond: &RecExpr<L>, true_count: usize) {
         let map = &mut HashMap::default();
         let l_pat = L::generalize(e1, map);
         let r_pat = L::generalize(e2, map);
@@ -166,20 +165,13 @@ impl<L: SynthLanguage> Ruleset<L> {
             println!("cond_pat: {}", cond_pat);
             panic!();
         }
-        let forward = Rule::new_cond(&l_pat, &r_pat, &cond_pat);
-        let backward = Rule::new_cond(&r_pat, &l_pat, &cond_pat);
-        println!("forward: {:?}", forward);
-        println!("backward: {:?}", backward);
+        let forward = Rule::new_cond(&l_pat, &r_pat, &cond_pat, Some(true_count));
+        let backward = Rule::new_cond(&r_pat, &l_pat, &cond_pat, Some(true_count));
         if let Some(forward) = forward {
-            println!("adding forward rule: {}", forward.name);
             self.add(forward);
         }
         if let Some(backward) = backward {
-            println!("adding backward rule: {}", backward.name);
             self.add(backward);
-        }
-        for (_, rule) in &self.0 {
-            println!("rule: {}", rule.name);
         }
     }
 
@@ -261,7 +253,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut strs = vec![];
         for (name, rule) in &self.0 {
             let reverse = if rule.cond.is_some() {
-                Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.clone().unwrap())
+                Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.clone().unwrap(), rule.true_count)
             } else {
                 Rule::new(&rule.rhs, &rule.lhs)
             };
@@ -325,6 +317,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         candidates
     }
 
+    /// Returns a ruleset of candidates, as well as a map from rule to condition frequency.
     // TODO: @ninehusky: should this just be integrated into normal `cvec_match`?
     // See #5.
     pub fn conditional_cvec_match(
@@ -355,123 +348,154 @@ impl<L: SynthLanguage> Ruleset<L> {
             assert_eq!(cvec1.len(), conditions.keys().next().unwrap().len());
             i += 1;
             for cvec2 in by_cvec.keys().skip(i) {
-                let pvec: Vec<bool> = cvec1
+                // the `equal_vec` is the equality vector for cvec1, cvec2.
+                // it represents their observational equivalence.
+                let equal_vec: Vec<bool> = cvec1
                     .iter()
                     .zip(cvec2.iter())
                     .map(|(a, b)| a == b)
                     .collect();
 
-                if pvec.iter().all(|x| *x) || pvec.iter().all(|x| !*x) {
+                if equal_vec.iter().all(|x| *x) || equal_vec.iter().all(|x| !*x) {
                     continue;
                 }
 
-                if let Some(pred_patterns) = conditions.get(&pvec) {
-                    for pred_pat in pred_patterns {
-                        let pred_string = pred_pat.to_string();
-                        let cond_egraph =
-                            cond_to_egraph
-                                .entry(pred_string.clone())
-                                .or_insert_with(|| {
-                                    println!("inserting {:?}", pred_string); // this should only show on misses
+                // find all conditions under which cvec1 == cvec2.
+                let pvecs: Vec<_> = conditions
+                    .keys()
+                    .filter(|pvec| {
+                        pvec.iter()
+                            .zip(equal_vec.iter())
+                            .all(|(pvec_el, equal_el)| {
+                                // if the pvec is a sufficient condition, then pvec -> equal_el.
+                                // if the pvec is a necessary condition, then equal_el -> pvec (but we won't check for that anymore).
+                                !pvec_el || *equal_el
+                            })
+                    })
+                    .collect();
 
-                                    // this is the first part that might get ugly.
-                                    let mut egraph = egraph.clone();
+                // sort pvecs by how often they are true; vectors with more true values should come first.
+                let mut pvecs: Vec<_> = pvecs
+                    .iter()
+                    .map(|pvec| (pvec, pvec.iter().filter(|&&x| x).count()))
+                    .collect();
+                pvecs.sort_by(|(_, count1), (_, count2)| count2.cmp(count1));
 
-                                    // 2. add the condition to the egraph
-                                    let cond_ast = &L::instantiate(pred_pat);
+                let pred_patterns: Vec<_> = pvecs
+                    .iter()
+                    .filter_map(|(pvec, _)| conditions.get(**pvec))
+                    .flat_map(|patterns| patterns.iter())
+                    .collect();
 
-                                    println!("adding (assume {})", cond_ast);
+                for pred_pat in pred_patterns {
+                    let pred_string = pred_pat.to_string();
+                    let mini_egraph =
+                        cond_to_egraph
+                            .entry(pred_string.clone())
+                            .or_insert_with(|| {
+                                println!("inserting {:?}", pred_string); // this should only show on misses
 
-                                    // 3. run the condition propagation rules
-                                    egraph.add_expr(
-                                        &format!("(assume {})", cond_ast).parse().unwrap(),
-                                    );
+                                // this is the first part that might get ugly.
+                                let mut egraph = egraph.clone();
 
-                                    let runner: Runner<L, SynthAnalysis> =
-                                        Runner::new(SynthAnalysis::default())
-                                            .with_egraph(egraph.clone())
-                                            .run(&impl_rules.clone())
-                                            .with_node_limit(500);
+                                // 2. add the condition to the egraph
+                                let cond_ast = &L::instantiate(pred_pat);
 
-                                    let egraph = runner.egraph;
+                                println!("adding (assume {})", cond_ast);
+
+                                // 3. run the condition propagation rules
+                                egraph.add_expr(&format!("(assume {})", cond_ast).parse().unwrap());
+
+                                let runner: Runner<L, SynthAnalysis> =
+                                    Runner::new(SynthAnalysis::default())
+                                        .with_egraph(egraph.clone())
+                                        .run(&impl_rules.clone())
+                                        .with_node_limit(500);
+
+                                let egraph = runner.egraph;
 
                                     // 4. run the conditional rules for a snippet, given the ammo that we see above.
                                     //    this is the second part that might get ugly.
                                     let egraph = Scheduler::Saturating(Limits::deriving())
                                         .run(&egraph, &conditional_rules);
 
-                                    egraph
-                                });
+                                egraph
+                            });
 
-                        // this is fucking stupid to do this here.
-                        // if it gets expensive, we should do some pre-processing on the workload
-                        // to make the upper-level data structure a map from usize -> map<pvec, patterns>
-                        fn size(sexp: &Sexp) -> usize {
-                            match sexp {
-                                Sexp::Atom(_) => 1,
-                                Sexp::List(list) => list.iter().map(size).sum(),
+                    // this is fucking stupid to do this here.
+                    // if it gets expensive, we should do some pre-processing on the workload
+                    // to make the upper-level data structure a map from usize -> map<pvec, patterns>
+                    fn size(sexp: &Sexp) -> usize {
+                        match sexp {
+                            Sexp::Atom(_) => 1,
+                            Sexp::List(list) => list.iter().map(size).sum(),
+                        }
+                    }
+
+                    let size = size(&Sexp::from_str(&pred_pat.to_string()).unwrap());
+                    if size != cond_size {
+                        continue;
+                    }
+
+                    for id1 in by_cvec[cvec1].clone() {
+                        for id2 in by_cvec[cvec2].clone() {
+                            let (c1, e1) = extract.find_best(id1);
+                            let (c2, e2) = extract.find_best(id2);
+                            let pred: RecExpr<L> =
+                                RecExpr::from_str(&pred_pat.to_string()).unwrap();
+
+                            fn size(sexp: &Sexp) -> usize {
+                                match sexp {
+                                    Sexp::Atom(_) => 1,
+                                    Sexp::List(list) => list.iter().map(size).sum(),
+                                }
                             }
-                        }
 
-                        let size = size(&Sexp::from_str(&pred_pat.to_string()).unwrap());
-                        if size != cond_size {
-                            continue;
-                        }
+                            let curr_size = size(&Sexp::from_str(&pred.to_string()).unwrap());
 
-                        for id1 in by_cvec[cvec1].clone() {
-                            for id2 in by_cvec[cvec2].clone() {
-                                let (c1, e1) = extract.find_best(id1);
-                                let (c2, e2) = extract.find_best(id2);
-                                let pred: RecExpr<L> =
-                                    RecExpr::from_str(&pred_pat.to_string()).unwrap();
+                            if curr_size != cond_size {
+                                // we're not looking for this condition size
+                                continue;
+                            }
 
-                                fn size(sexp: &Sexp) -> usize {
-                                    match sexp {
-                                        Sexp::Atom(_) => 1,
-                                        Sexp::List(list) => list.iter().map(size).sum(),
-                                    }
-                                }
+                            if c1 == usize::MAX || c2 == usize::MAX {
+                                continue;
+                            }
 
-                                let curr_size = size(&Sexp::from_str(&pred.to_string()).unwrap());
+                            // 1. get the e-graph with the implication rules already there
+                            let egraph = &mini_egraph;
 
-                                if curr_size != cond_size {
-                                    // we're not looking for this condition size
-                                    continue;
-                                }
+                            let lexpr = &L::instantiate(&e1.to_string().parse().unwrap());
+                            let rexpr = &L::instantiate(&e2.to_string().parse().unwrap());
 
-                                if c1 == usize::MAX || c2 == usize::MAX {
-                                    continue;
-                                }
+                            let l_id = egraph
+                                .lookup_expr(lexpr)
+                                .unwrap_or_else(|| panic!("Did not find {}", lexpr));
 
-                                // 1. get the e-graph with the implication rules already there
-                                let egraph = &cond_egraph;
+                            let r_id = egraph
+                                .lookup_expr(rexpr)
+                                .unwrap_or_else(|| panic!("Did not find {}", rexpr));
 
-                                let lexpr = &L::instantiate(&e1.to_string().parse().unwrap());
-                                let rexpr = &L::instantiate(&e2.to_string().parse().unwrap());
-
-                                let l_id = egraph
-                                    .lookup_expr(lexpr)
-                                    .unwrap_or_else(|| panic!("Did not find {}", lexpr));
-
-                                let r_id = egraph
-                                    .lookup_expr(rexpr)
-                                    .unwrap_or_else(|| panic!("Did not find {}", rexpr));
-
-                                // 2. check if the lhs and rhs are equivalent in the egraph
-                                if l_id == r_id {
-                                    // e1 and e2 are equivalent in the condition egraph
-                                    println!(
+                            // 2. check if the lhs and rhs are equivalent in the egraph
+                            if l_id == r_id {
+                                // e1 and e2 are equivalent in the condition egraph
+                                println!(
                                         "Skipping {} and {} because they are equivalent in the egraph representing {}",
                                         e1, e2, pred_pat
                                     );
-                                    continue;
-                                }
-                                // END HACK
-
-                                println!("adding: if {} then {} ~> {}", pred_pat, e1, e2);
-                                candidates.add_cond_from_recexprs(&e1, &e2, &pred);
-                                println!("candidates len: {}", candidates.len());
+                                continue;
                             }
+                            // END HACK
+
+                            println!("adding: if {} then {} ~> {}", pred_pat, e1, e2);
+                            // the true count is how many times the condition is true.
+
+                            let true_count = conditions.iter().find(|(_, patterns)| {
+                                patterns.contains(pred_pat)
+                            }).unwrap().0.iter().filter(|&&x| x).count();
+
+                            candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                            println!("candidates len: {}", candidates.len());
                         }
                     }
                 }
@@ -575,7 +599,11 @@ impl<L: SynthLanguage> Ruleset<L> {
         candidates
     }
 
-    pub fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
+    pub fn select(
+        &mut self,
+        step_size: usize,
+        invalid: &mut Ruleset<L>,
+    ) -> Self {
         let mut chosen = Self::default();
         self.0
             .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));
@@ -595,7 +623,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                 // If reverse direction is also in candidates, add it at the same time
                 let reverse = if rule.cond.is_some() {
-                    Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.unwrap())
+                    Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.unwrap(), rule.true_count)
                 } else {
                     Rule::new(&rule.rhs, &rule.lhs)
                 };
@@ -681,12 +709,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                     "most recent condition {} is not in the egraph representing {}, so skipping.",
                     most_recent_condition, condition
                 );
-                if most_recent_condition.to_string() == condition.to_string() {
-                    // dump e-graph to json.
-                    let serialized = egg_to_serialized_egraph(&egraph);
-                    serialized.to_json_file("uhoh.json");
-                    panic!();
-                }
                 // then it's not relevant
                 continue;
             }
@@ -769,6 +791,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         while !self.is_empty() {
             println!("candidates remaining: {}", self.len());
             let selected = self.select(step_size, &mut invalid);
+            println!("selected: {}", selected.len());
+            for (rule_name, rule) in &selected.0 {
+                println!("  {}: {}", rule_name, rule.lhs);
+            }
             if selected.is_empty() {
                 continue;
             }
@@ -1002,7 +1028,10 @@ where
 pub mod cond_cvec_match_tests {
     use egg::{AstSize, EGraph, Extractor, Pattern};
 
-    use crate::{enumo::{Ruleset, Workload}, HashMap, PVec, SynthAnalysis, SynthLanguage};
+    use crate::{
+        enumo::{Ruleset, Workload},
+        HashMap, PVec, SynthAnalysis, SynthLanguage,
+    };
 
     // Cond cvec matching should find the candidate (/ a a) ~> 1 if (!= a 0).
     #[test]
@@ -1043,13 +1072,13 @@ pub mod cond_cvec_match_tests {
         //         .or_default()
         //         .push(pat.clone());
         // }
-
     }
 }
 
 // A series of tests containing some sanity checks about derivability.
 pub mod tests {
-    use crate::enumo::{rule, scheduler, workload, Rule};
+    use crate::conditions::implication_set::ImplicationSet;
+    use crate::enumo::{rule, scheduler, workload, ChompyState, Rule};
     use crate::halide::{compute_conditional_structures, Pred};
     use crate::ImplicationSwitch;
 
@@ -1122,7 +1151,7 @@ pub mod tests {
         let mut expected = Ruleset::default();
         expected.add(rule_1.clone());
 
-        assert_eq!(ruleset.select(1, &mut Ruleset::default()), expected);
+        assert_eq!(ruleset.select(1, &mut Ruleset::default(), None), expected);
     }
 
     #[test]
@@ -1178,7 +1207,7 @@ pub mod tests {
         let mut names = vec![];
 
         while !ruleset.is_empty() {
-            let selected = ruleset.select(1, &mut Ruleset::default());
+            let selected = ruleset.select(1, &mut Ruleset::default(), None);
             if selected.is_empty() {
                 break;
             }
@@ -1191,7 +1220,6 @@ pub mod tests {
         println!("selected rules: {:?}", names);
     }
 
-    #[test]
     #[test]
     // A test for optimization 2.
     // Given the rules: `[(+ 0 1) ==> 1, (/ ?a ?a) ==> 1 if (!= ?a 0)]``,
@@ -1272,26 +1300,23 @@ pub mod tests {
     // given (min ?a ?b) <=> (min ?b ?a), only derive one of [(min ?a ?b) ==> ?a if (<= ?a ?b), (min ?b ?a) ==> ?a if (<= ?a ?b)].
     #[test]
     fn basic_derive() {
-        // let mut ruleset = Ruleset::default();
-        // ruleset.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
+        let mut ruleset = Ruleset::default();
+        ruleset.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
 
-        // let term_workload = Workload::new(&["(min a b)", "(min b a)"]);
-        // let cond_workload = Workload::new(&["(<= a b)"]);
+        let term_workload = Workload::new(&["(min a b)", "(min b a)"]);
+        let cond_workload = Workload::new(&["(<= a b)", "(< a b)"]);
 
-        // let (pvec_to_patterns, prop_rules) = compute_conditional_structures(&cond_workload);
+        let found: Ruleset<Pred> = run_workload(
+            term_workload,
+            Some(cond_workload),
+            ruleset,
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
 
-        // let found = run_workload(
-        //     term_workload,
-        //     ruleset,
-        //     Limits::synthesis(),
-        //     Limits::minimize(),
-        //     true,
-        //     Some(pvec_to_patterns),
-        //     Some(prop_rules),
-        // );
-
-        // for r in found {
-        //     println!("found: {}", r.0);
-        // }
+        for r in found {
+            println!("found: {}", r.0);
+        }
     }
 }

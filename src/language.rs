@@ -525,7 +525,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         RecExpr::from(nodes)
     }
 
-    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> [i32; 2] {
+    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>, true_count: Option<usize>) -> [i32; 3] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -562,7 +562,8 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             0
         };
 
-        [-(l_cost + r_cost + c_cost), lhs_bigger]
+
+        [-(l_cost + r_cost + c_cost), (true_count.unwrap_or(i32::MAX as usize) as i32), lhs_bigger]
     }
 
     #[allow(dead_code)]

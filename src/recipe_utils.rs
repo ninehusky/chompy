@@ -101,11 +101,6 @@ fn run_workload_internal<L: SynthLanguage>(
         return chosen;
     }
 
-    println!("full wkld");
-    for c in cond_workload.clone().force() {
-        println!("  - {}", c);
-    }
-
     for cond_size in 1..=max_cond_size {
         let curr_wkld = cond_workload
             .clone()
@@ -122,6 +117,7 @@ fn run_workload_internal<L: SynthLanguage>(
         let extractor = Extractor::new(&cond_egraph, AstSize);
 
         let (mut candidates, _) = ImplicationSet::pvec_match(&cond_egraph.clone());
+
         let (new_impls, _) = candidates.minimize(impls.clone(), prior.clone());
         impls.add_all(new_impls);
 
@@ -168,6 +164,7 @@ fn run_workload_internal<L: SynthLanguage>(
         println!("conditional candidates: {}", conditional_candidates.len());
         for c in conditional_candidates.clone() {
             println!("  - {}", c.0);
+            println!("true count: {:?}", c.1.true_count);
         }
 
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
