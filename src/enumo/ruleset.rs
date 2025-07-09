@@ -259,7 +259,10 @@ impl<L: SynthLanguage> Ruleset<L> {
             };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
                 let cond_display = if rule.cond.is_some() {
-                    format!(" if {}", rule.cond.clone().unwrap())
+                    let cond_display = rule.cond.clone().unwrap().to_string();
+                    assert!(cond_display.starts_with(format!("({}", L::assumption_label()).as_str()));
+                    // remove the starting prefix and the last )
+                    format!(" if {}", &cond_display[format!("({}", L::assumption_label()).len()..cond_display.len() - 1])
                 } else {
                     "".to_string()
                 };
@@ -416,13 +419,8 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                                     // 4. run the rules for a snippet, given the ammo that we see above.
                                     //    this is the second part that might get ugly.
-                                let runner: Runner<L, SynthAnalysis> =
-                                    Runner::new(SynthAnalysis::default())
-                                        .with_egraph(egraph.clone())
-                                        .run(&prior.iter().map(|rule| rule.rewrite.clone()).collect::<Vec<_>>())
-                                        .with_node_limit(egraph.total_size() + 1000);
-
-                                let egraph = runner.egraph;
+                                let egraph = Scheduler::Compress(Limits::deriving())
+                                    .run(&egraph, &prior);
 
                                 egraph
                             });
@@ -438,6 +436,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     }
 
                     let size = size(&Sexp::from_str(&pred_pat.to_string()).unwrap());
+                    println!("pred pat: {}, size: {}", pred_pat, size);
                     if size != cond_size {
                         continue;
                     }
@@ -492,7 +491,10 @@ impl<L: SynthLanguage> Ruleset<L> {
                             }
                             // END HACK
 
-                            println!("adding: if {} then {} ~> {}", pred_pat, e1, e2);
+                            let extractor = Extractor::new(egraph, AstSize);
+                            let (_, e1) = extractor.find_best(l_id);
+                            let (_, e2) = extractor.find_best(r_id);
+
                             // the true count is how many times the condition is true.
 
                             let true_count = conditions.iter().find(|(_, patterns)| {
@@ -579,7 +581,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     // TODO: Figure out what to do with this- it doesn't match the definition
     // of cvec matching from the paper, but it is faster.
     /// Faster version of CVec matching. May underestimate candidates when there are None values
-    pub fn fast_cvec_match(egraph: &EGraph<L, SynthAnalysis>) -> Ruleset<L> {
+    pub fn fast_cvec_match(egraph: &EGraph<L, SynthAnalysis>, prior: Ruleset<L>) -> Ruleset<L> {
         let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::default();
 
         for class in egraph.classes() {
@@ -596,6 +598,25 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             for (idx, e1) in exprs.iter().enumerate() {
                 for e2 in exprs[(idx + 1)..].iter() {
+
+                    // when the limits get high, we get a lot of candidates which should simplify.
+                    let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+                    let l = mini_egraph.add_expr(&e1.to_string().parse().unwrap());
+                    let r = mini_egraph.add_expr(&e2.to_string().parse().unwrap());
+                    let runner: Runner<L, SynthAnalysis> = Runner::default()
+                        .with_egraph(mini_egraph.clone())
+                        .run(&prior.iter().map(|rule| rule.rewrite.clone()).collect::<Vec<_>>())
+                        .with_node_limit(100);
+
+                    let mini_egraph = runner.egraph;
+                    if mini_egraph.find(l) == mini_egraph.find(r) {
+                        // e1 and e2 are equivalent in the mini egraph
+                        println!("skippin {} and {} because they are equivalent in the mini egraph", e1, e2);
+                        continue;
+                    }
+
+
+
                     println!("candidate: {} ~> {}", e1, e2);
                     candidates.add_from_recexprs(e1, e2);
                 }
@@ -1156,7 +1177,7 @@ pub mod tests {
         let mut expected = Ruleset::default();
         expected.add(rule_1.clone());
 
-        assert_eq!(ruleset.select(1, &mut Ruleset::default(), None), expected);
+        assert_eq!(ruleset.select(1, &mut Ruleset::default()), expected);
     }
 
     #[test]
@@ -1212,7 +1233,7 @@ pub mod tests {
         let mut names = vec![];
 
         while !ruleset.is_empty() {
-            let selected = ruleset.select(1, &mut Ruleset::default(), None);
+            let selected = ruleset.select(1, &mut Ruleset::default());
             if selected.is_empty() {
                 break;
             }

@@ -50,6 +50,65 @@ egg::define_language! {
   }
 }
 
+impl Pred {
+    pub fn get_condition_propagation_rules(
+        conditions: &Workload,
+    ) -> Vec<Rewrite<Self, SynthAnalysis>> {
+        let forced = conditions.force();
+
+        let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
+        let mut cache: HashMap<(String, String), bool> = Default::default();
+        for c in &forced {
+            let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
+            let c_pat = Pattern::from(&c_recexpr.clone());
+            // pairwise checking implication of all conditions
+            for c2 in &forced {
+                if c == c2 {
+                    continue;
+                }
+                let c2_recexpr: RecExpr<Self> = c2.to_string().parse().unwrap();
+                let c2_pat = Pattern::from(&c2_recexpr.clone());
+                let c_vars = c_pat.vars();
+                let c2_vars = c2_pat.vars();
+
+                if c2_vars.iter().any(|v| !c_vars.contains(v)) {
+                    // can't have variables on the right that are not on the left.
+                    continue;
+                }
+
+                let rw = ImplicationSwitch {
+                    parent_cond: c_pat.clone(),
+                    my_cond: c2_pat.clone(),
+                }
+                .rewrite();
+
+                println!("c_pat: {}", c_pat);
+                println!("c2_pat: {}", c2_pat);
+
+                let imp: Result<Implication<Pred>, _> = Implication::new(
+                    format!("{} -> {}", c_pat, c2_pat).into(),
+                    Assumption::new(c_pat.to_string()).unwrap(),
+                    Assumption::new(c2_pat.to_string()).unwrap(),
+                );
+
+                if let Err(e) = &imp {
+                    assert!(e.to_string().contains("contains variables"));
+                    continue;
+                }
+
+                let imp = imp.unwrap();
+
+                if imp.is_valid() && !result.iter().any(|r| r.name == rw.name)
+                // avoid duplicates
+                {
+                    result.push(rw);
+                }
+            }
+        }
+        result
+    }
+}
+
 impl SynthLanguage for Pred {
     type Constant = Constant;
 
@@ -98,7 +157,6 @@ impl SynthLanguage for Pred {
             _ => None,
         }
     }
-
 
     fn to_egglog_term(pat: Pattern<Self>) -> String {
         // TODO(@ninehusky):
@@ -1066,8 +1124,6 @@ pub fn compute_conditional_structures(
     (pvec_to_terms, cond_prop_ruleset)
 }
 
-
-
 pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let start_time = std::time::Instant::now();
@@ -1082,16 +1138,43 @@ pub fn og_recipe() -> Ruleset<Pred> {
     assert_ne!(wkld, Workload::empty());
     println!("hi");
 
-    // // learn the axioms about equality and comparisons
-    // let comparisons = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     3,
-    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-    //     Ruleset::default(),
-    //     Workload::empty()
-    // );
+    let and_rules = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["&&", "||", "==", "!="]],
+        ),
+        Ruleset::default(),
+    );
 
-    // all_rules.extend(comparisons);
+    all_rules.extend(and_rules.clone());
+
+    let comps = Workload::new(&["(OP V V)"])
+        .plug("OP", &Workload::new(&["=="]))
+        .plug("V", &Workload::new(&["a", "b", "c"]));
+
+    let and_workload = Workload::new(&["0", "1", "(OP V V)"])
+        .plug("OP", &Workload::new(&["&&"]))
+        .plug("V", &comps);
+
+    println!("done workload");
+
+    let comp_eq = run_workload(
+        and_workload.clone(),
+        Some(wkld.clone()),
+        all_rules.clone(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+    );
+
+    all_rules.extend(comp_eq.clone());
+
+    all_rules.pretty_print();
+
+    panic!("donezo");
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
@@ -1104,79 +1187,109 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Ruleset::default(),
         wkld.clone(),
     );
-
     all_rules.extend(arith_basic.clone());
-
-    // let mul_div = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(
-    //         &["-1", "0", "1"],
-    //         &["a", "b", "c"],
-    //         &[&[], &["*", "/", "%"]],
-    //     ),
-    //     all_rules.clone(),
-    //     wkld.clone(),
-    // );
-    // all_rules.extend(mul_div.clone());
 
     let min_max = recursive_rules_cond(
         Metric::Atoms,
-        3,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["min"]]),
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
         all_rules.clone(),
         wkld.clone(),
     );
 
-    all_rules.extend(min_max);
-
-    // the special workloads, which mostly revolve around
-    // composing int2boolop(int_term, int_term) or things like that
-    // together.
-    let int_lang = Lang::new(
-        &[],
-        &["a", "b", "c"],
-        &[&[], &["+", "-", "*", "min", "max"]],
-    );
-    let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
-        .filter(Filter::Contains("VAR".parse().unwrap()))
-        .plug("VAR", &Workload::new(int_lang.vars))
-        .plug("VAL", &Workload::new(int_lang.vals));
-
-    // let ops = vec![lang.uops, lang.bops, lang.tops];
-    for (i, ops) in int_lang.ops.iter().enumerate() {
-        int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    }
+    all_rules.extend(min_max.clone());
 
     for op in &["min", "max"] {
-        let big_wkld = Workload::new(&["0", "1"]).append(
-            Workload::new(&["(OP V V)"])
-                // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-                // thing where we have to basically feed in these operators one at a time.
-                .plug("OP", &Workload::new(&[op]))
-                .plug("V", &int_wkld)
-                .filter(Filter::MetricLt(Metric::Atoms, 8)),
-        );
+        let int_workload = Workload::new(&["0", "1", "(OP V V)"])
+            .plug("OP", &Workload::new(&[op]))
+            .plug("V", &Workload::new(&["a", "b", "c"]));
 
-        let wrapped_rules = run_workload(
-            big_wkld,
+        let eq_workload = Workload::new(&["0", "1", "(OP V V)"])
+            .plug("OP", &Workload::new(&["=="]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+            ]));
+
+        let eq_simp = run_workload(
+            eq_workload,
             Some(wkld.clone()),
-            all_rules.clone(),
+            min_max.clone(),
             Limits::synthesis(),
-            Limits {
-                iter: 1,
-                node: 100_000,
-                match_: 100_000,
-            },
+            Limits::minimize(),
             true,
         );
 
-        all_rules.extend(wrapped_rules);
+        all_rules.extend(eq_simp);
     }
 
+    let min_max_mul = recursive_rules_cond(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
+        all_rules.clone(),
+        wkld.clone(),
+    );
+
+    all_rules.extend(min_max_mul);
+
+    // let min_max_div = recursive_rules_cond(
+    //     Metric::Atoms,
+    //     7,
+    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+    //     all_rules.clone(),
+    //     wkld.clone(),
+    // );
+
+    // all_rules.extend(min_max_div);
+
+    // // the special workloads, which mostly revolve around
+    // // composing int2boolop(int_term, int_term) or things like that
+    // // together.
+    // let int_lang = Lang::new(
+    //     &[],
+    //     &["a", "b", "c"],
+    //     &[&[], &["+", "-", "*", "min", "max"]],
+    // );
+    // let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
+    //     .filter(Filter::Contains("VAR".parse().unwrap()))
+    //     .plug("VAR", &Workload::new(int_lang.vars))
+    //     .plug("VAL", &Workload::new(int_lang.vals));
+
+    // // let ops = vec![lang.uops, lang.bops, lang.tops];
+    // for (i, ops) in int_lang.ops.iter().enumerate() {
+    //     int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    // }
+
+    // for op in &["min", "max"] {
+    //     let big_wkld = Workload::new(&["0", "1"]).append(
+    //         Workload::new(&["(OP V V)"])
+    //             // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
+    //             // thing where we have to basically feed in these operators one at a time.
+    //             .plug("OP", &Workload::new(&[op]))
+    //             .plug("V", &int_wkld)
+    //             .filter(Filter::MetricLt(Metric::Atoms, 8)),
+    //     );
+
+    //     let wrapped_rules = run_workload(
+    //         big_wkld,
+    //         Some(wkld.clone()),
+    //         all_rules.clone(),
+    //         Limits::synthesis(),
+    //         Limits {
+    //             iter: 1,
+    //             node: 100_000,
+    //             match_: 100_000,
+    //         },
+    //         true,
+    //     );
+
+    //     all_rules.extend(wrapped_rules);
+    // }
 
     let end_time = std::time::Instant::now();
-
 
     all_rules.pretty_print();
 
@@ -1286,4 +1399,128 @@ pub fn og_recipe_no_conditions() -> Ruleset<Pred> {
     // }
 
     all_rules
+}
+
+mod tests {
+    use std::str::FromStr;
+
+    use egg::{EGraph, RecExpr};
+
+    use crate::{
+        conditions::assumption::Assumption,
+        enumo::{self, Rule, Ruleset, Sexp, Workload},
+        halide::Pred,
+        recipe_utils::run_workload,
+        Limits, Pattern, SynthAnalysis, SynthLanguage,
+    };
+
+    #[test]
+    fn test_derive_all_caviar() {
+        let rules = r#"(== (max ?x ?c) 0) ==> (== ?x 0) if (< ?c 0)
+(&& (== ?x ?c0) (== ?x ?c1)) ==> 0 if (!= ?c1 ?c0)
+(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)
+(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))
+(< (- ?a ?y) ?a) ==> 1 if (> ?y 0)
+(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
+(+ (* ?x ?a) (* ?y ?b)) ==> (* (+ (* ?x (/ ?a ?b)) ?y) ?b) if (&& (!= ?b 0) (== (% ?a ?b) 0))
+(< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0)
+(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)
+(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+(< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0)
+(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0)
+(< ?a (% ?x ?b)) ==> 0 if (>= ?a (abs ?b))
+(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)
+(/ (min ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (> ?z 0)
+(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (min ?x ?y) ?z) if (> ?z 0)
+(/ (max ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (< ?z 0)
+(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (max ?x ?y) ?z) if (< ?z 0)
+(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)
+(min (% ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 (- 0 (abs (+ ?c0 1))))
+(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)
+(max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)
+(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))"#
+            .lines()
+            .map(|s| Rule::<Pred>::from_string(s).unwrap().0);
+
+        for rule in rules {
+            // 1. Make a new workload consisting of LHS, RHS of the rule.
+
+            let mut vars = rule.lhs.vars();
+            vars.extend(rule.rhs.vars());
+            vars.sort();
+            vars.dedup();
+
+            let vars = vars
+                .iter()
+                .map(|v| {
+                    // remove the "?" from v.to_string()
+                    let v = v.to_string();
+                    v[1..].to_string()
+                })
+                .collect::<Vec<_>>();
+
+            let mut exprs = vec![
+                Pred::instantiate(&rule.lhs).to_string(),
+                Pred::instantiate(&rule.rhs).to_string(),
+            ];
+
+            exprs.extend(vars.iter().cloned());
+
+            let workload = Workload::new(&exprs.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+
+            // 2. Add the condition of the workload.
+            // take the "(assume ...)" out of the rule.cond.
+            let mut cond_str = rule.cond.as_ref().unwrap().to_string().trim().to_string();
+
+            fn size(sexp: &enumo::Sexp) -> usize {
+                match sexp {
+                    enumo::Sexp::Atom(_) => 1,
+                    enumo::Sexp::List(l) => l.iter().map(size).sum(),
+                }
+            }
+
+            cond_str = cond_str[8..cond_str.len() - 1].to_string();
+
+            let cond_size = size(&Sexp::from_str(&cond_str).unwrap());
+            let cond = Pred::instantiate(&cond_str.parse().unwrap());
+
+            let mut cond_exprs = vec![cond.to_string()];
+            // for `initialize_vars`
+            cond_exprs.extend(vars.iter().cloned());
+
+            let cond_workload =
+                Workload::new(&cond_exprs.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+
+            let cond_egraph: EGraph<Pred, SynthAnalysis> = cond_workload.to_egraph();
+
+            let pvec = cond_egraph
+                .lookup_expr(&cond.to_string().parse().unwrap())
+                .and_then(|id| Some(cond_egraph[id].data.cvec.clone()))
+                .unwrap();
+
+            let mut pvec_to_cond: crate::HashMap<_, _> = Default::default();
+            pvec_to_cond.insert(
+                pvec.iter().map(|b| *b != Some(0)).collect(),
+                vec![Pattern::from(&cond)],
+            );
+
+            // 3. See what kind of candidates we get.
+            let found_rules: Ruleset<Pred> = Ruleset::conditional_cvec_match(
+                &workload.to_egraph(),
+                &pvec_to_cond,
+                cond_size,
+                &mut Default::default(),
+                &Ruleset::default(),
+                &vec![],
+            );
+
+            assert!(!found_rules.is_empty());
+
+            found_rules.pretty_print();
+        }
+    }
 }

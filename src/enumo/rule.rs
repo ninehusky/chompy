@@ -1,5 +1,6 @@
 use egg::{
-    Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite, Subst
+    Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst,
+    Rewrite, Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -26,7 +27,13 @@ pub struct Rule<L: SynthLanguage> {
 impl<L: SynthLanguage> Display for Rule<L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.cond {
-            Some(cond) => write!(f, "{} ==> {} if {}", self.lhs, self.rhs, cond),
+            Some(cond) => {
+                let cond_str = cond.to_string();
+                assert!(cond_str.starts_with("(assume "));
+                // remove "(assume " from the start and ")" from the end
+                let cond = &cond_str[8..cond_str.len() - 1];
+                write!(f, "{} ==> {} if {}", self.lhs, self.rhs, cond)
+            }
             None => write!(f, "{} ==> {}", self.lhs, self.rhs),
         }
     }
@@ -185,9 +192,21 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
 }
 
 impl<L: SynthLanguage> Rule<L> {
-    pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>, true_count: Option<usize>) -> Option<Self> {
+    pub fn new_cond(
+        l_pat: &Pattern<L>,
+        r_pat: &Pattern<L>,
+        cond_pat: &Pattern<L>,
+        true_count: Option<usize>,
+    ) -> Option<Self> {
         let cond_pat: Pattern<L> = format!("(assume {})", cond_pat).parse().unwrap();
-        let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
+
+        let cond_display = cond_pat.to_string();
+        assert!(cond_display.starts_with(format!("({} ", L::assumption_label()).as_str()));
+        assert!(cond_display.ends_with(')'));
+        // remove the "(assume " from the start and ")" from the end
+        let cond_display = &cond_display[8..cond_display.len() - 1];
+
+        let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_display);
 
         let cond_vars = cond_pat.vars();
         let l_vars = l_pat.vars();

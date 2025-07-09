@@ -70,12 +70,15 @@ fn run_workload_internal<L: SynthLanguage>(
     let t = Instant::now();
     let num_prior = prior.len();
 
+    println!("hi");
+
     // TODO: have option to add constants or special things to the workload.
     let egraph = &state.term_egraph;
-    let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
+    // let's play around with upping the limits a lil bit.
+    let compressed = Scheduler::Compress(Limits::minimize()).run(egraph, &prior);
 
     let mut candidates = if fast_match {
-        Ruleset::fast_cvec_match(&compressed)
+        Ruleset::fast_cvec_match(&compressed, prior.clone())
     } else {
         Ruleset::cvec_match(&compressed)
     };
@@ -90,7 +93,7 @@ fn run_workload_internal<L: SynthLanguage>(
 
     chosen.extend(chosen_total.clone());
 
-    let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
+    let mut compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
     let max_cond_size = 5;
     let mut impls: ImplicationSet<L> = ImplicationSet::new();
@@ -178,6 +181,10 @@ fn run_workload_internal<L: SynthLanguage>(
         );
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
+
+        // compress the egraph with the chosen rules
+        compressed = Scheduler::Compress(prior_limits).run(&cond_egraph, &chosen);
+
     }
 
     // let (chosen, _) = candidates.minimize(prior, Scheduler::Compress(minimize_limits));
@@ -215,7 +222,7 @@ pub fn run_workload<L: SynthLanguage>(
     fast_match: bool,
 ) -> Ruleset<L> {
     let mut state: ChompyState<L> = ChompyState {
-        term_egraph: workload.to_egraph::<L>(),
+        term_egraph: workload.append(Workload::new(&["0", "1"])).to_egraph::<L>(),
         chosen: prior.clone(),
         predicates: cond_workload.clone().unwrap_or_else(|| Workload::empty()),
         implications: ImplicationSet::new(),
