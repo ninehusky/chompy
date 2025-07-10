@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use egg::{AstSize, EGraph, Extractor, Id};
+use egg::{AstSize, EGraph, ENodeOrVar, Extractor, Id, RecExpr, Rewrite};
 
 #[allow(unused_imports)]
 use crate::{
@@ -10,6 +10,7 @@ use crate::{
 };
 use crate::{
     conditions::{assumption::Assumption, manager::EGraphManager},
+    enumo::{Filter, Metric, Workload},
     CVec,
 };
 
@@ -281,7 +282,6 @@ impl<L: SynthLanguage> ImplicationSet<L> {
             manager.add_implications(&actual_selected).unwrap();
             chosen.add_all(actual_selected);
 
-
             // 4. See what merged!
             self.shrink(&mut manager);
         }
@@ -289,6 +289,11 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         // Return only the new implications.
         chosen.remove_all(prior.clone());
         (chosen, invalid)
+    }
+
+    /// Converts the implications in this set to a vector of Egg rewrite rules.
+    pub fn to_egg_rewrites(&self) -> Vec<Rewrite<L, SynthAnalysis>> {
+        self.iter().map(|imp| imp.rewrite()).collect()
     }
 
     /// Removes implications from the set that are subsumed by any of the rules present in the e-graph.
@@ -308,6 +313,49 @@ impl<L: SynthLanguage> ImplicationSet<L> {
             }
         }
     }
+}
+
+/// A useful utility function to construct a minimal set of implication rules
+/// from the given workload, up to a maximum size of 7.
+/// Assumes that the workload's variables are atoms.
+pub fn run_implication_workload<L: SynthLanguage>(
+    wkld: &Workload,
+) -> Vec<Rewrite<L, SynthAnalysis>> {
+    let max_size = 7;
+    let mut chosen: ImplicationSet<L> = ImplicationSet::new();
+
+    // 1. Initialize the e-graph with the variables present in the workload.
+    let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
+
+    let atom_wkld = wkld.clone().filter(Filter::MetricEq(Metric::Atoms, 1));
+    let mut vars: Vec<String> = vec![];
+
+    for t in atom_wkld.force() {
+        let expr: RecExpr<L> = t.to_string().parse().unwrap();
+        for node in expr.as_ref() {
+            if let ENodeOrVar::Var(v) = node.clone().to_enode_or_var() {
+                let mut v = v.to_string();
+                v.remove(0);
+                if !vars.contains(&v) {
+                    vars.push(v);
+                }
+            }
+        }
+    }
+
+    L::initialize_vars(&mut egraph, &vars);
+
+    for size in 1..=max_size {
+        let curr_workload = wkld.clone().filter(Filter::MetricEq(Metric::Atoms, size));
+        for t in curr_workload.force() {
+            egraph.add_expr(&t.to_string().parse::<RecExpr<L>>().unwrap());
+        }
+        let (mut impl_candidates, _) = ImplicationSet::pvec_match(&egraph);
+        let (new_candidates, _) = impl_candidates.minimize(chosen.clone(), Ruleset::default());
+        chosen.add_all(new_candidates);
+    }
+    let rules = chosen.to_egg_rewrites();
+    rules
 }
 
 /// TESTS
@@ -541,7 +589,10 @@ mod pvec_match_tests {
         let egraph: EGraph<Pred, SynthAnalysis> = the_bools.to_egraph();
         println!("egraph size: {}", egraph.number_of_classes());
         let egraph = Scheduler::Compress(Limits::minimize()).run(&egraph, &rules);
-        println!("egraph size after compression: {}", egraph.number_of_classes());
+        println!(
+            "egraph size after compression: {}",
+            egraph.number_of_classes()
+        );
 
         let (mut imps, rules) = ImplicationSet::pvec_match(&egraph);
 

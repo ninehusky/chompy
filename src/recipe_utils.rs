@@ -64,20 +64,19 @@ fn run_workload_internal<L: SynthLanguage>(
     fast_match: bool,
     allow_empty: bool,
 ) -> Ruleset<L> {
-    let prior: Ruleset<L> = state.chosen.clone();
-    let cond_workload = state.predicates.clone();
+    let prior: Ruleset<L> = state.chosen().clone();
+    let cond_workload = state.predicates().clone();
 
     let t = Instant::now();
     let num_prior = prior.len();
 
-    println!("hi");
+    // 1. Create an e-graph from the workload, and compress
+    //    it using the prior rules.
+    let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
+    let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
 
-    // TODO: have option to add constants or special things to the workload.
-    let egraph = &state.term_egraph;
-    // let's play around with upping the limits a lil bit.
-    let compressed = Scheduler::Compress(Limits::minimize()).run(egraph, &prior);
-
-    let mut candidates = if fast_match {
+    // 2. Discover total candidates using cvec matching.
+    let mut total_candidates = if fast_match {
         Ruleset::fast_cvec_match(&compressed, prior.clone())
     } else {
         Ruleset::cvec_match(&compressed)
@@ -85,70 +84,37 @@ fn run_workload_internal<L: SynthLanguage>(
 
     let mut chosen: Ruleset<L> = prior.clone();
 
-    // minimize the total candidates with respect to the prior rules
+    // 3. Shrink the total candidates to a minimal set using the existing rules.
     let (chosen_total, _) =
-        candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
-
-    println!("minimization finished");
+        total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
 
     chosen.extend(chosen_total.clone());
 
+    // 4. Using the rules that we've just discovered, shrink the egraph again.
     let mut compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
-    let max_cond_size = 5;
-    let mut impls: ImplicationSet<L> = ImplicationSet::new();
-    let mut pvec_to_patterns: HashMap<Vec<bool>, Vec<Pattern<L>>> = HashMap::default();
+    // 5. Find conditional rules.
+    // To help Chompy scale to higher condition sizes, we'll need to limit the size of the conditions we consider.
+    // As a heuristic, we'll go in ascending order of condition sizes.
 
     if cond_workload == Workload::empty() {
         // If there are no conditions, we can just return the chosen rules.
         return chosen;
     }
 
+    // TODO: Make this a parameter; 5 is a bit arbitrary lol.
+    let max_cond_size = 5;
+
+    let mut impl_prop_rules = state.implications();
+    let mut pvec_to_patterns = state.pvec_to_patterns().clone();
+
     for cond_size in 1..=max_cond_size {
         let curr_wkld = cond_workload
             .clone()
-            .filter(Filter::MetricLt(Metric::Atoms, cond_size + 1));
-        println!("[{}] Running condition size {}", cond_size, cond_size);
-        println!("size of workload: {}", curr_wkld.force().len());
+            .filter(Filter::MetricEq(Metric::Atoms, cond_size + 1));
+
         if curr_wkld.force().is_empty() {
-            println!("No conditions of size {}", cond_size);
             continue;
-        }
-        let cond_egraph = curr_wkld.to_egraph::<L>();
-        let cond_egraph = Scheduler::Compress(prior_limits).run(&cond_egraph, &prior);
-
-        let extractor = Extractor::new(&cond_egraph, AstSize);
-
-        let (mut candidates, _) = ImplicationSet::pvec_match(&cond_egraph.clone());
-
-        let (new_impls, _) = candidates.minimize(impls.clone(), prior.clone());
-        impls.add_all(new_impls);
-
-        for c in cond_egraph.classes() {
-            let recexpr_tuple = extractor.find_best(c.id);
-            let recexpr = &recexpr_tuple.1;
-            let pat: Pattern<L> = L::generalize(recexpr, &mut Default::default());
-            if !L::pattern_is_predicate(&pat) {
-                continue;
-            }
-
-            let pvec = c
-                .data
-                .cvec
-                .iter()
-                .map(|x| {
-                    if let Some(p) = x.as_ref() {
-                        L::to_bool(p.clone()).unwrap()
-                    } else {
-                        false
-                    }
-                })
-                .collect::<PVec>();
-
-            pvec_to_patterns
-                .entry(pvec.clone())
-                .or_default()
-                .push(recexpr.to_string().parse().unwrap());
         }
 
         let mut conditional_candidates = Ruleset::conditional_cvec_match(
@@ -157,11 +123,7 @@ fn run_workload_internal<L: SynthLanguage>(
             cond_size as usize,
             &mut Default::default(),
             &chosen,
-            &{
-                let mut v = impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>();
-                v.push(merge_eqs());
-                v
-            },
+            &impl_prop_rules,
         );
 
         println!("conditional candidates: {}", conditional_candidates.len());
@@ -173,21 +135,17 @@ fn run_workload_internal<L: SynthLanguage>(
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
             chosen.clone(),
             Scheduler::Compress(minimize_limits),
-            &{
-                let mut v = impls.iter().map(|x| x.rewrite()).collect::<Vec<_>>();
-                v.push(merge_eqs());
-                v
-            },
+            &impl_prop_rules,
         );
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
 
         // compress the egraph with the chosen rules
-        compressed = Scheduler::Compress(prior_limits).run(&cond_egraph, &chosen);
-
+        // NOTE: why was this there? the rules that get added to `chosen` won't affect
+        // a black egraph?
+        // compressed = Scheduler::Compress(prior_limits).run(&cond_egraph, &chosen);
     }
 
-    // let (chosen, _) = candidates.minimize(prior, Scheduler::Compress(minimize_limits));
     let time = t.elapsed().as_secs_f64();
 
     if chosen.is_empty() && !allow_empty {
@@ -221,12 +179,8 @@ pub fn run_workload<L: SynthLanguage>(
     minimize_limits: Limits,
     fast_match: bool,
 ) -> Ruleset<L> {
-    let mut state: ChompyState<L> = ChompyState {
-        term_egraph: workload.append(Workload::new(&["0", "1"])).to_egraph::<L>(),
-        chosen: prior.clone(),
-        predicates: cond_workload.clone().unwrap_or_else(|| Workload::empty()),
-        implications: ImplicationSet::new(),
-    };
+    let mut state: ChompyState<L> =
+        ChompyState::new(workload, prior, cond_workload.unwrap_or(Workload::empty()));
 
     run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true)
 }
@@ -340,21 +294,16 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
         rec.extend(prior);
         let allow_empty = n < 3;
 
-        let mut state: ChompyState<L> = ChompyState {
-            term_egraph: wkld.to_egraph::<L>(),
-            chosen: rec.clone(),
-            predicates: conditions.clone(),
-            implications: ImplicationSet::new(),
-        };
+        let mut state: ChompyState<L> = ChompyState::new(wkld, rec.clone(), conditions.clone());
 
-        let new = run_workload_internal(
+        let new_rules = run_workload_internal(
             &mut state,
             Limits::synthesis(),
             Limits::minimize(),
             true,
             allow_empty,
         );
-        let mut all = new;
+        let mut all = new_rules;
         all.extend(rec);
         all
     }

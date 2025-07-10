@@ -153,7 +153,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         self.0.insert(rule.name.clone(), rule);
     }
 
-    fn add_cond_from_recexprs(&mut self, e1: &RecExpr<L>, e2: &RecExpr<L>, cond: &RecExpr<L>, true_count: usize) {
+    fn add_cond_from_recexprs(
+        &mut self,
+        e1: &RecExpr<L>,
+        e2: &RecExpr<L>,
+        cond: &RecExpr<L>,
+        true_count: usize,
+    ) {
         let map = &mut HashMap::default();
         let l_pat = L::generalize(e1, map);
         let r_pat = L::generalize(e2, map);
@@ -253,16 +259,27 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut strs = vec![];
         for (name, rule) in &self.0 {
             let reverse = if rule.cond.is_some() {
-                Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.clone().unwrap(), rule.true_count)
+                Rule::new_cond(
+                    &rule.rhs,
+                    &rule.lhs,
+                    &rule.cond.clone().unwrap(),
+                    rule.true_count,
+                )
             } else {
                 Rule::new(&rule.rhs, &rule.lhs)
             };
             if reverse.is_some() && self.contains(&reverse.unwrap()) {
                 let cond_display = if rule.cond.is_some() {
                     let cond_display = rule.cond.clone().unwrap().to_string();
-                    assert!(cond_display.starts_with(format!("({}", L::assumption_label()).as_str()));
+                    assert!(
+                        cond_display.starts_with(format!("({}", L::assumption_label()).as_str())
+                    );
                     // remove the starting prefix and the last )
-                    format!(" if {}", &cond_display[format!("({}", L::assumption_label()).len()..cond_display.len() - 1])
+                    format!(
+                        " if {}",
+                        &cond_display
+                            [format!("({}", L::assumption_label()).len()..cond_display.len() - 1]
+                    )
                 } else {
                     "".to_string()
                 };
@@ -325,7 +342,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     // See #5.
     pub fn conditional_cvec_match(
         egraph: &EGraph<L, SynthAnalysis>,
-        conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
+        conditions: &IndexMap<Vec<bool>, Vec<Pattern<L>>>,
         // find candidates with conditions of this size
         cond_size: usize,
         cond_to_egraph: &mut HashMap<String, EGraph<L, SynthAnalysis>>,
@@ -417,10 +434,10 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                                 let egraph = runner.egraph;
 
-                                    // 4. run the rules for a snippet, given the ammo that we see above.
-                                    //    this is the second part that might get ugly.
-                                let egraph = Scheduler::Compress(Limits::deriving())
-                                    .run(&egraph, &prior);
+                                // 4. run the rules for a snippet, given the ammo that we see above.
+                                //    this is the second part that might get ugly.
+                                let egraph =
+                                    Scheduler::Compress(Limits::deriving()).run(&egraph, &prior);
 
                                 egraph
                             });
@@ -497,9 +514,14 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                             // the true count is how many times the condition is true.
 
-                            let true_count = conditions.iter().find(|(_, patterns)| {
-                                patterns.contains(pred_pat)
-                            }).unwrap().0.iter().filter(|&&x| x).count();
+                            let true_count = conditions
+                                .iter()
+                                .find(|(_, patterns)| patterns.contains(pred_pat))
+                                .unwrap()
+                                .0
+                                .iter()
+                                .filter(|&&x| x)
+                                .count();
 
                             candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
                             println!("candidates len: {}", candidates.len());
@@ -598,24 +620,29 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             for (idx, e1) in exprs.iter().enumerate() {
                 for e2 in exprs[(idx + 1)..].iter() {
-
                     // when the limits get high, we get a lot of candidates which should simplify.
                     let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
                     let l = mini_egraph.add_expr(&e1.to_string().parse().unwrap());
                     let r = mini_egraph.add_expr(&e2.to_string().parse().unwrap());
                     let runner: Runner<L, SynthAnalysis> = Runner::default()
                         .with_egraph(mini_egraph.clone())
-                        .run(&prior.iter().map(|rule| rule.rewrite.clone()).collect::<Vec<_>>())
+                        .run(
+                            &prior
+                                .iter()
+                                .map(|rule| rule.rewrite.clone())
+                                .collect::<Vec<_>>(),
+                        )
                         .with_node_limit(100);
 
                     let mini_egraph = runner.egraph;
                     if mini_egraph.find(l) == mini_egraph.find(r) {
                         // e1 and e2 are equivalent in the mini egraph
-                        println!("skippin {} and {} because they are equivalent in the mini egraph", e1, e2);
+                        println!(
+                            "skippin {} and {} because they are equivalent in the mini egraph",
+                            e1, e2
+                        );
                         continue;
                     }
-
-
 
                     println!("candidate: {} ~> {}", e1, e2);
                     candidates.add_from_recexprs(e1, e2);
@@ -625,11 +652,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         candidates
     }
 
-    pub fn select(
-        &mut self,
-        step_size: usize,
-        invalid: &mut Ruleset<L>,
-    ) -> Self {
+    pub fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
         let mut chosen = Self::default();
         self.0
             .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));
