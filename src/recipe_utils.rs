@@ -91,7 +91,7 @@ fn run_workload_internal<L: SynthLanguage>(
     chosen.extend(chosen_total.clone());
 
     // 4. Using the rules that we've just discovered, shrink the egraph again.
-    let mut compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
+    let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
     // 5. Find conditional rules.
     // To help Chompy scale to higher condition sizes, we'll need to limit the size of the conditions we consider.
@@ -105,8 +105,8 @@ fn run_workload_internal<L: SynthLanguage>(
     // TODO: Make this a parameter; 5 is a bit arbitrary lol.
     let max_cond_size = 5;
 
-    let mut impl_prop_rules = state.implications();
-    let mut pvec_to_patterns = state.pvec_to_patterns().clone();
+    let impl_prop_rules = state.implications();
+    let pvec_to_patterns = state.pvec_to_patterns().clone();
 
     for cond_size in 1..=max_cond_size {
         let curr_wkld = cond_workload
@@ -119,11 +119,9 @@ fn run_workload_internal<L: SynthLanguage>(
 
         let mut conditional_candidates = Ruleset::conditional_cvec_match(
             &compressed,
-            &pvec_to_patterns,
-            cond_size as usize,
-            &mut Default::default(),
             &chosen,
-            &impl_prop_rules,
+            &state.pvec_to_patterns(),
+            &state.implications(),
         );
 
         println!("conditional candidates: {}", conditional_candidates.len());
@@ -135,15 +133,10 @@ fn run_workload_internal<L: SynthLanguage>(
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
             chosen.clone(),
             Scheduler::Compress(minimize_limits),
-            &impl_prop_rules,
+            &impl_prop_rules.to_egg_rewrites(),
         );
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
-
-        // compress the egraph with the chosen rules
-        // NOTE: why was this there? the rules that get added to `chosen` won't affect
-        // a black egraph?
-        // compressed = Scheduler::Compress(prior_limits).run(&cond_egraph, &chosen);
     }
 
     let time = t.elapsed().as_secs_f64();

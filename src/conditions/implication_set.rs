@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use egg::{AstSize, EGraph, ENodeOrVar, Extractor, Id, RecExpr, Rewrite};
 
+use egglog::EGraph as EgglogEGraph;
+
 #[allow(unused_imports)]
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
@@ -10,8 +12,8 @@ use crate::{
 };
 use crate::{
     conditions::{assumption::Assumption, manager::EGraphManager},
-    enumo::{Filter, Metric, Workload},
-    CVec,
+    enumo::{Filter, Metric, Scheduler, Workload},
+    CVec, Limits,
 };
 
 /// A set of implications. Like a `Ruleset<L>`, but with implications instead of rewrites.
@@ -94,7 +96,10 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     /// Returns a new `ImplicationSet` and the corresponding synthesized rules.
     // Dev Note: It's really important that the set that's returned from this consists of
     // **generalized rules**.
-    pub fn pvec_match(egraph: &EGraph<L, SynthAnalysis>) -> (Self, Ruleset<L>) {
+    pub fn pvec_match(egraph: &EGraph<L, SynthAnalysis>, prior: &Self) -> (Self, Ruleset<L>) {
+        let mut manager: EGraphManager<L> = EGraphManager::new();
+        manager.add_implications(prior).unwrap();
+
         // Returns true iff cvec1 --> cvec2, i.e., forall i, !cvec[i] or cvec2[i].
         let compare = |cvec1: &CVec<L>, cvec2: &CVec<L>| -> bool {
             for tup in cvec1.iter().zip(cvec2) {
@@ -165,7 +170,15 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                                     let imp = Implication::new(name.into(), lhs, rhs);
                                     match imp {
                                         Ok(imp) => {
-                                            imp_candidates.add(imp);
+                                            // Include the implication as a rule, only
+                                            // if it is not already subsumed by the prior implications.
+                                            manager.add_assumption(imp.lhs().clone()).unwrap();
+                                            manager.add_assumption(imp.rhs().clone()).unwrap();
+                                            manager.run_implication_rules();
+                                            if !manager.check_path(&imp.lhs(), &imp.rhs()).unwrap()
+                                            {
+                                                imp_candidates.add(imp);
+                                            }
                                         }
                                         Err(_) => {
                                             // skip it.
@@ -320,9 +333,12 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 /// Assumes that the workload's variables are atoms.
 pub fn run_implication_workload<L: SynthLanguage>(
     wkld: &Workload,
-) -> Vec<Rewrite<L, SynthAnalysis>> {
+    prior: &ImplicationSet<L>,
+    rules: &Ruleset<L>,
+) -> ImplicationSet<L> {
     let max_size = 7;
     let mut chosen: ImplicationSet<L> = ImplicationSet::new();
+    chosen.add_all(prior.clone());
 
     // 1. Initialize the e-graph with the variables present in the workload.
     let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
@@ -350,15 +366,66 @@ pub fn run_implication_workload<L: SynthLanguage>(
         for t in curr_workload.force() {
             egraph.add_expr(&t.to_string().parse::<RecExpr<L>>().unwrap());
         }
-        let (mut impl_candidates, _) = ImplicationSet::pvec_match(&egraph);
+        egraph = Scheduler::Compress(Limits::minimize()).run(&egraph, rules);
+        let (mut impl_candidates, _) = ImplicationSet::pvec_match(&egraph, &chosen);
         let (new_candidates, _) = impl_candidates.minimize(chosen.clone(), Ruleset::default());
         chosen.add_all(new_candidates);
     }
-    let rules = chosen.to_egg_rewrites();
-    rules
+    chosen
 }
 
 /// TESTS
+#[cfg(test)]
+mod run_implication_workload_tests {
+    use super::*;
+
+    use crate::{
+        enumo::{Ruleset, Workload},
+        halide::Pred,
+        recipe_utils::run_workload,
+        Limits,
+    };
+
+    // This test checks that the implication workload runner can
+    // find implications in a simple workload.
+    #[test]
+    fn run_implication_workload_ok() {
+        let the_bools = Workload::new(&["(OP2 V V)", "V"])
+            .plug("OP2", &Workload::new(&["<", "!="]))
+            .plug("V", &Workload::new(&["a", "b", "c", "0"]));
+
+        let and_wkld = Workload::new(&["(&& V V)"])
+            .plug("V", &the_bools.clone())
+            .append(the_bools.clone());
+
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+
+        let bool_rules: Ruleset<Pred> = run_workload(
+            the_bools.clone(),
+            None,
+            Ruleset::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        all_rules.extend(bool_rules.clone());
+
+        let and_rules: Ruleset<Pred> = run_workload(
+            Workload::new(&["(&& V V)"]).plug("V", &Workload::new(&["a", "b", "0", "1"])),
+            None,
+            Ruleset::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        all_rules.extend(and_rules.clone());
+
+        let rules = run_implication_workload::<Pred>(&and_wkld, &ImplicationSet::new(), &all_rules);
+    }
+}
+
 #[cfg(test)]
 mod select_tests {
     use crate::{conditions::assumption::Assumption, halide::Pred};
@@ -577,7 +644,10 @@ mod pvec_match_tests {
             );
 
         println!("wkld length: {}", the_bools.force().len());
-        let rules: Ruleset<Pred> = run_workload(
+
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+
+        let bool_rules: Ruleset<Pred> = run_workload(
             the_bools.clone(),
             None,
             Ruleset::default(),
@@ -586,21 +656,33 @@ mod pvec_match_tests {
             true,
         );
 
+        all_rules.extend(bool_rules.clone());
+
+        let and_rules: Ruleset<Pred> = run_workload(
+            Workload::new(&["(&& V V)"]).plug("V", &Workload::new(&["a", "b", "0", "1"])),
+            None,
+            Ruleset::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        all_rules.extend(and_rules.clone());
+
         let egraph: EGraph<Pred, SynthAnalysis> = the_bools.to_egraph();
         println!("egraph size: {}", egraph.number_of_classes());
-        let egraph = Scheduler::Compress(Limits::minimize()).run(&egraph, &rules);
+        let egraph = Scheduler::Compress(Limits::minimize()).run(&egraph, &all_rules);
         println!(
             "egraph size after compression: {}",
             egraph.number_of_classes()
         );
+        // let (mut imps, rules) = ImplicationSet::pvec_match(&egraph);
 
-        let (mut imps, rules) = ImplicationSet::pvec_match(&egraph);
+        // let (imps, _invalid) = imps.minimize(ImplicationSet::new(), rules.clone());
 
-        let (imps, _invalid) = imps.minimize(ImplicationSet::new(), rules.clone());
-
-        println!("imps:");
-        for imp in imps.iter() {
-            println!("{}", imp.name());
-        }
+        // println!("imps:");
+        // for imp in imps.iter() {
+        //     println!("{}", imp.name());
+        // }
     }
 }

@@ -22,8 +22,6 @@ mod scheduler;
 mod sexp;
 mod workload;
 
-pub type PVecToPatterns<L> = IndexMap<Vec<bool>, Vec<egg::Pattern<L>>>;
-
 /// Core state used during Chompy synthesis.
 ///
 /// This state is created at the beginning of a synthesis session and evolves as
@@ -38,8 +36,8 @@ pub struct ChompyState<L: SynthLanguage> {
     terms: Workload,
     chosen: Ruleset<L>,
     predicates: Workload,
-    pvec_to_patterns: PVecToPatterns<L>,
-    implication_rules: Vec<Rewrite<L, SynthAnalysis>>,
+    pvec_to_patterns: PredicateMap<L>,
+    implications: ImplicationSet<L>,
 }
 
 impl<L: SynthLanguage> ChompyState<L> {
@@ -59,27 +57,37 @@ impl<L: SynthLanguage> ChompyState<L> {
         &self.predicates
     }
 
-    pub fn implications(&self) -> Vec<Rewrite<L, SynthAnalysis>> {
-        self.implication_rules.clone()
+    pub fn implications(&self) -> &ImplicationSet<L> {
+        &self.implications
     }
 
     pub fn predicates_mut(&mut self) -> &mut Workload {
         &mut self.predicates
     }
 
-    pub fn pvec_to_patterns(&self) -> PVecToPatterns<L> {
+    pub fn pvec_to_patterns(&self) -> PredicateMap<L> {
         build_pvec_to_patterns(self.predicates.clone())
     }
 
     pub fn new(terms: Workload, prior: Ruleset<L>, predicates: Workload) -> Self {
-        let pvec_to_patterns = build_pvec_to_patterns(predicates.clone());
-        let implication_rules = run_implication_workload(&predicates);
+        let pvec_to_patterns = if predicates.is_empty() {
+            Default::default()
+        } else {
+            build_pvec_to_patterns(predicates.clone())
+        };
+
+        let implications = if predicates.is_empty() {
+            ImplicationSet::default()
+        } else {
+            run_implication_workload(&predicates, &ImplicationSet::default(), &prior)
+        };
+
         Self {
             terms,
-            chosen: Ruleset::default(),
+            chosen: prior,
             pvec_to_patterns,
             predicates,
-            implication_rules,
+            implications,
         }
     }
 }
@@ -89,9 +97,9 @@ impl<L: SynthLanguage> ChompyState<L> {
 // candidates.
 // This is going to be really bad if the variables that are in the workload are not the same as
 // the variables in the "main egraph" that's inside the corresponding `ChompyState`.
-fn build_pvec_to_patterns<L: SynthLanguage>(wkld: Workload) -> PVecToPatterns<L> {
+fn build_pvec_to_patterns<L: SynthLanguage>(wkld: Workload) -> PredicateMap<L> {
     let egraph = wkld.to_egraph::<L>();
-    let mut pvec_to_patterns: PVecToPatterns<L> = IndexMap::default();
+    let mut pvec_to_patterns: PredicateMap<L> = IndexMap::default();
     let extractor = Extractor::new(&egraph, AstSize);
     for c in egraph.classes() {
         let recexpr_tuple = extractor.find_best(c.id);
@@ -121,10 +129,4 @@ fn build_pvec_to_patterns<L: SynthLanguage>(wkld: Workload) -> PVecToPatterns<L>
             .push(recexpr.to_string().parse().unwrap());
     }
     pvec_to_patterns
-}
-
-fn build_implication_rules<L: SynthLanguage>(
-    imps: &ImplicationSet<L>,
-) -> Vec<Rewrite<L, SynthAnalysis>> {
-    todo!()
 }

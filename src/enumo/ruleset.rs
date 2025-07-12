@@ -7,15 +7,18 @@ use rayon::prelude::ParallelIterator;
 use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
 
 use crate::{
-    conditions::merge_eqs,
+    conditions::{assumption::Assumption, implication_set::ImplicationSet, merge_eqs},
     enumo::Sexp,
     halide::{self, Pred},
     recipe_utils::run_workload,
-    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, Signature,
+    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
     SynthAnalysis, SynthLanguage,
 };
 
 use super::{Rule, Scheduler, Workload};
+
+/// A mapping from pvecs to their corresponding predicates.
+pub(crate) type PredicateMap<L> = IndexMap<PVec, Vec<Assumption<L>>>;
 
 /// A set of rewrite rules
 #[derive(Clone, Debug)]
@@ -337,186 +340,93 @@ impl<L: SynthLanguage> Ruleset<L> {
         candidates
     }
 
-    /// Returns a ruleset of candidates, as well as a map from rule to condition frequency.
-    // TODO: @ninehusky: should this just be integrated into normal `cvec_match`?
-    // See #5.
+    /// Returns a ruleset of *conditional* rewrite candidates.
+    ///
+    /// This is an extension of `cvec_match` that uses *predicate vectors* ("pvecs")
+    /// to define conditional equivalence between cvecs. A predicate vector is a
+    /// boolean mask indicating under which observations (positions) two cvecs should agree.
+    ///
+    /// Two cvecs, `cvec1` and `cvec2`, are considered conditionally equivalent under a
+    /// predicate vector `pvec` if:
+    ///
+    ///     pvec[i] → (cvec1[i] == cvec2[i])
+    ///
+    /// That is, for every index `i` where `pvec[i]` is true, the corresponding values
+    /// in `cvec1` and `cvec2` must be equal.
+    ///
+    /// ⚠️ Note: This implication is **not symmetric** — we only require that the condition
+    /// is **sufficient** to guarantee equivalence, not necessary. As a result, this
+    /// generates *conditional rewrite candidates* where the condition enables the rule,
+    /// but doesn't exhaustively characterize it.
+    /// ```
+    /// use egg::{EGraph, RecExpr, Runner, Rewrite};
+    /// use indexmap::IndexMap;
+    /// let x = 5;
+    /// ```
     pub fn conditional_cvec_match(
         egraph: &EGraph<L, SynthAnalysis>,
-        conditions: &IndexMap<Vec<bool>, Vec<Pattern<L>>>,
-        // find candidates with conditions of this size
-        cond_size: usize,
-        cond_to_egraph: &mut HashMap<String, EGraph<L, SynthAnalysis>>,
         prior: &Self,
-        impl_rules: &Vec<Rewrite<L, SynthAnalysis>>,
+        conditions: &PredicateMap<L>,
+        implications: &ImplicationSet<L>,
     ) -> Self {
-        println!("cond size: {}", cond_size);
-        let mut by_cvec: IndexMap<&CVec<L>, Vec<Id>> = IndexMap::default();
-
-        for class in egraph.classes() {
-            if class.data.is_defined() {
-                by_cvec.entry(&class.data.cvec).or_default().push(class.id);
-            }
-        }
+        let by_cvec = Self::group_classes_by_cvec(egraph);
 
         let conditional_rules: Ruleset<L> = prior.partition(|r| r.cond.is_some()).0;
-
         let mut candidates = Ruleset::default();
         let extract = Extractor::new(egraph, AstSize);
 
+        let mut predicate_to_egraph: IndexMap<String, EGraph<L, SynthAnalysis>> =
+            IndexMap::default();
+
         let mut i = 0;
+        // 1. For each pair of unequal cvecs, find the conditions that imply their equality.
         for cvec1 in by_cvec.keys() {
             assert_eq!(cvec1.len(), conditions.keys().next().unwrap().len());
             i += 1;
             for cvec2 in by_cvec.keys().skip(i) {
-                // the `equal_vec` is the equality vector for cvec1, cvec2.
-                // it represents their observational equivalence.
-                let equal_vec: Vec<bool> = cvec1
-                    .iter()
-                    .zip(cvec2.iter())
-                    .map(|(a, b)| a == b)
-                    .collect();
+                let predicates =
+                    Self::find_matching_conditions(cvec1.clone(), cvec2.clone(), &conditions);
 
-                if equal_vec.iter().all(|x| *x) || equal_vec.iter().all(|x| !*x) {
-                    continue;
-                }
-
-                // find all conditions under which cvec1 == cvec2.
-                let pvecs: Vec<_> = conditions
-                    .keys()
-                    .filter(|pvec| {
-                        pvec.iter()
-                            .zip(equal_vec.iter())
-                            .all(|(pvec_el, equal_el)| {
-                                // if the pvec is a sufficient condition, then pvec -> equal_el.
-                                // if the pvec is a necessary condition, then equal_el -> pvec (but we won't check for that anymore).
-                                !pvec_el || *equal_el
-                            })
-                    })
-                    .collect();
-
-                // sort pvecs by how often they are true; vectors with more true values should come first.
-                let mut pvecs: Vec<_> = pvecs
-                    .iter()
-                    .map(|pvec| (pvec, pvec.iter().filter(|&&x| x).count()))
-                    .collect();
-                pvecs.sort_by(|(_, count1), (_, count2)| count2.cmp(count1));
-
-                let pred_patterns: Vec<_> = pvecs
-                    .iter()
-                    .filter_map(|(pvec, _)| conditions.get(**pvec))
-                    .flat_map(|patterns| patterns.iter())
-                    .collect();
-
-                for pred_pat in pred_patterns {
-                    let pred_string = pred_pat.to_string();
-                    let mini_egraph =
-                        cond_to_egraph
-                            .entry(pred_string.clone())
-                            .or_insert_with(|| {
-                                println!("inserting {:?}", pred_string); // this should only show on misses
-
-                                // this is the first part that might get ugly.
-                                let mut egraph = egraph.clone();
-
-                                // 2. add the condition to the egraph
-                                let cond_ast = &L::instantiate(pred_pat);
-
-                                println!("adding (assume {})", cond_ast);
-
-                                // 3. run the condition propagation rules
-                                egraph.add_expr(&format!("(assume {})", cond_ast).parse().unwrap());
-
-                                let runner: Runner<L, SynthAnalysis> =
-                                    Runner::new(SynthAnalysis::default())
-                                        .with_egraph(egraph.clone())
-                                        .run(&impl_rules.clone())
-                                        .with_node_limit(500);
-
-                                let egraph = runner.egraph;
-
-                                // 4. run the rules for a snippet, given the ammo that we see above.
-                                //    this is the second part that might get ugly.
-                                let egraph =
-                                    Scheduler::Compress(Limits::deriving()).run(&egraph, &prior);
-
-                                egraph
-                            });
-
-                    // this is fucking stupid to do this here.
-                    // if it gets expensive, we should do some pre-processing on the workload
-                    // to make the upper-level data structure a map from usize -> map<pvec, patterns>
-                    fn size(sexp: &Sexp) -> usize {
-                        match sexp {
-                            Sexp::Atom(_) => 1,
-                            Sexp::List(list) => list.iter().map(size).sum(),
-                        }
-                    }
-
-                    let size = size(&Sexp::from_str(&pred_pat.to_string()).unwrap());
-                    println!("pred pat: {}, size: {}", pred_pat, size);
-                    if size != cond_size {
-                        continue;
-                    }
+                // 2. For each predicate, construct a "colored" egraph that
+                //    models the implications of the predicate.
+                for predicate in predicates {
+                    let pred_string = predicate.to_string();
+                    let mini_egraph = predicate_to_egraph
+                        .entry(pred_string.clone())
+                        .or_insert_with(|| {
+                            Self::construct_conditional_egraph(
+                                egraph,
+                                prior,
+                                &predicate,
+                                implications,
+                            )
+                        });
 
                     for id1 in by_cvec[cvec1].clone() {
                         for id2 in by_cvec[cvec2].clone() {
+                            // 3. Go through each pair of terms with the corresponding cvecs.
                             let (c1, e1) = extract.find_best(id1);
                             let (c2, e2) = extract.find_best(id2);
                             let pred: RecExpr<L> =
-                                RecExpr::from_str(&pred_pat.to_string()).unwrap();
-
-                            fn size(sexp: &Sexp) -> usize {
-                                match sexp {
-                                    Sexp::Atom(_) => 1,
-                                    Sexp::List(list) => list.iter().map(size).sum(),
-                                }
-                            }
-
-                            let curr_size = size(&Sexp::from_str(&pred.to_string()).unwrap());
-
-                            if curr_size != cond_size {
-                                // we're not looking for this condition size
-                                continue;
-                            }
+                                RecExpr::from_str(&predicate.to_string()).unwrap();
 
                             if c1 == usize::MAX || c2 == usize::MAX {
                                 continue;
                             }
 
-                            // 1. get the e-graph with the implication rules already there
-                            let egraph = &mini_egraph;
-
-                            let lexpr = &L::instantiate(&e1.to_string().parse().unwrap());
-                            let rexpr = &L::instantiate(&e2.to_string().parse().unwrap());
-
-                            let l_id = egraph
-                                .lookup_expr(lexpr)
-                                .unwrap_or_else(|| panic!("Did not find {}", lexpr));
-
-                            let r_id = egraph
-                                .lookup_expr(rexpr)
-                                .unwrap_or_else(|| panic!("Did not find {}", rexpr));
-
-                            // 2. check if the lhs and rhs are equivalent in the egraph
-                            if l_id == r_id {
-                                // e1 and e2 are equivalent in the condition egraph
-                                println!(
-                                        "Skipping {} and {} because they are equivalent in the egraph representing {}",
-                                        e1, e2, pred_pat
-                                    );
-                                continue;
-                            }
-                            // END HACK
-
-                            let extractor = Extractor::new(egraph, AstSize);
-                            let (_, e1) = extractor.find_best(l_id);
-                            let (_, e2) = extractor.find_best(r_id);
+                            match Self::get_canonical_conditional_rule(&e1, &e2, mini_egraph) {
+                                Some((e1, e2)) => {
+                                    // 4. If the candidate is a new conditional rule, add it.
+                                    candidates.add_cond_from_recexprs(&e1, &e2, &pred, 0);
+                                }
+                                // otherwise, skip it.
+                                _ => continue,
+                            };
 
                             // the true count is how many times the condition is true.
-
                             let true_count = conditions
                                 .iter()
-                                .find(|(_, patterns)| patterns.contains(pred_pat))
+                                .find(|(_, patterns)| patterns.contains(&predicate))
                                 .unwrap()
                                 .0
                                 .iter()
@@ -532,6 +442,153 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         candidates
+    }
+
+    // Given a candidate conditional rule an an e-graph modeling the world under
+    // the assumption of `candidate`, returns if the candidate models a new
+    // conditional rule.
+    //
+    // If the return value is None, don't add it.
+    // If the return value is (Some(lhs), Some(rhs)), then lhs/rhs
+    // are the syntactically smallest representations of the e-classes
+    // that the candidate's LHS/RHS map to in the egraph.
+    //
+    // TODO: make this a test
+    // For example, if ``candidate` is `(+ (/ x x) (/ x x)) ==> 2 if (!= ?x 0)`,
+    // and `prior` only contains the rule `(/ ?x ?x) ==> 1 if (!= ?x 0)`, you should expect
+    // this function to return Some((+ 1 1), Some(2)).
+    //
+    // If `prior` also contained the total rewrite rule `(+ 1 1) ==> 2`, then you should
+    // expect this function to return None.
+    //
+    // Panics if the candidate is not a conditional rule, or if the LHS/RHS of the
+    // candidate are not present in the egraph.
+    fn get_canonical_conditional_rule(
+        lexpr: &RecExpr<L>,
+        rexpr: &RecExpr<L>,
+        egraph: &EGraph<L, SynthAnalysis>,
+    ) -> Option<(RecExpr<L>, RecExpr<L>)> {
+        let l_id = egraph
+            .lookup_expr(lexpr)
+            .unwrap_or_else(|| panic!("Did not find {}", lexpr));
+
+        let r_id = egraph
+            .lookup_expr(rexpr)
+            .unwrap_or_else(|| panic!("Did not find {}", rexpr));
+
+        // 2. check if the lhs and rhs are equivalent in the egraph
+        if l_id == r_id {
+            // e1 and e2 are equivalent in the condition egraph
+            println!(
+                "Skipping {} and {} because they are equivalent in the egraph",
+                lexpr, rexpr,
+            );
+            return None;
+        }
+
+        let extractor = Extractor::new(egraph, AstSize);
+        let (_, e1) = extractor.find_best(l_id);
+        let (_, e2) = extractor.find_best(r_id);
+
+        Some((e1, e2))
+    }
+
+    // Given a "black egraph" purely modeling non-conditional equalities, a predicate, and an implication
+    // set modeling conditional implications, constructs a new egraph that models the equalities
+    // that hold under the given predicate.
+    fn construct_conditional_egraph(
+        black_egraph: &EGraph<L, SynthAnalysis>,
+        prior: &Ruleset<L>,
+        predicate: &Assumption<L>,
+        impl_rules: &ImplicationSet<L>,
+    ) -> EGraph<L, SynthAnalysis> {
+        let mut colored_egraph = black_egraph.clone();
+
+        // 1. Add the predicate to the egraph.
+        colored_egraph.add_expr(&predicate.clone().into());
+
+        // 2. Run the implication rules on the egraph.
+        let rules = impl_rules.to_egg_rewrites();
+
+        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(colored_egraph.clone())
+            .run(&rules)
+            .with_node_limit(500);
+
+        // 3. If we can compress the egraph further, do so.
+        Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior)
+    }
+
+    // Given two cvecs and a mapping from pvecs to expressions, returns a list of predicates
+    // which observationally imply the equality of the two cvecs.
+    fn find_matching_conditions(
+        cvec1: CVec<L>,
+        cvec2: CVec<L>,
+        pvec_to_patterns: &PredicateMap<L>,
+    ) -> Vec<Assumption<L>> {
+        let equal_vec: Vec<bool> = cvec1
+            .iter()
+            .zip(cvec2.iter())
+            .map(|(a, b)| a == b)
+            .collect();
+
+        if equal_vec.iter().all(|x| *x) || equal_vec.iter().all(|x| !*x) {
+            // If the condition equating the cvec is trivially true or false,
+            // don't return any conditions.
+            return vec![];
+        }
+
+        // find all conditions under which cvec1 == cvec2.
+        let pvecs: Vec<PVec> = pvec_to_patterns
+            .keys()
+            .filter(|pvec| {
+                pvec.iter()
+                    .zip(equal_vec.iter())
+                    .all(|(pvec_el, equal_el)| {
+                        // if the pvec is a sufficient condition, then pvec -> equal_el.
+                        // if the pvec is a necessary condition, then equal_el -> pvec (and we don't check for that).
+                        !pvec_el || *equal_el
+                    })
+            })
+            .cloned()
+            .collect();
+
+        // sort pvecs by how often they are true; vectors with more true values should come first.
+        let mut pvecs: Vec<_> = pvecs
+            .iter()
+            .map(|pvec| (pvec, pvec.iter().filter(|&&x| x).count()))
+            .collect();
+        pvecs.sort_by(|(_, count1), (_, count2)| count2.cmp(count1));
+
+        // for each pvec, find the patterns that match it
+        let mut conditions: Vec<_> = vec![];
+        for (pvec, _) in pvecs {
+            if let Some(patterns) = pvec_to_patterns.get(pvec) {
+                // for each pattern, add it to the conditions
+                for pattern in patterns {
+                    // we only want to add the condition if it is not already in the list
+                    if !conditions.contains(pattern) {
+                        conditions.push(pattern.clone());
+                    }
+                }
+            }
+        }
+        conditions
+    }
+
+    // Takes the given e-graph and returns a mapping from cvecs to the e-classes with that
+    // cvec.
+    fn group_classes_by_cvec(egraph: &EGraph<L, SynthAnalysis>) -> IndexMap<CVec<L>, Vec<Id>> {
+        let mut by_cvec: IndexMap<CVec<L>, Vec<Id>> = IndexMap::default();
+        for class in egraph.classes() {
+            if class.data.is_defined() {
+                by_cvec
+                    .entry(class.data.cvec.clone())
+                    .or_default()
+                    .push(class.id);
+            }
+        }
+        by_cvec
     }
 
     /// Find candidates by CVec matching
@@ -1274,41 +1331,42 @@ pub mod tests {
     // Given the rules: `[(+ 0 1) ==> 1, (/ ?a ?a) ==> 1 if (!= ?a 0)]``,
     // will the candidate (+ 0 (/ ?a ?a)) ==> 1 if (!= ?a 0) get chosen?
     pub fn conditional_cvec_match_filters() {
+        todo!()
         // the bare minimum to get the above rule as a candidate.
-        let workload = Workload::new(&["1", "(+ 0 (/ a a))"]);
+        // let workload = Workload::new(&["1", "(+ 0 (/ a a))"]);
 
-        let condition = Workload::new(&["(!= a 0)"]);
+        // let condition = Workload::new(&["(!= a 0)"]);
 
-        let (cond_map, mut impl_rules) = compute_conditional_structures(&condition);
-        impl_rules.push(merge_eqs());
+        // let (cond_map, mut impl_rules) = compute_conditional_structures(&condition);
+        // impl_rules.push(merge_eqs());
 
-        assert_eq!(impl_rules.len(), 1);
-        assert_eq!(cond_map.len(), 1);
+        // assert_eq!(impl_rules.len(), 1);
+        // assert_eq!(cond_map.len(), 1);
 
-        let mut prior: Ruleset<Pred> = Ruleset::default();
-        prior.add(Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0);
-        prior.add(Rule::from_string("(+ 0 1) ==> 1").unwrap().0);
+        // let mut prior: Ruleset<Pred> = Ruleset::default();
+        // prior.add(Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0);
+        // prior.add(Rule::from_string("(+ 0 1) ==> 1").unwrap().0);
 
-        let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
+        // let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
 
-        let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
-            &egraph,
-            &cond_map,
-            8,
-            &mut Default::default(),
-            &prior,
-            &impl_rules,
-        );
+        // let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
+        //     &egraph,
+        //     &cond_map,
+        //     8,
+        //     &mut Default::default(),
+        //     &prior,
+        //     &impl_rules,
+        // );
 
-        // no candidates should have been discovered.
-        // in the world where (assume (!= a 0)), (/ a a) ==> 1.
-        // thus (+ 0 1) ==> 1 will fire.
-        println!("candidates:");
-        for c in candidates.clone() {
-            println!("   {}", c.1.name);
-        }
+        // // no candidates should have been discovered.
+        // // in the world where (assume (!= a 0)), (/ a a) ==> 1.
+        // // thus (+ 0 1) ==> 1 will fire.
+        // println!("candidates:");
+        // for c in candidates.clone() {
+        //     println!("   {}", c.1.name);
+        // }
 
-        assert!(candidates.is_empty());
+        // assert!(candidates.is_empty());
     }
 
     #[test]
@@ -1317,33 +1375,34 @@ pub mod tests {
     // This rule should be derived from the following rules:
     // `[(- 1 0) ==> 1, (/ ?a ?a) ==> 1 if (!= ?a 0)]`
     pub fn conditional_cvec_match_filters_complex() {
-        let workload = Workload::new(&["(/ a a)", "(- 1 (* b a))"]);
-        let conditions =
-            Workload::new(&["(== b 0)", "(!= b a)", "(&& (== b 0) (!= b a))", "(!= a 0)"]);
+        todo!()
+        // let workload = Workload::new(&["(/ a a)", "(- 1 (* b a))"]);
+        // let conditions =
+        //     Workload::new(&["(== b 0)", "(!= b a)", "(&& (== b 0) (!= b a))", "(!= a 0)"]);
 
-        let (cond_map, mut impl_rules) = compute_conditional_structures(&conditions);
-        impl_rules.push(merge_eqs());
+        // let (cond_map, mut impl_rules) = compute_conditional_structures(&conditions);
+        // impl_rules.push(merge_eqs());
 
-        println!("impl_rules: {:?}", impl_rules);
+        // println!("impl_rules: {:?}", impl_rules);
 
-        let mut prior: Ruleset<Pred> = Ruleset::default();
-        prior.add(Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0);
-        prior.add(Rule::from_string("(- ?a 0) ==> ?a").unwrap().0);
-        prior.add(Rule::from_string("(* 0 ?a) ==> 0").unwrap().0);
+        // let mut prior: Ruleset<Pred> = Ruleset::default();
+        // prior.add(Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0);
+        // prior.add(Rule::from_string("(- ?a 0) ==> ?a").unwrap().0);
+        // prior.add(Rule::from_string("(* 0 ?a) ==> 0").unwrap().0);
 
-        let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
+        // let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
 
-        let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
-            &egraph,
-            &cond_map,
-            8,
-            &mut Default::default(),
-            &prior,
-            &impl_rules,
-        );
+        // let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
+        //     &egraph,
+        //     &cond_map,
+        //     8,
+        //     &mut Default::default(),
+        //     &prior,
+        //     &impl_rules,
+        // );
 
-        // no candidates should have been discovered.
-        assert!(candidates.is_empty());
+        // // no candidates should have been discovered.
+        // assert!(candidates.is_empty());
     }
 
     // given (min ?a ?b) <=> (min ?b ?a), only derive one of [(min ?a ?b) ==> ?a if (<= ?a ?b), (min ?b ?a) ==> ?a if (<= ?a ?b)].
