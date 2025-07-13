@@ -359,6 +359,11 @@ pub fn run_implication_workload<L: SynthLanguage>(
         }
     }
 
+    for t in wkld.force() {
+        println!("wkld term: {}", t);
+    }
+    println!("vars; {:?}", vars);
+
     L::initialize_vars(&mut egraph, &vars);
 
     for size in 1..=max_size {
