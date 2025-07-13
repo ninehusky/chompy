@@ -6,7 +6,7 @@ use crate::{
         implication::{Implication, ImplicationValidationResult},
         merge_eqs,
     },
-    enumo::{egg_to_serialized_egraph, Rule},
+    enumo::Rule,
     *,
 };
 

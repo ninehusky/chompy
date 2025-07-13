@@ -12,7 +12,7 @@ use enumo::{lookup_pattern, Workload};
 
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
-    enumo::{egg_to_serialized_egraph, Sexp},
+    enumo::Sexp,
     recipe_utils::Lang,
     *,
 };
@@ -118,16 +118,6 @@ where
             format!("(assume {})", self.parent_cond).parse().unwrap();
 
         let is_true_my_pattern: Pattern<L> = format!("(assume {})", self.my_cond).parse().unwrap();
-
-        if !lookup_pattern(&is_true_parent_pattern, egraph, subst) {
-            // save the egraph to a json.
-            let serialized = egg_to_serialized_egraph(egraph);
-            serialized.to_json_file("dump.json").unwrap();
-            panic!(
-                "Parent condition {} not found in egraph for {}",
-                self.parent_cond, self.my_cond
-            );
-        }
 
         if lookup_pattern(&is_true_my_pattern, egraph, subst) {
             // we already have the condition in the egraph, so no need to add it.
@@ -525,7 +515,12 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         RecExpr::from(nodes)
     }
 
-    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>, true_count: Option<usize>) -> [i32; 3] {
+    fn score(
+        lhs: &Pattern<Self>,
+        rhs: &Pattern<Self>,
+        cond: &Option<Pattern<Self>>,
+        true_count: Option<usize>,
+    ) -> [i32; 3] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -562,8 +557,11 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             0
         };
 
-
-        [-(l_cost + r_cost + c_cost), (true_count.unwrap_or(i32::MAX as usize) as i32), lhs_bigger]
+        [
+            -(l_cost + r_cost + c_cost),
+            (true_count.unwrap_or(i32::MAX as usize) as i32),
+            lhs_bigger,
+        ]
     }
 
     #[allow(dead_code)]
@@ -930,11 +928,6 @@ pub mod tests {
             .run(&[rule.rewrite()]);
 
         let egraph = runner.egraph.clone();
-
-        let serialized = egg_to_serialized_egraph(&egraph);
-        serialized
-            .to_json_file("implication_toggle_equality_simple.json")
-            .unwrap();
 
         assert!(egraph
             .lookup_expr(&"(assume (== (/ x x) 1))".parse().unwrap())

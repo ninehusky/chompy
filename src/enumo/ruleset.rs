@@ -370,8 +370,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         implications: &ImplicationSet<L>,
     ) -> Self {
         let by_cvec = Self::group_classes_by_cvec(egraph);
-
-        let conditional_rules: Ruleset<L> = prior.partition(|r| r.cond.is_some()).0;
         let mut candidates = Ruleset::default();
         let extract = Extractor::new(egraph, AstSize);
 
@@ -453,14 +451,6 @@ impl<L: SynthLanguage> Ruleset<L> {
     // are the syntactically smallest representations of the e-classes
     // that the candidate's LHS/RHS map to in the egraph.
     //
-    // TODO: make this a test
-    // For example, if ``candidate` is `(+ (/ x x) (/ x x)) ==> 2 if (!= ?x 0)`,
-    // and `prior` only contains the rule `(/ ?x ?x) ==> 1 if (!= ?x 0)`, you should expect
-    // this function to return Some((+ 1 1), Some(2)).
-    //
-    // If `prior` also contained the total rewrite rule `(+ 1 1) ==> 2`, then you should
-    // expect this function to return None.
-    //
     // Panics if the candidate is not a conditional rule, or if the LHS/RHS of the
     // candidate are not present in the egraph.
     fn get_canonical_conditional_rule(
@@ -516,6 +506,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             .with_node_limit(500);
 
         // 3. If we can compress the egraph further, do so.
+        //    This might not be a bad place to use a `Scheduler::Saturating` instead.
         Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior)
     }
 
@@ -944,7 +935,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
-            // assert_eq!(selected.len(), 1); <-- wasn't this here in ruler?
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
         }
@@ -970,6 +960,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         limits: Limits,
         condition_propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> bool {
+        assert!(
+            rule.cond.is_some(),
+            "Rule must have a condition to derive conditionally"
+        );
         let scheduler = Scheduler::Saturating(limits);
         let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
         let lexpr = &L::instantiate(&rule.lhs);
@@ -1102,329 +1096,204 @@ impl<L: SynthLanguage> Ruleset<L> {
     }
 }
 
-pub fn egg_to_serialized_egraph<L, A>(egraph: &EGraph<L, A>) -> egraph_serialize::EGraph
-where
-    L: Language + Display,
-    A: Analysis<L>,
-{
-    use egraph_serialize::*;
-    let mut out = EGraph::default();
-    for class in egraph.classes() {
-        for (i, node) in class.nodes.iter().enumerate() {
-            out.add_node(
-                format!("{}.{}", class.id, i),
-                Node {
-                    op: node.to_string(),
-                    children: node
-                        .children()
-                        .iter()
-                        .map(|id| NodeId::from(format!("{}.0", id)))
-                        .collect(),
-                    subsumed: false,
-                    eclass: ClassId::from(format!("{}", class.id)),
-                    cost: Cost::new(1.0).unwrap(),
-                },
-            )
-        }
-    }
-    out
-}
-
 #[cfg(test)]
-pub mod cond_cvec_match_tests {
-    use egg::{AstSize, EGraph, Extractor, Pattern};
-
-    use crate::{
-        enumo::{Ruleset, Workload},
-        HashMap, PVec, SynthAnalysis, SynthLanguage,
-    };
-
-    // Cond cvec matching should find the candidate (/ a a) ~> 1 if (!= a 0).
-    #[test]
-    fn cond_cvec_match_sanity_div_self() {
-        // use crate::enumo::{rule, scheduler, workload, Rule};
-        // use crate::halide::{compute_conditional_structures, Pred};
-        // use crate::ImplicationSwitch;
-
-        // let workload = Workload::new(&["(/ a a)"]);
-        // let mut egraph = workload.to_egraph();
-
-        // let mut pvec_to_patterns: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
-
-        // let cond_egraph: EGraph<Pred, SynthAnalysis> = Workload::new(&["(!= a 0)"]).to_egraph();
-        // let extractor = Extractor::new(&cond_egraph, AstSize);
-
-        // for c in cond_egraph.classes() {
-        //     let pat = Pred::generalize(&extractor.find_best(c.id).1, &mut Default::default());
-        //     if !Pred::pattern_is_predicate(&pat) {
-        //         continue;
-        //     }
-
-        //     let pvec = c
-        //         .data
-        //         .cvec
-        //         .iter()
-        //         .map(|x| {
-        //             if let Some(p) = x.as_ref() {
-        //                 Pred::to_bool(p.clone()).unwrap()
-        //             } else {
-        //                 false
-        //             }
-        //         })
-        //         .collect::<PVec>();
-
-        //     pvec_to_patterns
-        //         .entry(pvec.clone())
-        //         .or_default()
-        //         .push(pat.clone());
-        // }
-    }
-}
-
-// A series of tests containing some sanity checks about derivability.
-pub mod tests {
-    use crate::conditions::implication_set::ImplicationSet;
-    use crate::enumo::{rule, scheduler, workload, ChompyState, Rule};
-    use crate::halide::{compute_conditional_structures, Pred};
-    use crate::ImplicationSwitch;
+mod ruleset_tests {
+    use crate::conditions::implication::Implication;
 
     use super::*;
-
+    // In the egraph representing `(!= x 0)`, given the ruleset `R = {(/ ?x ?x) ==> 1 if (!= ?x 0)}`,
+    // can we merge the e-classes of `(/ x x)` and `1`?
     #[test]
-    pub fn ugh() {
-        let mut rules = Ruleset::default();
-        let rule: Rule<Pred> = Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0;
-        let dummy: Rule<Pred> = Rule::from_string("(+ ?a (- ?b)) ==> (- ?a ?b)").unwrap().0;
-        let dummy: Rule<Pred> = Rule::from_string("(/ (* -1 ?a) ?b) ==> (* -1 (/ ?a ?b))")
-            .unwrap()
-            .0;
-        assert!(dummy.is_valid());
-        rules.add(rule);
+    fn test_construct_conditional_egraph_basic() {
+        let mut black_egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
 
-        let scheduler = scheduler::Scheduler::Saturating(Limits::minimize());
+        black_egraph.add_expr(&"(/ x x)".parse().unwrap());
+        black_egraph.add_expr(&"1".parse().unwrap());
 
+        let predicate: Assumption<Pred> = "(!= x 0)".into();
+
+        let mut prior: Ruleset<Pred> = Default::default();
+
+        prior.add(Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0);
+
+        let cond_egraph = Ruleset::construct_conditional_egraph(
+            &black_egraph,
+            &prior,
+            &predicate,
+            &Default::default(),
+        );
+
+        let l_id = cond_egraph
+            .lookup_expr(&"(/ x x)".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find (/ x x)"));
+
+        let r_id = cond_egraph
+            .lookup_expr(&"1".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find 1"));
+
+        assert_eq!(cond_egraph.find(l_id), cond_egraph.find(r_id));
+    }
+
+    // same thing as above, but with an additional step of condition implication.
+    #[test]
+    fn test_construct_conditional_egraph_advanced() {
+        let mut black_egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
+
+        black_egraph.add_expr(&"(/ x x)".parse().unwrap());
+        black_egraph.add_expr(&"1".parse().unwrap());
+
+        let predicate: Assumption<Pred> = "(< x 0)".into();
+
+        let mut prior: Ruleset<Pred> = Default::default();
+
+        prior.add(Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0);
+
+        let mut implications: ImplicationSet<Pred> = Default::default();
+        implications.add(
+            Implication::new(
+                "x < 0 -> x != 0".into(),
+                "(< ?x 0)".parse().unwrap(),
+                "(!= ?x 0)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let cond_egraph =
+            Ruleset::construct_conditional_egraph(&black_egraph, &prior, &predicate, &implications);
+
+        let l_id = cond_egraph
+            .lookup_expr(&"(/ x x)".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find (/ x x)"));
+
+        let r_id = cond_egraph
+            .lookup_expr(&"1".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find 1"));
+
+        assert_eq!(cond_egraph.find(l_id), cond_egraph.find(r_id));
+    }
+
+    // can we correctly identify a new conditional rule?
+    #[test]
+    fn get_canonical_conditional_rule_basic() {
         let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
-        egraph.add_expr(&"(max a b)".parse().unwrap());
-        // egraph.add_expr(&"(max b a)".parse().unwrap());
+        egraph.add_expr(&"(+ (/ x x) (/ x x))".parse().unwrap());
+        // we need to add the `(+ 1 1)` here because if we don't, then
+        // the `Scheduler::Compress` won't be able to unify (+ (/ x x) (/ x x)) with (+ 1 1).
+        egraph.add_expr(&"(+ 1 1)".parse().unwrap());
+        egraph.add_expr(&"2".parse().unwrap());
 
-        let egraph = scheduler.run(&egraph, &rules);
-        assert!(
-            egraph.lookup_expr(&"(max a b)".parse().unwrap())
-                == egraph.lookup_expr(&"(max b a)".parse().unwrap())
+        let predicate = "(!= x 0)".parse().unwrap();
+        let mut prior: Ruleset<Pred> = Default::default();
+        prior.add(Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0);
+
+        let implications: ImplicationSet<Pred> = Default::default();
+
+        // construct the conditional egraph
+        let mini_egraph =
+            Ruleset::construct_conditional_egraph(&egraph, &prior, &predicate, &implications);
+
+        let result = Ruleset::get_canonical_conditional_rule(
+            &"(+ (/ x x) (/ x x))".parse().unwrap(),
+            &"2".parse().unwrap(),
+            &mini_egraph,
+        );
+
+        assert!(result.is_some());
+
+        let (lhs, rhs) = result.unwrap();
+
+        assert_eq!(
+            lhs.to_string(),
+            "(+ 1 1)".to_string(),
+            "Expected lhs to be (+ 1 1), got {}",
+            lhs
+        );
+
+        assert_eq!(
+            rhs.to_string(),
+            "2".to_string(),
+            "Expected rhs to be 2, got {}",
+            rhs
         );
     }
 
+    // can we correctly filter out a redundant rule?
     #[test]
-    pub fn condition_fires() {
-        let rule: Rule<Pred> = Rule::from_string("(max ?a ?b) ==> ?a if (<= ?b ?a)")
-            .unwrap()
-            .0;
-        let rule2: Rule<Pred> = Rule::from_string("(max ?a ?b) <=> (max ?b ?a)").unwrap().0;
-        let mut ruleset = Ruleset::default();
-        ruleset.add(rule);
-        ruleset.add(rule2);
-
-        let scheduler = scheduler::Scheduler::Compress(Limits::deriving());
-
+    fn get_canonical_conditional_rule_none() {
         let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
-        let og_id = egraph.add_expr(&"(max a b)".parse().unwrap());
-        egraph.add_expr(&"(assume (<= a b))".parse().unwrap());
+        egraph.add_expr(&"(+ (/ x x) (/ x x))".parse().unwrap());
+        // see `get_canonical_conditional_rule_basic` for why we need to add this `(+ 1 1)`.
+        egraph.add_expr(&"(+ 1 1)".parse().unwrap());
+        egraph.add_expr(&"2".parse().unwrap());
 
-        let egraph = scheduler.run(&egraph, &ruleset);
+        let predicate = "(!= x 0)".parse().unwrap();
+        let mut prior: Ruleset<Pred> = Default::default();
+        prior.add(Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0);
+        prior.add(Rule::from_string("(+ 1 1) ==> 2").unwrap().0);
 
-        let extractor = Extractor::new(&egraph, AstSize);
+        let implications: ImplicationSet<Pred> = Default::default();
 
-        let (_, best_expr) = extractor.find_best(og_id);
-        println!("{}", best_expr);
+        // construct the conditional egraph
+        let mini_egraph =
+            Ruleset::construct_conditional_egraph(&egraph, &prior, &predicate, &implications);
+
+        let result = Ruleset::get_canonical_conditional_rule(
+            &"(+ (/ x x) (/ x x))".parse().unwrap(),
+            &"2".parse().unwrap(),
+            &mini_egraph,
+        );
+
+        assert!(result.is_none());
     }
 
     #[test]
-    pub fn score_is_good() {
-        let rule_1: Rule<Pred> = Rule::from_string("(min ?a (+ ?a ?a)) ==> (+ ?a ?a) if (<= ?a 0)")
-            .unwrap()
-            .0;
+    fn test_find_matching_conditions() {
+        let term_egraph: EGraph<Pred, SynthAnalysis> = Workload::new(&["1", "(/ x x)"]).to_egraph();
+        let one_id = term_egraph
+            .lookup_expr(&"1".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find 1"));
+        let x_div_x_id = term_egraph
+            .lookup_expr(&"(/ x x)".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find (/ x x)"));
+        let one_cvec = term_egraph[one_id].data.cvec.clone();
+        let x_div_x_cvec = term_egraph[x_div_x_id].data.cvec.clone();
 
-        let rule_2: Rule<Pred> = Rule::from_string(
-            "(+ ?a (max ?a ?b)) ==> (min ?a (+ ?a ?a)) if (&& (<= ?b ?a) (<= ?a 0))",
-        )
-        .unwrap()
-        .0;
+        let cond_egraph: EGraph<Pred, SynthAnalysis> =
+            Workload::new(&["(< x 0)", "(!= x 0)", "(!= x 1)"]).to_egraph();
 
-        let mut ruleset = Ruleset::default();
-        ruleset.add(rule_1.clone());
-        ruleset.add(rule_2.clone());
+        let x_lt_zero = cond_egraph
+            .lookup_expr(&"(< x 0)".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find (< x 0)"));
+        let x_ne_zero = cond_egraph
+            .lookup_expr(&"(!= x 0)".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find (!= x 0)"));
+        let x_lt_zero_cvec = cond_egraph[x_lt_zero].data.cvec.clone();
+        let x_ne_zero_cvec = cond_egraph[x_ne_zero].data.cvec.clone();
+        let x_ne_one = cond_egraph
+            .lookup_expr(&"(!= x 1)".parse().unwrap())
+            .unwrap_or_else(|| panic!("Did not find (!= x 1)"));
+        let x_ne_one_cvec = cond_egraph[x_ne_one].data.cvec.clone();
 
-        let mut expected = Ruleset::default();
-        expected.add(rule_1.clone());
+        let to_pvec = |cvec: &CVec<Pred>| -> PVec {
+            cvec.iter()
+                .map(|x| Pred::to_bool(x.unwrap_or(0)).unwrap())
+                .collect::<Vec<bool>>()
+        };
 
-        assert_eq!(ruleset.select(1, &mut Ruleset::default()), expected);
-    }
+        let x_lt_zero_pvec = to_pvec(&x_lt_zero_cvec);
+        let x_ne_zero_pvec = to_pvec(&x_ne_zero_cvec);
+        let x_ne_one_pvec = to_pvec(&x_ne_one_cvec);
 
-    #[test]
-    pub fn score_is_good_2() {
-        let mut ruleset: Ruleset<Pred> = Ruleset::default();
-        ruleset.add(
-            Rule::from_string("(/ ?b ?a) ==> 1 if (&& (!= ?b 0) (== ?b ?a))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(/ ?b ?a) ==> 1 if (&& (!= ?a 0) (== ?a ?b))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(- ?b ?a) ==> (+ ?b ?b) if (== 0 (+ ?b ?a))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(/ ?a ?b) ==> (+ ?a ?a) if (== ?b (+ ?b ?a))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(- ?b ?a) ==> (- ?b) if (== ?b (- ?a ?b))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(- ?b ?a) ==> (- ?b) if (== ?a (+ ?b ?b))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(- ?b ?a) ==> (- ?a) if (== ?a (+ ?a ?b))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(- ?a ?b) ==> ?a if (== ?a (+ ?a ?b))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(
-            Rule::from_string("(- ?b ?a) ==> ?a if (== ?b (+ ?a ?a))")
-                .unwrap()
-                .0,
-        );
-        ruleset.add(Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0);
+        let mut pvec_to_patterns: PredicateMap<Pred> = Default::default();
+        pvec_to_patterns.insert(x_lt_zero_pvec, vec!["(< x 0)".parse().unwrap()]);
+        pvec_to_patterns.insert(x_ne_zero_pvec, vec!["(!= x 0)".parse().unwrap()]);
+        pvec_to_patterns.insert(x_ne_one_pvec, vec!["(!= x 1)".parse().unwrap()]);
 
-        let mut names = vec![];
+        let conditions =
+            Ruleset::<Pred>::find_matching_conditions(x_div_x_cvec, one_cvec, &pvec_to_patterns);
 
-        while !ruleset.is_empty() {
-            let selected = ruleset.select(1, &mut Ruleset::default());
-            if selected.is_empty() {
-                break;
-            }
-            for (_, rule) in selected.0.iter() {
-                println!("  {}", rule.name);
-                names.push(rule.name.clone());
-            }
-            ruleset.remove_all(selected);
-        }
-        println!("selected rules: {:?}", names);
-    }
-
-    #[test]
-    // A test for optimization 2.
-    // Given the rules: `[(+ 0 1) ==> 1, (/ ?a ?a) ==> 1 if (!= ?a 0)]``,
-    // will the candidate (+ 0 (/ ?a ?a)) ==> 1 if (!= ?a 0) get chosen?
-    pub fn conditional_cvec_match_filters() {
-        todo!()
-        // the bare minimum to get the above rule as a candidate.
-        // let workload = Workload::new(&["1", "(+ 0 (/ a a))"]);
-
-        // let condition = Workload::new(&["(!= a 0)"]);
-
-        // let (cond_map, mut impl_rules) = compute_conditional_structures(&condition);
-        // impl_rules.push(merge_eqs());
-
-        // assert_eq!(impl_rules.len(), 1);
-        // assert_eq!(cond_map.len(), 1);
-
-        // let mut prior: Ruleset<Pred> = Ruleset::default();
-        // prior.add(Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0);
-        // prior.add(Rule::from_string("(+ 0 1) ==> 1").unwrap().0);
-
-        // let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
-
-        // let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
-        //     &egraph,
-        //     &cond_map,
-        //     8,
-        //     &mut Default::default(),
-        //     &prior,
-        //     &impl_rules,
-        // );
-
-        // // no candidates should have been discovered.
-        // // in the world where (assume (!= a 0)), (/ a a) ==> 1.
-        // // thus (+ 0 1) ==> 1 will fire.
-        // println!("candidates:");
-        // for c in candidates.clone() {
-        //     println!("   {}", c.1.name);
-        // }
-
-        // assert!(candidates.is_empty());
-    }
-
-    #[test]
-    // Another test for optimization 2.
-    // `(- 1 (* ?b ?a)) ==> (/ ?a ?a) if (&& (== ?b 0) (!= ?b ?a))`
-    // This rule should be derived from the following rules:
-    // `[(- 1 0) ==> 1, (/ ?a ?a) ==> 1 if (!= ?a 0)]`
-    pub fn conditional_cvec_match_filters_complex() {
-        todo!()
-        // let workload = Workload::new(&["(/ a a)", "(- 1 (* b a))"]);
-        // let conditions =
-        //     Workload::new(&["(== b 0)", "(!= b a)", "(&& (== b 0) (!= b a))", "(!= a 0)"]);
-
-        // let (cond_map, mut impl_rules) = compute_conditional_structures(&conditions);
-        // impl_rules.push(merge_eqs());
-
-        // println!("impl_rules: {:?}", impl_rules);
-
-        // let mut prior: Ruleset<Pred> = Ruleset::default();
-        // prior.add(Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0);
-        // prior.add(Rule::from_string("(- ?a 0) ==> ?a").unwrap().0);
-        // prior.add(Rule::from_string("(* 0 ?a) ==> 0").unwrap().0);
-
-        // let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
-
-        // let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
-        //     &egraph,
-        //     &cond_map,
-        //     8,
-        //     &mut Default::default(),
-        //     &prior,
-        //     &impl_rules,
-        // );
-
-        // // no candidates should have been discovered.
-        // assert!(candidates.is_empty());
-    }
-
-    // given (min ?a ?b) <=> (min ?b ?a), only derive one of [(min ?a ?b) ==> ?a if (<= ?a ?b), (min ?b ?a) ==> ?a if (<= ?a ?b)].
-    #[test]
-    fn basic_derive() {
-        let mut ruleset = Ruleset::default();
-        ruleset.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
-
-        let term_workload = Workload::new(&["(min a b)", "(min b a)"]);
-        let cond_workload = Workload::new(&["(<= a b)", "(< a b)"]);
-
-        let found: Ruleset<Pred> = run_workload(
-            term_workload,
-            Some(cond_workload),
-            ruleset,
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-        );
-
-        for r in found {
-            println!("found: {}", r.0);
-        }
+        assert_eq!(conditions.len(), 2);
+        assert!(conditions.contains(&Assumption::from("(< x 0)")));
+        assert!(conditions.contains(&Assumption::from("(!= x 0)")));
     }
 }

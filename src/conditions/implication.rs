@@ -391,7 +391,7 @@ mod implication_tests {
 
 #[allow(unused_imports)]
 mod eq_tests {
-    use crate::{enumo::egg_to_serialized_egraph, ImplicationSwitch};
+    use crate::ImplicationSwitch;
     use egg::{EGraph, Runner};
 
     use super::*;
