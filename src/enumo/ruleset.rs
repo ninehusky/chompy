@@ -359,40 +359,6 @@ impl<L: SynthLanguage> Ruleset<L> {
     /// is **sufficient** to guarantee equivalence, not necessary. As a result, this
     /// generates *conditional rewrite candidates* where the condition enables the rule,
     /// but doesn't exhaustively characterize it.
-    /// ```
-    /// use egg::{EGraph, RecExpr, Runner, Rewrite};
-    /// use indexmap::IndexMap;
-    /// use ruler::halide::Pred;
-    /// use ruler::{SynthAnalysis};
-    /// use ruler::enumo::{ChompyState, Workload, Ruleset};
-    /// use ruler::conditions::implication_set::ImplicationSet;
-    ///
-    /// // This example shows how to use `conditional_cvec_match` to
-    /// // find conditional rewrite candidates.
-    /// // Specifically, we'll see how `conditional_cvec_match` can use
-    /// // existing implications and rulesets to prune redundant rules.
-    ///
-    /// let state: ChompyState<Pred> = ChompyState::new(
-    ///    Workload::new(&["(/ x x)", "1"]),
-    ///    Ruleset::default(),
-    ///    Workload::new(&["(OP x 0)", "x"]).plug("OP", &Workload::new(&["<", "=="]))
-    /// );
-    ///
-    /// eprintln!("state pvec to patterns: {:?}", state.pvec_to_patterns());
-    /// assert!(!state.pvec_to_patterns().is_empty());
-    ///
-    /// let candidates = Ruleset::conditional_cvec_match(
-    ///    &state.terms().to_egraph(),
-    ///    &Ruleset::default(),
-    ///    &state.pvec_to_patterns(),
-    ///    state.implications());
-    ///
-    /// assert!(!candidates.is_empty());
-    ///
-    ///
-    ///
-    ///
-    /// ```
     pub fn conditional_cvec_match(
         egraph: &EGraph<L, SynthAnalysis>,
         prior: &Self,
