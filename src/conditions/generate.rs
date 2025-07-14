@@ -178,200 +178,11 @@ pub fn select(
     chosen
 }
 
-/// Find candidates by CVec matching
-/// (this returns a Ruleset for now, even though these are not actually rewrite rules.)
-pub fn pvec_match(
-    egraph: &EGraph<Pred, SynthAnalysis>,
-    impl_egraph: &mut EgglogEGraph,
-) -> Ruleset<Pred> {
-    fn should_filter(term: String) -> bool {
-        !(term.starts_with("(<")
-            || term.starts_with("(<=")
-            || term.starts_with("(>")
-            || term.starts_with("(>=")
-            || term.starts_with("(&&")
-            || term.starts_with("(||")
-            || term.starts_with("(==")
-            || term.starts_with("(!="))
-    }
-
-    let time_start = std::time::Instant::now();
-
-    println!(
-        "starting cvec match with {} eclasses",
-        egraph.number_of_classes()
-    );
-
-    let not_all_none: Vec<&EClass<Pred, Signature<Pred>>> = egraph
-        .classes()
-        .filter(|x| x.data.cvec.iter().any(|v| v.is_some()))
-        .collect();
-
-    println!("not all none: {}", not_all_none.len());
-
-    let compare = |cvec1: &CVec<Pred>, cvec2: &CVec<Pred>| -> bool {
-        for tup in cvec1.iter().zip(cvec2) {
-            match tup {
-                // if not a -> b == if not (not a or b) == if not a and b
-                (Some(a), Some(b)) if (*a != 0) && (*b == 0) => return false,
-                _ => (),
-            }
-        }
-        true
-    };
-
-    let extract = Extractor::new(egraph, AstSize);
-    let mut by_first: IndexMap<Option<i64>, Vec<Id>> = IndexMap::default();
-    for class in &not_all_none {
-        // println!("cvec: {:?}", class.data.cvec[0].clone());
-        by_first
-            .entry(class.data.cvec[0].clone())
-            .or_insert_with(Vec::new)
-            .push(class.id);
-    }
-
-    let empty = vec![];
-    let first_none = by_first.get(&None).cloned().unwrap_or(empty);
-    let mut candidates: Ruleset<Pred> = Ruleset::default();
-
-    let one_id = egraph.lookup_expr(&"1".parse().unwrap()).unwrap();
-    let zero_id = egraph.lookup_expr(&"0".parse().unwrap()).unwrap();
-
-    for (value, classes) in by_first {
-        let mut all_classes = classes.clone();
-        if value.is_some() {
-            all_classes.extend(first_none.clone());
-        }
-
-        for (i, class1) in egraph.classes().enumerate() {
-            // let class1 = &egraph[all_classes[i]];
-            for class2 in egraph.classes() {
-                if class1.id == class2.id {
-                    continue;
-                }
-
-                if class1.id == zero_id {
-                    continue;
-                }
-
-                if class2.id == one_id {
-                    continue;
-                }
-
-                let (_, e1) = extract.find_best(class1.id);
-                let (_, e2) = extract.find_best(class2.id);
-
-                // if class1's cvec is all zeros...
-                if class1
-                    .data
-                    .cvec
-                    .iter()
-                    .all(|v| v.is_none() || *v == Some(0))
-                {
-                    // skip it.
-                    continue;
-                }
-
-                // if class2's cvec is all ones...
-                if class2
-                    .data
-                    .cvec
-                    .iter()
-                    .all(|v| v.is_none() || *v == Some(1))
-                {
-                    // skip it.
-                    continue;
-                }
-
-                if compare(&class1.data.cvec, &class2.data.cvec) {
-                    // create the implication rule.
-                    let map = &mut HashMap::default();
-                    let l_pat = Pred::generalize(&e1, map);
-                    let r_pat = Pred::generalize(&e2, map);
-
-                    // if the right hand side refers to variables which are not in the left hand side,
-                    // then skip.
-                    if r_pat.vars().iter().any(|v| !l_pat.vars().contains(v)) {
-                        continue;
-                    }
-
-                    if should_filter(l_pat.to_string()) || should_filter(r_pat.to_string()) {
-                        continue;
-                    }
-
-                    let egglog_lhs =
-                        egg_to_egglog(&Sexp::from_str(e1.to_string().as_str()).unwrap());
-                    let egglog_rhs =
-                        egg_to_egglog(&Sexp::from_str(e2.to_string().as_str()).unwrap());
-
-                    println!("querying: (check (path {} {}))", egglog_lhs, egglog_rhs);
-
-                    let lhs_sexp = Sexp::from_str(&l_pat.to_string()).unwrap();
-                    if !well_typed(&lhs_sexp, Type::BoolTy) {
-                        println!("skipping ill-typed lhs: {}", lhs_sexp);
-                        continue;
-                    }
-
-                    let rhs_sexp = Sexp::from_str(&r_pat.to_string()).unwrap();
-                    if !well_typed(&rhs_sexp, Type::BoolTy) {
-                        println!("skipping ill-typed rhs: {}", rhs_sexp);
-                        continue;
-                    }
-
-                    impl_egraph
-                        .parse_and_run_program(None, &format!("(check {})", egglog_lhs))
-                        .unwrap();
-
-                    impl_egraph
-                        .parse_and_run_program(None, &format!("(check {})", egglog_rhs))
-                        .unwrap();
-
-                    if impl_egraph
-                        .parse_and_run_program(
-                            None,
-                            &format!("(check (path {} {}))", egglog_lhs, egglog_rhs),
-                        )
-                        .is_ok()
-                    {
-                        println!("skipping rule: {} -> {} because it is already in the implication egraph", l_pat, r_pat);
-                        continue;
-                    } else {
-                        let error = impl_egraph
-                            .parse_and_run_program(
-                                None,
-                                &format!("(check (path {} {}))", egglog_lhs, egglog_rhs),
-                            )
-                            .err();
-                        if let Some(err) = error {
-                            println!("error: {}", err);
-                        }
-                        println!("adding rule: {} -> {}", l_pat, r_pat);
-                    }
-
-                    candidates.add(Rule {
-                        name: format!("{} -> {}", e1, e2).into(),
-                        lhs: l_pat.clone(),
-                        rhs: r_pat.clone(),
-                        rewrite: ImplicationSwitch::new(&l_pat, &r_pat).rewrite(),
-                        cond: None,
-                        true_count: None,
-                    });
-                }
-            }
-        }
-    }
-
-    println!(
-        "cvec match finished in {} ms",
-        time_start.elapsed().as_millis()
-    );
-
-    candidates
-}
-
 pub fn get_condition_workload() -> Workload {
     // we're going to do conjunctions of ==, != with
     // variables and 0.
+    let start = std::time::Instant::now();
+    println!("Beginning condition workload generation");
 
     let the_atoms = Workload::new(&["a", "b", "c"]).append(Workload::new(&["0"]));
 
@@ -420,23 +231,9 @@ pub fn get_condition_workload() -> Workload {
         true,
     );
 
-    println!("rules: {}", rules.len());
-    for r in rules.iter() {
-        println!("{}", r);
-    }
-
     let branches_better = compress(&branches, rules.clone());
 
-    let branches_forced = branches_better.force();
-
-    println!("theWORKloadD");
-
-    for t in branches_forced.iter() {
-        println!("{}", t);
-    }
-
-    println!("size before: {}", branches.force().len());
-    println!("size after: {}", branches_forced.len());
+    println!("Condition workload generation took: {:?}", start.elapsed());
 
     branches_better
 }
@@ -454,6 +251,8 @@ fn prune_rules(rules: Vec<Rewrite<Pred, SynthAnalysis>>) -> Vec<Rewrite<Pred, Sy
 }
 
 fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
+    let start = std::time::Instant::now();
+    println!("[compress] Starting compression of implication workload.");
     let egraph = workload.to_egraph();
     let compressed = Scheduler::Compress(Limits::minimize()).run(&egraph, &prior);
 
@@ -465,6 +264,13 @@ fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
 
         result = result.append(Workload::new(&[best.to_string()]));
     }
+
+    println!(
+        "[compress] Compression took: {:?}, reduced {} classes to {}",
+        start.elapsed(),
+        egraph.number_of_classes(),
+        compressed.number_of_classes()
+    );
 
     result
 }

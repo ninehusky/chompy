@@ -358,9 +358,18 @@ impl<L: SynthLanguage> Ruleset<L> {
         conditions: &PredicateMap<L>,
         implications: &ImplicationSet<L>,
     ) -> Self {
+        let start_time = std::time::Instant::now();
+
         let by_cvec = Self::group_classes_by_cvec(egraph);
         let mut candidates = Ruleset::default();
         let extract = Extractor::new(egraph, AstSize);
+
+        println!(
+            "[conditional_cvec_match] Starting conditional cvec match with {} unique cvecs and {} pvecs.",
+            by_cvec.len(),
+            conditions.len()
+        );
+        let mut skipped_rules = 0;
 
         let mut predicate_to_egraph: IndexMap<String, EGraph<L, SynthAnalysis>> =
             IndexMap::default();
@@ -413,6 +422,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 Self::get_canonical_conditional_rule(&e1, &e2, mini_egraph);
 
                             if result.is_none() {
+                                skipped_rules += 1;
                                 continue;
                             }
 
@@ -422,13 +432,18 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 predicate.chop_assumption().to_string().parse().unwrap();
                             // 4. If the candidate is a new conditional rule, add it.
                             candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
-
-                            println!("candidates len: {}", candidates.len());
                         }
                     }
                 }
             }
         }
+
+        println!(
+            "[conditional_cvec_match] Found {} candidates in {} ms, skipped {} rules.",
+            candidates.len(),
+            start_time.elapsed().as_millis(),
+            skipped_rules
+        );
 
         candidates
     }
@@ -863,6 +878,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> (Self, Self) {
+        let start_time = std::time::Instant::now();
+        println!(
+            "[minimize_cond]: Minimizing {} rules with {} prior rules and {} prop rules",
+            self.len(),
+            prior.len(),
+            prop_rules.len()
+        );
         let mut invalid: Ruleset<L> = Default::default();
         let mut chosen = prior.clone();
         let step_size = 1;
@@ -917,6 +939,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         // Return only the new rules
         chosen.remove_all(prior);
 
+        println!(
+            "[minimize_cond] Kept {} new rules and found {} invalid rules in {} ms",
+            chosen.len(),
+            invalid.len(),
+            start_time.elapsed().as_millis()
+        );
+
         (chosen, invalid)
     }
 
@@ -925,6 +954,12 @@ impl<L: SynthLanguage> Ruleset<L> {
     ///         1. select the best rule candidate
     ///         2. filter out candidates that are redundant given the addition of the selected rule
     pub fn minimize(&mut self, prior: Ruleset<L>, scheduler: Scheduler) -> (Self, Self) {
+        let start_time = std::time::Instant::now();
+        println!(
+            "[minimize] Minimizing {} rules with {} prior rules",
+            self.len(),
+            prior.len()
+        );
         let mut invalid: Ruleset<L> = Default::default();
         let mut chosen = prior.clone();
         let step_size = 1;
@@ -935,6 +970,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
         // Return only the new rules
         chosen.remove_all(prior);
+
+        println!(
+            "[minimize] Kept {} new rules and found {} invalid rules in {} ms",
+            chosen.len(),
+            invalid.len(),
+            start_time.elapsed().as_millis()
+        );
 
         (chosen, invalid)
     }

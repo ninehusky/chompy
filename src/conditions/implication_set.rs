@@ -97,6 +97,12 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     // Dev Note: It's really important that the set that's returned from this consists of
     // **generalized rules**.
     pub fn pvec_match(egraph: &EGraph<L, SynthAnalysis>, prior: &Self) -> (Self, Ruleset<L>) {
+        let start_time = std::time::Instant::now();
+        let mut skipped_implications = 0;
+        println!(
+            "[pvec_match]: Starting pvec matching in e-graph with {} eclasses",
+            egraph.classes().len()
+        );
         let mut manager: EGraphManager<L> = EGraphManager::new();
         manager.add_implications(prior).unwrap();
 
@@ -177,6 +183,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                                             manager.run_implication_rules();
                                             if !manager.check_path(&imp.lhs(), &imp.rhs()).unwrap()
                                             {
+                                                skipped_implications += 1;
                                                 imp_candidates.add(imp);
                                             }
                                         }
@@ -209,6 +216,13 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                 }
             }
         }
+        println!(
+            "[pvec_match]: Found {} implications, {} equalities, skipped {} implications in {}ms",
+            imp_candidates.len(),
+            eq_candidates.len(),
+            skipped_implications,
+            start_time.elapsed().as_millis()
+        );
         (imp_candidates, eq_candidates)
     }
 
@@ -246,6 +260,13 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     /// - The new implications that were added to the set.
     /// - The implications that were invalidated during the minimization process.
     pub fn minimize(&mut self, prior: ImplicationSet<L>, equalities: Ruleset<L>) -> (Self, Self) {
+        let start_time = std::time::Instant::now();
+        println!("[minimize-impls]: Minimizing {} implications using {} existing implications and {} equalities",
+            self.len(),
+            prior.len(),
+            equalities.len()
+        );
+
         let mut invalid = ImplicationSet::new();
         let mut chosen = prior.clone();
         let mut manager: EGraphManager<L> = EGraphManager::new();
@@ -301,6 +322,12 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 
         // Return only the new implications.
         chosen.remove_all(prior.clone());
+        println!(
+            "[minimize-impls]: Kept {} implications, invalidated {} implications in {}ms",
+            chosen.len(),
+            invalid.len(),
+            start_time.elapsed().as_millis()
+        );
         (chosen, invalid)
     }
 
