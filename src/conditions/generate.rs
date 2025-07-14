@@ -6,6 +6,7 @@ use z3::ast::Ast;
 
 use crate::conditions::assumption::Assumption;
 use crate::conditions::derive::{egg_to_egglog, new_impl_egraph};
+use crate::conditions::implication_set::ImplicationSet;
 use crate::enumo::Sexp;
 use crate::language::SynthLanguage;
 use crate::{
@@ -128,7 +129,6 @@ fn validate_implication(imp: Rule<Pred>, filter_equalities: bool) -> ValidationR
         solver.reset();
     }
 
-
     // with trivial implications out of the way, we can now check if the non-trivial implication is valid.
 
     // println!("checking implication: {} -> {}", lexpr, rexpr);
@@ -158,7 +158,10 @@ pub fn select(
     while selected.len() < step_size {
         let popped = implications.0.pop();
         if let Some((_, rule)) = popped {
-            if matches!(validate_implication(rule.clone(), true), ValidationResult::Valid) {
+            if matches!(
+                validate_implication(rule.clone(), true),
+                ValidationResult::Valid
+            ) {
                 println!("{} is valid", rule.name);
                 selected.add(rule.clone());
             } else {
@@ -251,7 +254,6 @@ pub fn pvec_match(
                     continue;
                 }
 
-
                 if class2.id == one_id {
                     continue;
                 }
@@ -260,17 +262,26 @@ pub fn pvec_match(
                 let (_, e2) = extract.find_best(class2.id);
 
                 // if class1's cvec is all zeros...
-                if class1.data.cvec.iter().all(|v| v.is_none() || *v == Some(0)) {
+                if class1
+                    .data
+                    .cvec
+                    .iter()
+                    .all(|v| v.is_none() || *v == Some(0))
+                {
                     // skip it.
                     continue;
                 }
 
                 // if class2's cvec is all ones...
-                if class2.data.cvec.iter().all(|v| v.is_none() || *v == Some(1)) {
+                if class2
+                    .data
+                    .cvec
+                    .iter()
+                    .all(|v| v.is_none() || *v == Some(1))
+                {
                     // skip it.
                     continue;
                 }
-
 
                 if compare(&class1.data.cvec, &class2.data.cvec) {
                     // create the implication rule.
@@ -403,6 +414,7 @@ pub fn get_condition_workload() -> Workload {
         branches.clone(),
         None,
         eq_rules,
+        ImplicationSet::default(),
         Limits::synthesis(),
         Limits::minimize(),
         true,

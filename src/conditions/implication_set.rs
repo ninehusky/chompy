@@ -330,40 +330,19 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 
 /// A useful utility function to construct a minimal set of implication rules
 /// from the given workload, up to a maximum size of 7.
-/// Assumes that the workload's variables are atoms.
 pub fn run_implication_workload<L: SynthLanguage>(
     wkld: &Workload,
+    vars: &[String],
     prior: &ImplicationSet<L>,
     rules: &Ruleset<L>,
 ) -> ImplicationSet<L> {
-    let max_size = 7;
+    let max_size = 5;
     let mut chosen: ImplicationSet<L> = ImplicationSet::new();
     chosen.add_all(prior.clone());
 
-    // 1. Initialize the e-graph with the variables present in the workload.
+    // 1. Initialize the e-graph with the variables. You need this
+    //    because pvecs are just cvecs, and cvecs need variables!
     let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
-
-    let atom_wkld = wkld.clone().filter(Filter::MetricEq(Metric::Atoms, 1));
-    let mut vars: Vec<String> = vec![];
-
-    for t in atom_wkld.force() {
-        let expr: RecExpr<L> = t.to_string().parse().unwrap();
-        for node in expr.as_ref() {
-            if let ENodeOrVar::Var(v) = node.clone().to_enode_or_var() {
-                let mut v = v.to_string();
-                v.remove(0);
-                if !vars.contains(&v) {
-                    vars.push(v);
-                }
-            }
-        }
-    }
-
-    for t in wkld.force() {
-        println!("wkld term: {}", t);
-    }
-    println!("vars; {:?}", vars);
-
     L::initialize_vars(&mut egraph, &vars);
 
     for size in 1..=max_size {

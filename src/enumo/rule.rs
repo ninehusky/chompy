@@ -1,3 +1,4 @@
+use conditions::assumption::Assumption;
 use egg::{
     Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst,
     Rewrite, Subst,
@@ -17,7 +18,7 @@ pub struct Rule<L: SynthLanguage> {
     /// The pattern to merge
     pub rhs: Pattern<L>,
     /// The condition under which the rule is sound
-    pub cond: Option<Pattern<L>>,
+    pub cond: Option<Assumption<L>>,
     /// egg::Rewrite
     pub rewrite: Rewrite<L, SynthAnalysis>,
     // The number of times the rule's condition is true, which you usually get via fuzzing.
@@ -29,9 +30,13 @@ impl<L: SynthLanguage> Display for Rule<L> {
         match &self.cond {
             Some(cond) => {
                 let cond_str = cond.to_string();
-                assert!(cond_str.starts_with("(assume "));
-                // remove "(assume " from the start and ")" from the end
-                let cond = &cond_str[8..cond_str.len() - 1];
+                assert!(cond_str.starts_with(format!("({}", L::assumption_label()).as_str()));
+                // strip the assumption label from the start and the closing parenthesis from the end
+                let cond = &cond_str
+                    .strip_prefix(format!("({} ", L::assumption_label()).as_str())
+                    .unwrap()
+                    .strip_suffix(')')
+                    .unwrap();
                 write!(f, "{} ==> {} if {}", self.lhs, self.rhs, cond)
             }
             None => write!(f, "{} ==> {}", self.lhs, self.rhs),
@@ -41,16 +46,17 @@ impl<L: SynthLanguage> Display for Rule<L> {
 
 impl<L: SynthLanguage> Rule<L> {
     pub fn from_string(s: &str) -> Result<(Self, Option<Self>), String> {
-        let make_name = |lhs: &Pattern<L>, rhs: &Pattern<L>, cond: Option<Pattern<L>>| -> String {
-            match cond {
-                None => format!("{} ==> {}", lhs, rhs),
-                Some(cond) => format!("{} ==> {} if {}", lhs, rhs, cond),
-            }
-        };
+        let make_name =
+            |lhs: &Pattern<L>, rhs: &Pattern<L>, cond: Option<Assumption<L>>| -> String {
+                match cond {
+                    None => format!("{} ==> {}", lhs, rhs),
+                    Some(cond) => format!("{} ==> {} if {}", lhs, rhs, cond),
+                }
+            };
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
-                let cond: Pattern<L> = r.parse().unwrap();
+                let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
                 (l, Some(cond))
             } else {
                 (s, None)
@@ -195,16 +201,11 @@ impl<L: SynthLanguage> Rule<L> {
     pub fn new_cond(
         l_pat: &Pattern<L>,
         r_pat: &Pattern<L>,
-        cond_pat: &Pattern<L>,
+        cond: &Assumption<L>,
         true_count: Option<usize>,
     ) -> Option<Self> {
-        let cond_pat: Pattern<L> = format!("(assume {})", cond_pat).parse().unwrap();
-
-        let cond_display = cond_pat.to_string();
-        assert!(cond_display.starts_with(format!("({} ", L::assumption_label()).as_str()));
-        assert!(cond_display.ends_with(')'));
-        // remove the "(assume " from the start and ")" from the end
-        let cond_display = &cond_display[8..cond_display.len() - 1];
+        let cond_pat: Pattern<L> = cond.clone().into();
+        let cond_display = cond.chop_assumption();
 
         let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_display);
 
@@ -231,7 +232,7 @@ impl<L: SynthLanguage> Rule<L> {
             name: name.into(),
             lhs: l_pat.clone(),
             rhs: r_pat.clone(),
-            cond: Some(cond_pat.clone()),
+            cond: Some(cond.clone()),
             rewrite: rw,
             true_count,
         })

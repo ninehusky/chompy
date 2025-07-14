@@ -10,6 +10,7 @@ use crate::{
     *,
 };
 
+use conditions::implication_set::ImplicationSet;
 use egg::{RecExpr, Rewrite, Runner};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use log::log;
@@ -533,32 +534,15 @@ impl SynthLanguage for Pred {
     fn validate_with_cond(
         lhs: &Pattern<Self>,
         rhs: &Pattern<Self>,
-        cond: &Pattern<Self>,
+        cond: &Assumption<Self>,
     ) -> ValidationResult {
-        assert!(cond.to_string().len() > 2, "Conditional pattern: {}", cond);
         let mut cfg = z3::Config::new();
         cfg.set_timeout_msec(1000);
         let ctx = z3::Context::new(&cfg);
         let solver = z3::Solver::new(&ctx);
         let zero = z3::ast::Int::from_i64(&ctx, 0);
 
-        // ugh there's some stupid string conversion thing i'm going to try first.
-        // eventually we'll probably want to snip out the underlying child expression
-        // from `assume`.
-
-        let cond_expr = Sexp::from_str(&cond.to_string()).unwrap();
-        let cond: Pattern<Self> = match cond_expr {
-            Sexp::Atom(_) => {
-                // if it's an atom, we can just use it as is.
-                panic!("Expected `(assume <cond>)`, got `{}`", cond_expr);
-            }
-            Sexp::List(l) => {
-                assert_eq!(l.len(), 2);
-                let child_expr = &l[1];
-                let pat: Pattern<Self> = Pattern::from_str(&child_expr.to_string()).unwrap();
-                pat
-            }
-        };
+        let cond: Pattern<Self> = cond.chop_assumption();
 
         let cexpr =
             z3::ast::Bool::not(&egg_to_z3(&ctx, Self::instantiate(&cond).as_ref())._eq(&zero));
@@ -566,21 +550,6 @@ impl SynthLanguage for Pred {
         let lexpr = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref());
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&z3::ast::Bool::implies(&cexpr, &lexpr._eq(&rexpr)).not());
-
-        // if matches!(solver.check(), z3::SatResult::Sat) {
-        //     let model = solver.get_model().unwrap();
-        //     println!(
-        //         "Rule if {} then {} ==> {} is invalid.\nthe model is:\n{:?}eval({}) = {:?}\neval({}) = {:?}\n",
-        //         cond,
-        //         lhs,
-        //         rhs,
-        //         model,
-        //         lhs,
-        //         model.eval(&lexpr),
-        //         rhs,
-        //         model.eval(&rexpr)
-        //     );
-        // }
 
         match solver.check() {
             z3::SatResult::Unsat => ValidationResult::Valid,
@@ -595,6 +564,7 @@ impl SynthLanguage for Pred {
 // 2. when it comes time to check condition implication, use these rules
 //    as opposed to Z3 checking.
 pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalysis>> {
+    panic!("Don't call me.");
     let cond_lang = Lang {
         vars: vec!["a".to_string(), "b".to_string()],
         vals: vec!["0".to_string(), "1".to_string()],
@@ -608,14 +578,6 @@ pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalys
             ],
         ],
     };
-
-    let rules: Ruleset<Pred> = recursive_rules(Metric::Atoms, 5, cond_lang, Ruleset::default());
-
-    println!("ruleset:");
-
-    for rule in rules {
-        println!("{}", rule.0);
-    }
 
     vec![]
 }
@@ -1128,15 +1090,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let start_time = std::time::Instant::now();
     let mut wkld = conditions::generate::get_condition_workload();
-
-    // only want conditions greater than size 2
-    wkld = wkld.filter(Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))));
-
     let mut all_rules = Ruleset::default();
+    let base_implications = base_implications();
 
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
-    println!("hi");
 
     let and_rules = recursive_rules(
         Metric::Atoms,
@@ -1159,12 +1117,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
         .plug("OP", &Workload::new(&["&&"]))
         .plug("V", &comps);
 
-    println!("done workload");
-
     let comp_eq = run_workload(
         and_workload.clone(),
         Some(wkld.clone()),
         all_rules.clone(),
+        base_implications.clone(),
         Limits::synthesis(),
         Limits::minimize(),
         true,
@@ -1173,8 +1130,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     all_rules.extend(comp_eq.clone());
 
     all_rules.pretty_print();
-
-    panic!("donezo");
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
@@ -1185,6 +1140,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             &[&["-"], &["+", "-", "*", "/"]],
         ),
         Ruleset::default(),
+        base_implications.clone(),
         wkld.clone(),
     );
     all_rules.extend(arith_basic.clone());
@@ -1194,6 +1150,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         7,
         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
         all_rules.clone(),
+        base_implications.clone(),
         wkld.clone(),
     );
 
@@ -1217,6 +1174,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             eq_workload,
             Some(wkld.clone()),
             min_max.clone(),
+            base_implications.clone(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
@@ -1230,6 +1188,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         7,
         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
         all_rules.clone(),
+        base_implications.clone(),
         wkld.clone(),
     );
 
@@ -1301,104 +1260,31 @@ pub fn og_recipe() -> Ruleset<Pred> {
     all_rules
 }
 
-pub fn og_recipe_no_conditions() -> Ruleset<Pred> {
-    let mut all_rules = Ruleset::default();
+// A helper function which includes some nice baseline implications.
+fn base_implications() -> ImplicationSet<Pred> {
+    let mut implications = ImplicationSet::default();
 
-    let equality = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["==", "!="]]),
-        all_rules.clone(),
-    );
+    // // (&& ?a ?b) -> ?a
+    // implications.add(
+    //     Implication::new(
+    //         "and-impl-left".into(),
+    //         "(&& ?a ?b)".parse().unwrap(),
+    //         "?a".parse().unwrap(),
+    //     )
+    //     .unwrap(),
+    // );
 
-    all_rules.extend(equality);
+    // // (&& ?a ?b) -> ?b
+    // implications.add(
+    //     Implication::new(
+    //         "and-impl-right".into(),
+    //         "(&& ?a ?b)".parse().unwrap(),
+    //         "?b".parse().unwrap(),
+    //     )
+    //     .unwrap(),
+    // );
 
-    let comparisons = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["<", "<=", ">", ">="]]),
-        all_rules.clone(),
-    );
-
-    all_rules.extend(comparisons);
-
-    let bool_only = recursive_rules(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
-        all_rules.clone(),
-    );
-
-    all_rules.extend(bool_only);
-
-    // corresponds to "mul/div with constants + mul/div with constants and other arith"
-    let arith_basic = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(
-            &["-1", "0", "1"],
-            &["a", "b", "c"],
-            &[&[], &["+", "-", "*", "/", "%"]],
-        ),
-        all_rules.clone(),
-    );
-
-    all_rules.extend(arith_basic.clone());
-
-    let min_max = recursive_rules(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&["abs"], &["min", "max"]]),
-        all_rules.clone(),
-    );
-
-    all_rules.extend(min_max);
-
-    // the special workloads, which mostly revolve around
-    // composing int2boolop(int_term, int_term) or things like that
-    // together.
-    //
-    // let int_lang = Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "-", "min", "max"]]);
-
-    // let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
-    //     .filter(Filter::Contains("VAR".parse().unwrap()))
-    //     .plug("VAR", &Workload::new(int_lang.vars))
-    //     .plug("VAL", &Workload::new(int_lang.vals))
-    //     .append(Workload::new(&["0", "1"]));
-    // // let ops = vec![lang.uops, lang.bops, lang.tops];
-    // for (i, ops) in int_lang.ops.iter().enumerate() {
-    //     int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    // }
-
-    // // for op in &["==", "<", "<=", ">", ">=", "||", "&&"] {
-    // for op in &["<", "<=", ">", ">="] {
-    //     let big_wkld = Workload::new(&["0", "1"]).append(
-    //         Workload::new(&["(OP V V)"])
-    //             // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-    //             // thing where we have to basically feed in these operators one at a time.
-    //             .plug("OP", &Workload::new(&[op]))
-    //             .plug("V", &int_wkld)
-    //             .filter(Filter::MetricLt(Metric::Atoms, 8)),
-    //     );
-
-    //     let wrapped_rules = run_workload(
-    //         big_wkld,
-    //         arith_basic.clone(), // and we gotta append min/max rules here too, to avoid `(max a a)`.
-    //         Limits::synthesis(),
-    //         Limits {
-    //             iter: 1,
-    //             node: 100_000,
-    //             match_: 100_000,
-    //         },
-    //         true,
-    //         None,
-    //         None,
-    //     );
-
-    //     all_rules.extend(wrapped_rules);
-    // }
-
-    all_rules
+    implications
 }
 
 mod tests {

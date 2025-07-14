@@ -3,7 +3,7 @@ use ruler::halide::Pred;
 use ruler::enumo::{Ruleset, Workload};
 use ruler::json_to_recipe;
 
-use ruler::halide::{og_recipe, og_recipe_no_conditions};
+use ruler::halide::{og_recipe};
 use ruler::{ConditionRecipe, Recipe};
 
 use std::fs::File;
@@ -37,7 +37,6 @@ pub enum RecipeType {
     // what we used to run: the default recipe with added nesting
     // that we can't express in the JSON format.
     OgRecipe,
-    OgRecipeNoConditions,
 }
 
 impl FromStr for RecipeType {
@@ -45,7 +44,6 @@ impl FromStr for RecipeType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "og_recipe" => Ok(Self::OgRecipe),
-            "og_recipe_no_conditions" => Ok(Self::OgRecipeNoConditions),
             _ => Err("Invalid recipe type.".to_string()),
         }
     }
@@ -83,7 +81,6 @@ pub async fn main() {
                     let recipe: RecipeType = recipe_type.parse().unwrap();
                     match recipe {
                         RecipeType::OgRecipe => og_recipe(),
-                        RecipeType::OgRecipeNoConditions => og_recipe_no_conditions(),
                     }
                 },
                 (None, Some(recipe_path)) => {

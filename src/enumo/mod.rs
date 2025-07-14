@@ -3,7 +3,7 @@ use crate::{
     HashMap, IndexMap, PVec, SynthAnalysis, SynthLanguage,
 };
 
-use egg::{AstSize, Extractor, Rewrite};
+use egg::{AstSize, ENodeOrVar, Extractor, RecExpr, Rewrite};
 pub use filter::*;
 pub use metric::*;
 pub use pattern::*;
@@ -69,7 +69,31 @@ impl<L: SynthLanguage> ChompyState<L> {
         build_pvec_to_patterns(self.predicates.clone())
     }
 
-    pub fn new(terms: Workload, prior: Ruleset<L>, predicates: Workload) -> Self {
+    /// Creates a new `ChompyState` with the given terms, prior ruleset, and predicates.
+    ///
+    /// Something will go terribly wrong if the variables in `predicates` are not
+    /// a subset of the variables in `terms`.
+    pub fn new(
+        terms: Workload,
+        prior: Ruleset<L>,
+        predicates: Workload,
+        prior_impls: ImplicationSet<L>,
+    ) -> Self {
+        let mut vars = vec![];
+        for t in terms.force() {
+            println!("term: {}", t);
+            let expr: RecExpr<L> = t.to_string().parse().unwrap();
+            for node in expr.as_ref() {
+                if let ENodeOrVar::Var(v) = node.clone().to_enode_or_var() {
+                    let mut v = v.to_string();
+                    v.remove(0);
+                    if !vars.contains(&v) {
+                        vars.push(v);
+                    }
+                }
+            }
+        }
+
         let pvec_to_patterns = if predicates.is_empty() {
             Default::default()
         } else {
@@ -79,7 +103,7 @@ impl<L: SynthLanguage> ChompyState<L> {
         let implications = if predicates.is_empty() {
             ImplicationSet::default()
         } else {
-            run_implication_workload(&predicates, &ImplicationSet::default(), &prior)
+            run_implication_workload(&predicates, &vars, &prior_impls, &prior)
         };
 
         Self {

@@ -166,16 +166,9 @@ impl<L: SynthLanguage> Ruleset<L> {
         let map = &mut HashMap::default();
         let l_pat = L::generalize(e1, map);
         let r_pat = L::generalize(e2, map);
-        let cond_pat = L::generalize(cond, map);
-        if e1.to_string() == "(/ a a)" && e2.to_string() == "1" {
-            println!("div self!");
-            println!("l_pat : {}", l_pat);
-            println!("r_pat : {}", r_pat);
-            println!("cond_pat: {}", cond_pat);
-            panic!();
-        }
-        let forward = Rule::new_cond(&l_pat, &r_pat, &cond_pat, Some(true_count));
-        let backward = Rule::new_cond(&r_pat, &l_pat, &cond_pat, Some(true_count));
+        let cond = Assumption::new(L::generalize(cond, map).to_string()).unwrap();
+        let forward = Rule::new_cond(&l_pat, &r_pat, &cond, Some(true_count));
+        let backward = Rule::new_cond(&r_pat, &l_pat, &cond, Some(true_count));
         if let Some(forward) = forward {
             self.add(forward);
         }
@@ -384,6 +377,16 @@ impl<L: SynthLanguage> Ruleset<L> {
                 // 2. For each predicate, construct a "colored" egraph that
                 //    models the implications of the predicate.
                 for predicate in predicates {
+                    // the true count is how many times the condition is true.
+                    let true_count = conditions
+                        .iter()
+                        .find(|(_, patterns)| patterns.contains(&predicate))
+                        .unwrap()
+                        .0
+                        .iter()
+                        .filter(|&&x| x)
+                        .count();
+
                     let pred_string = predicate.to_string();
                     let mini_egraph = predicate_to_egraph
                         .entry(pred_string.clone())
@@ -401,33 +404,25 @@ impl<L: SynthLanguage> Ruleset<L> {
                             // 3. Go through each pair of terms with the corresponding cvecs.
                             let (c1, e1) = extract.find_best(id1);
                             let (c2, e2) = extract.find_best(id2);
-                            let pred: RecExpr<L> =
-                                RecExpr::from_str(&predicate.to_string()).unwrap();
 
                             if c1 == usize::MAX || c2 == usize::MAX {
                                 continue;
                             }
 
-                            match Self::get_canonical_conditional_rule(&e1, &e2, mini_egraph) {
-                                Some((e1, e2)) => {
-                                    // 4. If the candidate is a new conditional rule, add it.
-                                    candidates.add_cond_from_recexprs(&e1, &e2, &pred, 0);
-                                }
-                                // otherwise, skip it.
-                                _ => continue,
-                            };
+                            let result =
+                                Self::get_canonical_conditional_rule(&e1, &e2, mini_egraph);
 
-                            // the true count is how many times the condition is true.
-                            let true_count = conditions
-                                .iter()
-                                .find(|(_, patterns)| patterns.contains(&predicate))
-                                .unwrap()
-                                .0
-                                .iter()
-                                .filter(|&&x| x)
-                                .count();
+                            if result.is_none() {
+                                continue;
+                            }
 
+                            let (e1, e2) = result.unwrap();
+
+                            let pred: RecExpr<L> =
+                                predicate.chop_assumption().to_string().parse().unwrap();
+                            // 4. If the candidate is a new conditional rule, add it.
                             candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+
                             println!("candidates len: {}", candidates.len());
                         }
                     }
@@ -450,24 +445,24 @@ impl<L: SynthLanguage> Ruleset<L> {
     // Panics if the candidate is not a conditional rule, or if the LHS/RHS of the
     // candidate are not present in the egraph.
     fn get_canonical_conditional_rule(
-        lexpr: &RecExpr<L>,
-        rexpr: &RecExpr<L>,
+        l_expr: &RecExpr<L>,
+        r_expr: &RecExpr<L>,
         egraph: &EGraph<L, SynthAnalysis>,
     ) -> Option<(RecExpr<L>, RecExpr<L>)> {
         let l_id = egraph
-            .lookup_expr(lexpr)
-            .unwrap_or_else(|| panic!("Did not find {}", lexpr));
+            .lookup_expr(l_expr)
+            .unwrap_or_else(|| panic!("Did not find {}", l_expr));
 
         let r_id = egraph
-            .lookup_expr(rexpr)
-            .unwrap_or_else(|| panic!("Did not find {}", rexpr));
+            .lookup_expr(r_expr)
+            .unwrap_or_else(|| panic!("Did not find {}", r_expr));
 
         // 2. check if the lhs and rhs are equivalent in the egraph
         if l_id == r_id {
             // e1 and e2 are equivalent in the condition egraph
             println!(
                 "Skipping {} and {} because they are equivalent in the egraph",
-                lexpr, rexpr,
+                l_expr, r_expr,
             );
             return None;
         }
@@ -491,7 +486,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut colored_egraph = black_egraph.clone();
 
         // 1. Add the predicate to the egraph.
-        colored_egraph.add_expr(&predicate.clone().into());
+        predicate.insert_into_egraph(&mut colored_egraph);
 
         // 2. Run the implication rules on the egraph.
         let rules = impl_rules.to_egg_rewrites();
@@ -688,7 +683,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                         continue;
                     }
 
-                    println!("candidate: {} ~> {}", e1, e2);
                     candidates.add_from_recexprs(e1, e2);
                 }
             }
@@ -744,7 +738,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         by_cond: &IndexMap<String, Ruleset<L>>,
-        most_recent_condition: &Pattern<L>,
+        most_recent_condition: &Assumption<L>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
@@ -797,7 +791,11 @@ impl<L: SynthLanguage> Ruleset<L> {
             let egraph = runner.egraph.clone();
 
             // see if the most recently added condition is in the e-graph.
-            if most_recent_condition.search(&egraph).is_empty() {
+            if most_recent_condition
+                .chop_assumption()
+                .search(&egraph)
+                .is_empty()
+            {
                 println!(
                     "most recent condition {} is not in the egraph representing {}, so skipping.",
                     most_recent_condition, condition
@@ -892,7 +890,8 @@ impl<L: SynthLanguage> Ruleset<L> {
                 continue;
             }
 
-            assert_eq!(selected.len(), 1);
+            // We might add `step_size` rules, and each rule might have a backwards version too.
+            assert!(selected.len() <= step_size * 2);
 
             let most_recent_condition = &selected
                 .0
@@ -965,9 +964,11 @@ impl<L: SynthLanguage> Ruleset<L> {
         let lexpr = &L::instantiate(&rule.lhs);
         let rexpr = &L::instantiate(&rule.rhs);
 
-        let cond = &L::instantiate(&rule.cond.clone().unwrap());
+        let condition = rule.cond.clone().unwrap();
 
-        egraph.add_expr(&format!("(assume {})", cond).parse().unwrap());
+        let cond = &L::instantiate(&condition.chop_assumption());
+
+        condition.insert_into_egraph(&mut egraph);
 
         match derive_type {
             DeriveType::Lhs => {
@@ -1196,7 +1197,7 @@ mod ruleset_tests {
 
         assert!(result.is_some());
 
-        let (lhs, rhs) = result.unwrap();
+        let (lhs, rhs, cond) = result.unwrap();
 
         assert_eq!(
             lhs.to_string(),

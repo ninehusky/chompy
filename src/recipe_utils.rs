@@ -168,12 +168,17 @@ pub fn run_workload<L: SynthLanguage>(
     workload: Workload,
     cond_workload: Option<Workload>,
     prior: Ruleset<L>,
+    prior_impls: ImplicationSet<L>,
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
 ) -> Ruleset<L> {
-    let mut state: ChompyState<L> =
-        ChompyState::new(workload, prior, cond_workload.unwrap_or(Workload::empty()));
+    let mut state: ChompyState<L> = ChompyState::new(
+        workload,
+        prior,
+        cond_workload.unwrap_or(Workload::empty()),
+        prior_impls,
+    );
 
     run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true)
 }
@@ -258,6 +263,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     n: usize,
     lang: Lang,
     prior: Ruleset<L>,
+    prior_impls: ImplicationSet<L>,
     conditions: Workload,
 ) -> Ruleset<L> {
     if n < 1 {
@@ -268,6 +274,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             n - 1,
             lang.clone(),
             prior.clone(),
+            prior_impls.clone(),
             conditions.clone(),
         );
         let base_lang = if lang.ops.len() == 2 {
@@ -287,7 +294,8 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
         rec.extend(prior);
         let allow_empty = n < 3;
 
-        let mut state: ChompyState<L> = ChompyState::new(wkld, rec.clone(), conditions.clone());
+        let mut state: ChompyState<L> =
+            ChompyState::new(wkld, rec.clone(), conditions.clone(), prior_impls);
 
         let new_rules = run_workload_internal(
             &mut state,
@@ -310,7 +318,14 @@ pub fn recursive_rules<L: SynthLanguage>(
     lang: Lang,
     prior: Ruleset<L>,
 ) -> Ruleset<L> {
-    recursive_rules_cond(metric, n, lang, prior, Workload::empty())
+    recursive_rules_cond(
+        metric,
+        n,
+        lang,
+        prior,
+        ImplicationSet::default(),
+        Workload::empty(),
+    )
 }
 
 /// Util function for making a grammar with variables, values, and operators with up to n arguments.

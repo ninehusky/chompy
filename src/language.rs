@@ -4,6 +4,7 @@ use std::{
     str::FromStr,
 };
 
+use conditions::assumption::Assumption;
 use egg::{
     Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language,
     PatternAst, RecExpr, Rewrite, Subst,
@@ -518,7 +519,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     fn score(
         lhs: &Pattern<Self>,
         rhs: &Pattern<Self>,
-        cond: &Option<Pattern<Self>>,
+        cond: &Option<Assumption<Self>>,
         true_count: Option<usize>,
     ) -> [i32; 3] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
@@ -548,7 +549,8 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         vars.extend(lhs.vars());
         vars.extend(rhs.vars());
         if let Some(cond) = cond {
-            vars.extend(cond.vars());
+            let cond_pat = cond.chop_assumption();
+            vars.extend(cond_pat.vars());
         }
 
         let lhs_bigger = if AstSize.cost_rec(&lhs.ast) as i32 > AstSize.cost_rec(&rhs.ast) as i32 {
@@ -657,7 +659,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     fn validate_with_cond(
         _lhs: &Pattern<Self>,
         _rhs: &Pattern<Self>,
-        _cond: &Pattern<Self>,
+        _cond: &Assumption<Self>,
     ) -> ValidationResult {
         ValidationResult::Valid
     }
