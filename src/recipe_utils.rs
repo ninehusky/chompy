@@ -159,7 +159,6 @@ fn run_workload_internal<L: SynthLanguage>(
 ///     3. Find candidates via CVec matching
 ///     4. Minimize the candidates with respect to the prior rules
 pub fn run_workload<L: SynthLanguage>(
-    label: &str,
     workload: Workload,
     cond_workload: Option<Workload>,
     prior: Ruleset<L>,
@@ -168,7 +167,7 @@ pub fn run_workload<L: SynthLanguage>(
     minimize_limits: Limits,
     fast_match: bool,
 ) -> Ruleset<L> {
-    println!("[run_workload] Running workload: {}", label);
+    println!("[run_workload] Running workload");
     let start = Instant::now();
     let mut state: ChompyState<L> = ChompyState::new(
         workload,
@@ -179,10 +178,10 @@ pub fn run_workload<L: SynthLanguage>(
 
     let res = run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true);
     println!(
-        "[run_workload] Finished workload: {} in {:.2}s",
-        label,
+        "[run_workload] Finished workload in {:.2}s",
         start.elapsed().as_secs_f64()
     );
+    res
 }
 
 /// The fast-forwarding algorithm
