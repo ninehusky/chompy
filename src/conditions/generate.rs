@@ -162,10 +162,8 @@ pub fn select(
                 validate_implication(rule.clone(), true),
                 ValidationResult::Valid
             ) {
-                println!("{} is valid", rule.name);
                 selected.add(rule.clone());
             } else {
-                println!("{} is invalid", rule.name);
                 invalid.add(rule.clone());
             }
         } else {

@@ -124,12 +124,6 @@ fn run_workload_internal<L: SynthLanguage>(
             &state.implications(),
         );
 
-        println!("conditional candidates: {}", conditional_candidates.len());
-        for c in conditional_candidates.clone() {
-            println!("  - {}", c.0);
-            println!("true count: {:?}", c.1.true_count);
-        }
-
         let (chosen_cond, _) = conditional_candidates.minimize_cond(
             chosen.clone(),
             Scheduler::Compress(minimize_limits),
@@ -165,6 +159,7 @@ fn run_workload_internal<L: SynthLanguage>(
 ///     3. Find candidates via CVec matching
 ///     4. Minimize the candidates with respect to the prior rules
 pub fn run_workload<L: SynthLanguage>(
+    label: &str,
     workload: Workload,
     cond_workload: Option<Workload>,
     prior: Ruleset<L>,
@@ -173,6 +168,8 @@ pub fn run_workload<L: SynthLanguage>(
     minimize_limits: Limits,
     fast_match: bool,
 ) -> Ruleset<L> {
+    println!("[run_workload] Running workload: {}", label);
+    let start = Instant::now();
     let mut state: ChompyState<L> = ChompyState::new(
         workload,
         prior,
@@ -180,7 +177,12 @@ pub fn run_workload<L: SynthLanguage>(
         prior_impls,
     );
 
-    run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true)
+    let res = run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true);
+    println!(
+        "[run_workload] Finished workload: {} in {:.2}s",
+        label,
+        start.elapsed().as_secs_f64()
+    );
 }
 
 /// The fast-forwarding algorithm

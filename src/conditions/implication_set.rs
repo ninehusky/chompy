@@ -223,6 +223,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
             skipped_implications,
             start_time.elapsed().as_millis()
         );
+        println!();
         (imp_candidates, eq_candidates)
     }
 
@@ -287,10 +288,6 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         // We shrink here just in case the best candidate is subsumed by the prior implications.
         self.shrink(&mut manager);
 
-        println!("prior:");
-        for imp in prior.iter() {
-            println!("  {}", imp.name());
-        }
         while !self.is_empty() {
             // 2. Pick some candidates to include.
             let selected = self.select(step_size, &mut invalid);

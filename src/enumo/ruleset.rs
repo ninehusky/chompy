@@ -418,8 +418,12 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 continue;
                             }
 
-                            let result =
-                                Self::get_canonical_conditional_rule(&e1, &e2, mini_egraph);
+                            let result = Self::get_canonical_conditional_rule(
+                                &e1,
+                                &e2,
+                                &predicate,
+                                mini_egraph,
+                            );
 
                             if result.is_none() {
                                 skipped_rules += 1;
@@ -462,6 +466,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     fn get_canonical_conditional_rule(
         l_expr: &RecExpr<L>,
         r_expr: &RecExpr<L>,
+        cond: &Assumption<L>,
         egraph: &EGraph<L, SynthAnalysis>,
     ) -> Option<(RecExpr<L>, RecExpr<L>)> {
         let l_id = egraph
@@ -476,8 +481,8 @@ impl<L: SynthLanguage> Ruleset<L> {
         if l_id == r_id {
             // e1 and e2 are equivalent in the condition egraph
             println!(
-                "Skipping {} and {} because they are equivalent in the egraph",
-                l_expr, r_expr,
+                "Skipping {} and {} because they are equivalent in the egraph representing {}",
+                l_expr, r_expr, cond.pat
             );
             return None;
         }
@@ -692,7 +697,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     if mini_egraph.find(l) == mini_egraph.find(r) {
                         // e1 and e2 are equivalent in the mini egraph
                         println!(
-                            "skippin {} and {} because they are equivalent in the mini egraph",
+                            "skipping {} and {} because they are equivalent in the mini egraph",
                             e1, e2
                         );
                         continue;
@@ -716,10 +721,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             let popped = self.0.pop();
             if let Some((_, rule)) = popped {
                 if rule.is_valid() {
-                    println!("{} is valid", rule.name);
                     selected.add(rule.clone());
                 } else {
-                    println!("{} is invalid", rule.name);
                     invalid.add(rule.clone());
                 }
 
@@ -784,8 +787,8 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             // 2. Add the condition to the e-graph.
             let cond_pat: &Pattern<L> = &condition.parse().unwrap();
+
             let cond_ast = &L::instantiate(cond_pat);
-            println!("adding {}", cond_ast);
             egraph.add_expr(&format!("(assume {})", cond_ast).parse().unwrap());
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
@@ -805,39 +808,27 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             let egraph = runner.egraph.clone();
 
-            // see if the most recently added condition is in the e-graph.
+            // TODO: make this an optimization flag
             if most_recent_condition
                 .chop_assumption()
                 .search(&egraph)
                 .is_empty()
             {
-                println!(
-                    "most recent condition {} is not in the egraph representing {}, so skipping.",
-                    most_recent_condition, condition
-                );
-                // then it's not relevant
+                // if the most recent condition is not in the e-graph, then it's not relevant
                 continue;
             }
 
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
             let scheduler = Scheduler::Compress(Limits::deriving());
-            println!("chosen: ");
-            for rule in chosen.0.values() {
-                println!("  {}: {}", rule.name, rule.lhs);
-            }
             let egraph = scheduler.run(&runner.egraph, &chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
-                println!("seeing if we can derive this rule: {}", rule.name);
                 if egraph.find(l_id) == egraph.find(r_id) {
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
-                    println!("removing {}", rule.name);
                     self.remove_all(dummy.clone());
-                } else {
-                    println!("keeping {}", rule.name);
                 }
             }
         }
@@ -902,12 +893,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         while !self.is_empty() {
-            println!("candidates remaining: {}", self.len());
             let selected = self.select(step_size, &mut invalid);
-            println!("selected: {}", selected.len());
-            for (rule_name, rule) in &selected.0 {
-                println!("  {}: {}", rule_name, rule.lhs);
-            }
             if selected.is_empty() {
                 continue;
             }
@@ -927,7 +913,6 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             chosen.extend(selected.clone());
 
-            println!("now, calling shrink!");
             self.shrink_cond(
                 &chosen,
                 scheduler,
@@ -977,6 +962,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             invalid.len(),
             start_time.elapsed().as_millis()
         );
+        println!();
 
         (chosen, invalid)
     }

@@ -81,7 +81,6 @@ impl<L: SynthLanguage> ChompyState<L> {
     ) -> Self {
         let mut vars = vec![];
         for t in terms.force() {
-            println!("term: {}", t);
             let expr: RecExpr<L> = t.to_string().parse().unwrap();
             for node in expr.as_ref() {
                 if let ENodeOrVar::Var(v) = node.clone().to_enode_or_var() {
