@@ -1,5 +1,7 @@
+use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite, Subst
+    Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst,
+    Rewrite, Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -16,15 +18,27 @@ pub struct Rule<L: SynthLanguage> {
     /// The pattern to merge
     pub rhs: Pattern<L>,
     /// The condition under which the rule is sound
-    pub cond: Option<Pattern<L>>,
+    pub cond: Option<Assumption<L>>,
     /// egg::Rewrite
     pub rewrite: Rewrite<L, SynthAnalysis>,
+    // The number of times the rule's condition is true, which you usually get via fuzzing.
+    pub true_count: Option<usize>,
 }
 
 impl<L: SynthLanguage> Display for Rule<L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.cond {
-            Some(cond) => write!(f, "{} ==> {} if {}", self.lhs, self.rhs, cond),
+            Some(cond) => {
+                let cond_str = cond.to_string();
+                assert!(cond_str.starts_with(format!("({}", L::assumption_label()).as_str()));
+                // strip the assumption label from the start and the closing parenthesis from the end
+                let cond = &cond_str
+                    .strip_prefix(format!("({} ", L::assumption_label()).as_str())
+                    .unwrap()
+                    .strip_suffix(')')
+                    .unwrap();
+                write!(f, "{} ==> {} if {}", self.lhs, self.rhs, cond)
+            }
             None => write!(f, "{} ==> {}", self.lhs, self.rhs),
         }
     }
@@ -32,16 +46,17 @@ impl<L: SynthLanguage> Display for Rule<L> {
 
 impl<L: SynthLanguage> Rule<L> {
     pub fn from_string(s: &str) -> Result<(Self, Option<Self>), String> {
-        let make_name = |lhs: &Pattern<L>, rhs: &Pattern<L>, cond: Option<Pattern<L>>| -> String {
-            match cond {
-                None => format!("{} ==> {}", lhs, rhs),
-                Some(cond) => format!("{} ==> {} if {}", lhs, rhs, cond),
-            }
-        };
+        let make_name =
+            |lhs: &Pattern<L>, rhs: &Pattern<L>, cond: Option<Assumption<L>>| -> String {
+                match cond {
+                    None => format!("{} ==> {}", lhs, rhs),
+                    Some(cond) => format!("{} ==> {} if {}", lhs, rhs, cond),
+                }
+            };
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
-                let cond: Pattern<L> = r.parse().unwrap();
+                let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
                 (l, Some(cond))
             } else {
                 (s, None)
@@ -54,7 +69,7 @@ impl<L: SynthLanguage> Rule<L> {
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
             let forwards = if cond.is_some() {
-                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap()).unwrap()
+                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None).unwrap()
             } else {
                 Self {
                     name: name.clone().into(),
@@ -63,6 +78,7 @@ impl<L: SynthLanguage> Rule<L> {
                     cond: cond.clone(),
                     rewrite: Rewrite::new(name.clone(), l_pat.clone(), Rhs { rhs: r_pat.clone() })
                         .unwrap(),
+                    true_count: None,
                 }
             };
 
@@ -79,6 +95,7 @@ impl<L: SynthLanguage> Rule<L> {
                     cond: cond.clone(),
                     rewrite: Rewrite::new(Symbol::from(backwards_name), r_pat, Rhs { rhs: l_pat })
                         .unwrap(),
+                    true_count: None,
                 };
                 Ok((forwards, Some(backwards)))
             } else {
@@ -175,17 +192,22 @@ impl<L: SynthLanguage> Condition<L, SynthAnalysis> for ConditionChecker<L> {
         _eclass: egg::Id,
         subst: &Subst,
     ) -> bool {
-        // let is_true_pat: Pattern<L> = format!("(istrue {})", self.cond).parse().unwrap();
+        // let is_true_pat: Pattern<L> = format!("(assume {})", self.cond).parse().unwrap();
         lookup_pattern(&self.cond, egraph, subst)
     }
 }
 
 impl<L: SynthLanguage> Rule<L> {
-    pub fn new_cond(l_pat: &Pattern<L>, r_pat: &Pattern<L>, cond_pat: &Pattern<L>) -> Option<Self> {
-        let cond_pat: Pattern<L> = format!("(istrue {})", cond_pat).parse().unwrap();
-        let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_pat);
+    pub fn new_cond(
+        l_pat: &Pattern<L>,
+        r_pat: &Pattern<L>,
+        cond: &Assumption<L>,
+        true_count: Option<usize>,
+    ) -> Option<Self> {
+        let cond_pat: Pattern<L> = cond.clone().into();
+        let cond_display = cond.chop_assumption();
 
-
+        let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_display);
 
         let cond_vars = cond_pat.vars();
         let l_vars = l_pat.vars();
@@ -210,8 +232,9 @@ impl<L: SynthLanguage> Rule<L> {
             name: name.into(),
             lhs: l_pat.clone(),
             rhs: r_pat.clone(),
-            cond: Some(cond_pat.clone()),
+            cond: Some(cond.clone()),
             rewrite: rw,
+            true_count,
         })
     }
 
@@ -226,6 +249,7 @@ impl<L: SynthLanguage> Rule<L> {
             rhs: r_pat.clone(),
             cond: None,
             rewrite: rw,
+            true_count: None,
         })
     }
 
@@ -246,7 +270,7 @@ impl<L: SynthLanguage> Rule<L> {
     }
 
     pub fn score(&self) -> impl Ord + Debug {
-        L::score(&self.lhs, &self.rhs, &self.cond)
+        L::score(&self.lhs, &self.rhs, &self.cond, self.true_count)
     }
 
     /// Whether the rule is sound
@@ -344,7 +368,7 @@ mod test {
         egraph.add_expr(&"(/ x x)".parse().unwrap());
         egraph.add_expr(&"1".parse().unwrap());
 
-        egraph.add_expr(&"(istrue (!= x 0))".parse().unwrap());
+        egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph)
@@ -368,7 +392,7 @@ mod test {
         egraph.add_expr(&"(/ x x)".parse().unwrap());
         egraph.add_expr(&"1".parse().unwrap());
 
-        egraph.add_expr(&"(istrue (== x 0))".parse().unwrap());
+        egraph.add_expr(&"(assume (== x 0))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph)
@@ -405,7 +429,7 @@ mod test {
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
 
-        egraph.add_expr(&"(istrue (> x 5))".parse().unwrap());
+        egraph.add_expr(&"(assume (> x 5))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
@@ -413,7 +437,7 @@ mod test {
 
         let mut result = runner.egraph.clone();
         assert!(result
-            .lookup_expr(&"(istrue (!= x 0))".parse().unwrap())
+            .lookup_expr(&"(assume (!= x 0))".parse().unwrap())
             .is_some());
 
         result.add_expr(&"(/ x x)".parse().unwrap());

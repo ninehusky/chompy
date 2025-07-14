@@ -32,6 +32,23 @@ impl Workload {
         )
     }
 
+    /// Check if the workload is empty.
+    /// ```
+    /// use enumo::Workload;
+    /// let wkld = Workload::new(["a", "b"]);
+    /// assert!(!wkld.is_empty());
+    /// let wkld = Workload::empty();
+    /// assert!(wkld.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Workload::Set(xs) => xs.is_empty(),
+            Workload::Plug(_, _, pegs) => pegs.is_empty(),
+            Workload::Filter(_, wkld) => wkld.is_empty(),
+            Workload::Append(wklds) => wklds.is_empty(),
+        }
+    }
+
     pub fn empty() -> Self {
         Self::Set(vec![])
     }
@@ -68,7 +85,9 @@ impl Workload {
         // able to be used by other expressions that contain variables
         // For some reason, it appears the order we initialize these variables
         // can matter, so make sure we preserve the order in the workload.
-        // TODO: why does this order matter?
+        // The order matters because if you mix up the order, the expression
+        // "(- a b)" will have different cvecs in the workload ["b", "a", "(- a b)"]
+        // and ["a", "b", "(- a b)"] even though it's the same expression.
         let mut vars: Vec<String> = vec![];
         for sexp in sexps.iter() {
             let expr: RecExpr<L> = sexp.to_string().parse().unwrap();

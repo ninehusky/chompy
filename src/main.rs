@@ -3,8 +3,7 @@ use ruler::halide::Pred;
 use ruler::enumo::{Ruleset, Workload};
 use ruler::json_to_recipe;
 
-use ruler::halide::recipe_to_rules;
-use ruler::halide::{og_recipe, og_recipe_no_conditions};
+use ruler::halide::{og_recipe};
 use ruler::{ConditionRecipe, Recipe};
 
 use std::fs::File;
@@ -38,7 +37,6 @@ pub enum RecipeType {
     // what we used to run: the default recipe with added nesting
     // that we can't express in the JSON format.
     OgRecipe,
-    OgRecipeNoConditions,
 }
 
 impl FromStr for RecipeType {
@@ -46,7 +44,6 @@ impl FromStr for RecipeType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "og_recipe" => Ok(Self::OgRecipe),
-            "og_recipe_no_conditions" => Ok(Self::OgRecipeNoConditions),
             _ => Err("Invalid recipe type.".to_string()),
         }
     }
@@ -84,12 +81,12 @@ pub async fn main() {
                     let recipe: RecipeType = recipe_type.parse().unwrap();
                     match recipe {
                         RecipeType::OgRecipe => og_recipe(),
-                        RecipeType::OgRecipeNoConditions => og_recipe_no_conditions(),
                     }
                 },
                 (None, Some(recipe_path)) => {
-                    let recipe = json_to_recipe(recipe_path.to_str().unwrap());
-                    recipe_to_rules(&recipe)
+                    // let recipe = json_to_recipe(recipe_path.to_str().unwrap());
+                    // recipe_to_rules(&recipe)
+                    Default::default()
                 }
                 (Some(_), Some(_)) => panic!("both recipe types provided."),
                 (None, None) => panic!("no recipe type provided.")
@@ -180,12 +177,13 @@ pub async fn run_gpt_eval() -> Ruleset<Pred> {
             // we append `vars` here because without them, we don't get the correct cvec length.
             cond_r = Some(c.append(Workload::new(vars.clone())));
         }
-        let ruleset = halide::soup_to_rules(
-            &workload,
-            cond_r.as_ref(),
-            &prior_ruleset,
-            recipe.max_size
-        );
+        // let ruleset = halide::soup_to_rules(
+        //     &workload,
+        //     cond_r.as_ref(),
+        //     &prior_ruleset,
+        //     recipe.max_size
+        // );
+        let ruleset = Default::default();
 
         prior_ruleset.extend(ruleset);
     }

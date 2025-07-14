@@ -1,14 +1,22 @@
 use std::{
     fmt::{Debug, Display},
-    hash::Hash, str::FromStr,
+    hash::Hash,
+    str::FromStr,
 };
 
+use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language, PatternAst, RecExpr, Rewrite, Subst
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language,
+    PatternAst, RecExpr, Rewrite, Subst,
 };
 use enumo::{lookup_pattern, Workload};
 
-use crate::{enumo::{egg_to_serialized_egraph, Sexp}, recipe_utils::Lang, *};
+use crate::{
+    conditions::implication::{Implication, ImplicationValidationResult},
+    enumo::Sexp,
+    recipe_utils::Lang,
+    *,
+};
 
 // An `ImplicationSwitch` models the implication of one condition to another.
 //
@@ -71,7 +79,8 @@ fn search_pat<L: Language, A: Analysis<L>>(
     ids[0]
 }
 
-fn apply_pat<L: Language, A: Analysis<L>>(
+// Given a subst and a pattern, this function adds the substituted pattern to the egraph.
+pub(crate) fn apply_pat<L: Language, A: Analysis<L>>(
     pat: &[ENodeOrVar<L>],
     egraph: &mut EGraph<L, A>,
     subst: &Subst,
@@ -107,20 +116,9 @@ where
         // it better be the case that the parent condition exists in the e-graph.
 
         let is_true_parent_pattern: Pattern<L> =
-            format!("(istrue {})", self.parent_cond).parse().unwrap();
+            format!("(assume {})", self.parent_cond).parse().unwrap();
 
-        let is_true_my_pattern: Pattern<L> = format!("(istrue {})", self.my_cond).parse().unwrap();
-
-        if !lookup_pattern(&is_true_parent_pattern, egraph, subst) {
-            // save the egraph to a json.
-            let serialized = egg_to_serialized_egraph(egraph);
-            serialized.to_json_file("dump.json").unwrap();
-            panic!(
-                "Parent condition {} not found in egraph for {}",
-                self.parent_cond, self.my_cond
-            );
-        }
-
+        let is_true_my_pattern: Pattern<L> = format!("(assume {})", self.my_cond).parse().unwrap();
 
         if lookup_pattern(&is_true_my_pattern, egraph, subst) {
             // we already have the condition in the egraph, so no need to add it.
@@ -151,7 +149,7 @@ impl<L: SynthLanguage> ImplicationSwitch<L> {
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
         // uhh okay so the searcher is just gonna be a simple searcher for
         // the expression `(IsTrue <parent_cond>)`.
-        let searcher: Pattern<L> = format!("(istrue {})", self.parent_cond).parse().unwrap();
+        let searcher: Pattern<L> = format!("(assume {})", self.parent_cond).parse().unwrap();
 
         let applier: ImplicationApplier<L> = ImplicationApplier {
             parent_cond: self.parent_cond.clone(),
@@ -318,6 +316,10 @@ impl<L: SynthLanguage> Analysis<L> for SynthAnalysis {
 /// Characteristic Vector. Concrete evaluation on a sample of terms from the
 /// domain, used to identify rule candidates.
 pub type CVec<L> = Vec<Option<<L as SynthLanguage>::Constant>>;
+
+/// Predicate Vector. Like a CVec, but used for predicates.
+pub type PVec = Vec<bool>;
+
 /// Value type in the domain.
 pub type Constant<L> = <L as SynthLanguage>::Constant;
 
@@ -326,15 +328,59 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     /// Domain value type
     type Constant: Clone + Hash + Eq + Debug + Display + Ord;
 
-    /// Converts a constant to a boolean.
-    /// Returns None when the conversion is not defined for the constant.
-    fn constant_to_bool(_c: &Self::Constant) -> Option<bool> {
+    /// The name of the language (egglog name).
+    fn name() -> &'static str {
+        unimplemented!()
+    }
+
+    /// Returns if the pattern is an assumption.
+    fn pattern_is_assumption<L: SynthLanguage>(pat: &Pattern<L>) -> bool {
+        // TODO(@ninehusky): let's keep tabs on the performance of this.
+        // If for some reason this is bad, we can just convert the pattern to a string.
+        match &pat.ast.as_ref().last().unwrap() {
+            egg::ENodeOrVar::ENode(e) => L::is_assumption(e),
+            egg::ENodeOrVar::Var(_) => false,
+        }
+    }
+
+    fn pattern_is_predicate<L: SynthLanguage>(pat: &Pattern<L>) -> bool {
+        // TODO(@ninehusky): let's keep tabs on the performance of this. (see above)
+        match &pat.ast.as_ref().last().unwrap() {
+            egg::ENodeOrVar::ENode(e) => e.is_predicate(),
+            egg::ENodeOrVar::Var(_) => false,
+        }
+    }
+
+    fn is_predicate(&self) -> bool {
+        false
+    }
+
+    /// Returns if the node is an assumption.
+    fn is_assumption(&self) -> bool {
+        false
+    }
+
+    /// Returns the egglog definition for this language.
+    /// See the implementation of [`crate::halide::Pred`] for an example of how to do this.
+    fn egglog_lang_def() -> String {
+        unimplemented!()
+    }
+
+    /// Returns the egglog representation of a pattern in this language.
+    /// See the implementation of [`crate::halide::Pred`] for an example of how to do this.
+    fn to_egglog_term(pat: Pattern<Self>) -> String {
+        unimplemented!()
+    }
+
+    /// Convert a constant to a bool if possible.
+    fn to_bool(c: Self::Constant) -> Option<bool> {
         None
     }
 
-    // Says if a node in the language is an equality.
-    fn is_equality(&self) -> bool {
-        false
+    /// Label for assumption nodes.
+    /// Don't mess with this unless you know what you're doing.
+    fn assumption_label() -> &'static str {
+        "assume"
     }
 
     /// Hook into the e-graph analysis modify method
@@ -416,58 +462,6 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         true
     }
 
-    fn get_condition_propagation_rules(conditions: &Workload) -> Vec<Rewrite<Self, SynthAnalysis>> {
-        let forced = conditions.force();
-
-
-        let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
-        let mut cache: HashMap<(String, String), bool> = Default::default();
-        for c in &forced {
-            let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
-            let c_pat = Pattern::from(&c_recexpr.clone());
-            // pairwise checking implication of all conditions
-            for c2 in &forced {
-                if c == c2 {
-                    continue;
-                }
-                let c2_recexpr: RecExpr<Self> = c2.to_string().parse().unwrap();
-                let c2_pat = Pattern::from(&c2_recexpr.clone());
-                let c_vars = c_pat.vars();
-                let c2_vars = c2_pat.vars();
-
-                if c2_vars.iter().any(|v| !c_vars.contains(v)) {
-                    // can't have variables on the right that are not on the left.
-                    continue;
-                }
-
-
-                let rw = ImplicationSwitch {
-                    parent_cond: c_pat.clone(),
-                    my_cond: c2_pat.clone(),
-                }
-                .rewrite();
-                if Self::condition_implies(
-                    &c.to_string().parse().unwrap(),
-                    &c2.to_string().parse().unwrap(),
-                    &mut cache,
-                ) && !result.iter().any(|r| r.name == rw.name)
-                // avoid duplicates
-                {
-                    result.push(rw);
-                }
-            }
-        }
-        result
-    }
-
-    fn condition_implies(
-        _lhs: &Pattern<Self>,
-        _rhs: &Pattern<Self>,
-        _cache: &mut HashMap<(String, String), bool>,
-    ) -> bool {
-        false
-    }
-
     /// Used by fast-forwarding
     ///
     /// Determines whether a rewrite rule may be selected.
@@ -522,7 +516,12 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         RecExpr::from(nodes)
     }
 
-    fn score(lhs: &Pattern<Self>, rhs: &Pattern<Self>, cond: &Option<Pattern<Self>>) -> [i32; 1] {
+    fn score(
+        lhs: &Pattern<Self>,
+        rhs: &Pattern<Self>,
+        cond: &Option<Assumption<Self>>,
+        true_count: Option<usize>,
+    ) -> [i32; 3] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -534,11 +533,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                         1
                     }
                 }
-                Sexp::List(l) => {
-                    l.into_iter()
-                        .map(|s| sexp_to_cost(s))
-                        .sum::<i32>()
-                }
+                Sexp::List(l) => l.into_iter().map(|s| sexp_to_cost(s)).sum::<i32>(),
             }
         }
 
@@ -554,10 +549,21 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         vars.extend(lhs.vars());
         vars.extend(rhs.vars());
         if let Some(cond) = cond {
-            vars.extend(cond.vars());
+            let cond_pat = cond.chop_assumption();
+            vars.extend(cond_pat.vars());
         }
 
-        [-(l_cost + r_cost + c_cost)]
+        let lhs_bigger = if AstSize.cost_rec(&lhs.ast) as i32 > AstSize.cost_rec(&rhs.ast) as i32 {
+            1
+        } else {
+            0
+        };
+
+        [
+            -(l_cost + r_cost + c_cost),
+            (true_count.unwrap_or(i32::MAX as usize) as i32),
+            lhs_bigger,
+        ]
     }
 
     #[allow(dead_code)]
@@ -644,10 +650,16 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
 
     fn validate(lhs: &Pattern<Self>, rhs: &Pattern<Self>) -> ValidationResult;
 
+    fn validate_implication(_implication: Implication<Self>) -> ImplicationValidationResult {
+        // TODO: when we delete old ruler code, let's make this
+        // a required method to implement.
+        ImplicationValidationResult::Invalid
+    }
+
     fn validate_with_cond(
         _lhs: &Pattern<Self>,
         _rhs: &Pattern<Self>,
-        _cond: &Pattern<Self>,
+        _cond: &Assumption<Self>,
     ) -> ValidationResult {
         ValidationResult::Valid
     }
@@ -675,18 +687,18 @@ pub mod tests {
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
 
-        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+        egraph.add_expr(&"(assume foo)".parse().unwrap());
 
         assert!(egraph
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(egraph
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_none());
 
         assert!(egraph
-            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .lookup_expr(&"(assume baz)".parse().unwrap())
             .is_none());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
@@ -696,26 +708,26 @@ pub mod tests {
         let result = runner.egraph.clone();
 
         assert!(result
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(result
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_some());
 
         assert_ne!(
             result
-                .lookup_expr(&"(istrue bar)".parse().unwrap())
+                .lookup_expr(&"(assume bar)".parse().unwrap())
                 .unwrap(),
             result
-                .lookup_expr(&"(istrue foo)".parse().unwrap())
+                .lookup_expr(&"(assume foo)".parse().unwrap())
                 .unwrap()
         );
     }
 
     // foo ==> bar
     // bar ==> baz
-    // istrue foo. do we see istrue bar and istrue baz?
+    // assume foo. do we see assume bar and assume baz?
     #[test]
     pub fn implication_toggle_multi_step() {
         let foo_imp_bar = ImplicationSwitch {
@@ -732,18 +744,18 @@ pub mod tests {
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
 
-        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+        egraph.add_expr(&"(assume foo)".parse().unwrap());
 
         assert!(egraph
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(egraph
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_none());
 
         assert!(egraph
-            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .lookup_expr(&"(assume baz)".parse().unwrap())
             .is_none());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
@@ -753,15 +765,15 @@ pub mod tests {
         let result = runner.egraph.clone();
 
         assert!(result
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(result
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_some());
 
         assert!(result
-            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .lookup_expr(&"(assume baz)".parse().unwrap())
             .is_some());
     }
 
@@ -775,18 +787,18 @@ pub mod tests {
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
 
-        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+        egraph.add_expr(&"(assume foo)".parse().unwrap());
 
         assert!(egraph
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(egraph
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_none());
 
         assert!(egraph
-            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .lookup_expr(&"(assume baz)".parse().unwrap())
             .is_none());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
@@ -797,15 +809,15 @@ pub mod tests {
 
         // nothing should have changed.
         assert!(result
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(result
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_none());
 
         assert!(result
-            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .lookup_expr(&"(assume baz)".parse().unwrap())
             .is_none());
     }
 
@@ -834,22 +846,22 @@ pub mod tests {
 
         let mut egraph: EGraph<Pred, SynthAnalysis> = Default::default();
 
-        egraph.add_expr(&"(istrue foo)".parse().unwrap());
+        egraph.add_expr(&"(assume foo)".parse().unwrap());
 
         assert!(egraph
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(egraph
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_none());
 
         assert!(egraph
-            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .lookup_expr(&"(assume baz)".parse().unwrap())
             .is_none());
 
         assert!(egraph
-            .lookup_expr(&"(istrue qux)".parse().unwrap())
+            .lookup_expr(&"(assume qux)".parse().unwrap())
             .is_none());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
@@ -859,45 +871,45 @@ pub mod tests {
         let result = runner.egraph.clone();
 
         assert!(result
-            .lookup_expr(&"(istrue foo)".parse().unwrap())
+            .lookup_expr(&"(assume foo)".parse().unwrap())
             .is_some());
 
         assert!(result
-            .lookup_expr(&"(istrue bar)".parse().unwrap())
+            .lookup_expr(&"(assume bar)".parse().unwrap())
             .is_some());
 
         assert!(result
-            .lookup_expr(&"(istrue baz)".parse().unwrap())
+            .lookup_expr(&"(assume baz)".parse().unwrap())
             .is_some());
 
         assert!(result
-            .lookup_expr(&"(istrue qux)".parse().unwrap())
+            .lookup_expr(&"(assume qux)".parse().unwrap())
             .is_some());
 
         assert_ne!(
             result
-                .lookup_expr(&"(istrue bar)".parse().unwrap())
+                .lookup_expr(&"(assume bar)".parse().unwrap())
                 .unwrap(),
             result
-                .lookup_expr(&"(istrue foo)".parse().unwrap())
+                .lookup_expr(&"(assume foo)".parse().unwrap())
                 .unwrap()
         );
 
         assert_ne!(
             result
-                .lookup_expr(&"(istrue baz)".parse().unwrap())
+                .lookup_expr(&"(assume baz)".parse().unwrap())
                 .unwrap(),
             result
-                .lookup_expr(&"(istrue bar)".parse().unwrap())
+                .lookup_expr(&"(assume bar)".parse().unwrap())
                 .unwrap()
         );
 
         assert_ne!(
             result
-                .lookup_expr(&"(istrue qux)".parse().unwrap())
+                .lookup_expr(&"(assume qux)".parse().unwrap())
                 .unwrap(),
             result
-                .lookup_expr(&"(istrue baz)".parse().unwrap())
+                .lookup_expr(&"(assume baz)".parse().unwrap())
                 .unwrap()
         );
     }
@@ -911,21 +923,21 @@ pub mod tests {
 
         let egraph = &mut EGraph::<Pred, SynthAnalysis>::default();
 
-        egraph.add_expr(&"(istrue (!= x 0))".parse().unwrap());
+        egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
             .run(&[rule.rewrite()]);
 
-    let egraph = runner.egraph.clone();
+        let egraph = runner.egraph.clone();
 
-    let serialized = egg_to_serialized_egraph(&egraph);
-    serialized.to_json_file("implication_toggle_equality_simple.json").unwrap();
+        assert!(egraph
+            .lookup_expr(&"(assume (== (/ x x) 1))".parse().unwrap())
+            .is_some());
 
-
-    assert!(egraph.lookup_expr(&"(istrue (== (/ x x) 1))".parse().unwrap()).is_some());
-
-    assert_eq!(egraph.lookup_expr(&"(/ x x)".parse().unwrap()), egraph.lookup_expr(&"1".parse().unwrap()));
-
+        assert_eq!(
+            egraph.lookup_expr(&"(/ x x)".parse().unwrap()),
+            egraph.lookup_expr(&"1".parse().unwrap())
+        );
     }
 }

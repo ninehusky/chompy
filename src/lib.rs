@@ -14,7 +14,7 @@ pub mod conditions;
 mod bv;
 pub mod enumo;
 pub mod halide;
-mod language;
+pub mod language;
 pub mod llm;
 pub mod logger;
 pub mod recipe_utils;
@@ -233,16 +233,5 @@ impl SynthLanguage for egg::SymbolLang {
 
     fn validate(_lhs: &Pattern<Self>, _rhs: &Pattern<Self>) -> ValidationResult {
         ValidationResult::Invalid
-    }
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-
-    #[test]
-    fn json_to_recipe_test() {
-        let recipe = json_to_recipe("recipes/default-recipe.json");
-        println!("{:?}", recipe);
     }
 }

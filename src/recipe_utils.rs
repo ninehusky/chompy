@@ -1,10 +1,12 @@
 use std::time::Instant;
 
-use egg::{EGraph, Pattern, Rewrite, Runner};
+use egg::{AstSize, EGraph, Extractor, Pattern, Rewrite, Runner};
+use indexmap::IndexMap;
 
 use crate::{
-    enumo::{Filter, Metric, Ruleset, Scheduler, Workload},
-    HashMap, Limits, SynthAnalysis, SynthLanguage,
+    conditions::{implication::merge_eqs, implication_set::ImplicationSet},
+    enumo::{ChompyState, Filter, Metric, Ruleset, Scheduler, Workload},
+    HashMap, Limits, PVec, SynthAnalysis, SynthLanguage,
 };
 
 /// Iterate a grammar (represented as a workload) up to a certain size metric
@@ -39,8 +41,8 @@ fn get_cond_egraphs<L: SynthLanguage>(
     for cond in conditions {
         let mut egraph = black_egraph.clone();
 
-        // Add `(istrue ?cond)` to the egraph.
-        egraph.add_expr(&format!("(istrue {})", cond.to_string()).parse().unwrap());
+        // Add `(assume ?cond)` to the egraph.
+        egraph.add_expr(&format!("(assume {})", cond.to_string()).parse().unwrap());
 
         let runner: Runner<L, SynthAnalysis> = Runner::default()
             .with_egraph(egraph.clone())
@@ -56,97 +58,81 @@ fn get_cond_egraphs<L: SynthLanguage>(
 }
 
 fn run_workload_internal<L: SynthLanguage>(
-    workload: Workload,
-    prior: Ruleset<L>,
+    state: &mut ChompyState<L>,
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
     allow_empty: bool,
-    // pvec -> list of conditions with that pvec
-    conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
-    // rules for how other conditions become true from other conditions which are true
-    propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
+    let prior: Ruleset<L> = state.chosen().clone();
+    let cond_workload = state.predicates().clone();
+
     let t = Instant::now();
     let num_prior = prior.len();
 
-    // TODO @ninehusky: this will break non-Halide tests.
-    let egraph = workload.append(Workload::new(&["0", "1"])).to_egraph::<L>();
+    // 1. Create an e-graph from the workload, and compress
+    //    it using the prior rules.
+    let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
     let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
 
-    let mut candidates = if fast_match {
-        Ruleset::fast_cvec_match(&compressed)
+    // 2. Discover total candidates using cvec matching.
+    let mut total_candidates = if fast_match {
+        Ruleset::fast_cvec_match(&compressed, prior.clone())
     } else {
         Ruleset::cvec_match(&compressed)
     };
 
-    println!("cvec matching finished");
-
     let mut chosen: Ruleset<L> = prior.clone();
 
-    // minimize the total candidates with respect to the prior rules
+    // 3. Shrink the total candidates to a minimal set using the existing rules.
     let (chosen_total, _) =
-        candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
-
-    println!("minimization finished");
+        total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
 
     chosen.extend(chosen_total.clone());
 
+    // 4. Using the rules that we've just discovered, shrink the egraph again.
     let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
-    if let Some(conditions) = conditions {
-        // let used_conditions = chosen
-        //     .0
-        //     .iter()
-        //     .filter_map(|(_, r)| {
-        //         // if the rule has a condition, return it
-        //         r.cond.as_ref().map(|c| c.clone().to_string())
-        //     })
-        //     .collect::<Vec<_>>();
+    // 5. Find conditional rules.
+    // To help Chompy scale to higher condition sizes, we'll need to limit the size of the conditions we consider.
+    // As a heuristic, we'll go in ascending order of condition sizes.
 
-        // println!("the conditions used in the rules are:");
-        // for cond in &used_conditions {
-        //     println!("  {}", cond);
-        // }
-        // let cond_egraphs = get_cond_egraphs(
-        //     // only use the conditions for which we actually have rules
-        //     &used_conditions,
-        //     &compressed,
-        //     &chosen,
-        //     &propagation_rules.as_ref().unwrap(),
-        // );
-
-        let max_cond_size = 7;
-
-        let mut map = Default::default();
-
-        for cond_size in 1..max_cond_size {
-            // now, try to add some conditions into tha mix!
-            let mut conditional_candidates = Ruleset::conditional_cvec_match(
-                &compressed,
-                &conditions,
-                cond_size as usize,
-                &mut map,
-                &chosen,
-                propagation_rules.as_ref().unwrap(),
-            );
-
-            println!("conditional candidates:");
-
-            for r in conditional_candidates.0.iter() {
-                println!("  {}", r.0);
-            }
-
-            let (chosen_cond, _) = conditional_candidates.minimize_cond(
-                chosen.clone(),
-                Scheduler::Compress(minimize_limits),
-                propagation_rules.as_ref().unwrap(),
-            );
-            chosen.extend(chosen_cond.clone());
-        }
+    if cond_workload == Workload::empty() {
+        // If there are no conditions, we can just return the chosen rules.
+        return chosen;
     }
 
-    // let (chosen, _) = candidates.minimize(prior, Scheduler::Compress(minimize_limits));
+    // TODO: Make this a parameter; 5 is a bit arbitrary lol.
+    let max_cond_size = 5;
+
+    let impl_prop_rules = state.implications();
+    let pvec_to_patterns = state.pvec_to_patterns().clone();
+
+    for cond_size in 1..=max_cond_size {
+        let curr_wkld = cond_workload
+            .clone()
+            .filter(Filter::MetricEq(Metric::Atoms, cond_size + 1));
+
+        if curr_wkld.force().is_empty() {
+            continue;
+        }
+
+        let mut conditional_candidates = Ruleset::conditional_cvec_match(
+            &compressed,
+            &chosen,
+            &state.pvec_to_patterns(),
+            &state.implications(),
+        );
+
+        let (chosen_cond, _) = conditional_candidates.minimize_cond(
+            chosen.clone(),
+            Scheduler::Compress(minimize_limits),
+            &impl_prop_rules.to_egg_rewrites(),
+        );
+        chosen_cond.pretty_print();
+        chosen.extend(chosen_cond.clone());
+    }
+
     let time = t.elapsed().as_secs_f64();
 
     if chosen.is_empty() && !allow_empty {
@@ -174,27 +160,28 @@ fn run_workload_internal<L: SynthLanguage>(
 ///     4. Minimize the candidates with respect to the prior rules
 pub fn run_workload<L: SynthLanguage>(
     workload: Workload,
+    cond_workload: Option<Workload>,
     prior: Ruleset<L>,
+    prior_impls: ImplicationSet<L>,
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
-    // pvec -> list of conditions with that pvec
-    conditions: Option<HashMap<Vec<bool>, Vec<Pattern<L>>>>,
-    // rules for how other conditions become true from other conditions which are true
-    propagation_rules: Option<Vec<Rewrite<L, SynthAnalysis>>>,
 ) -> Ruleset<L> {
-    run_workload_internal(
+    println!("[run_workload] Running workload");
+    let start = Instant::now();
+    let mut state: ChompyState<L> = ChompyState::new(
         workload,
         prior,
-        prior_limits,
-        minimize_limits,
-        fast_match,
-        // TODO: @ninehusky -- just checking this.
-        true,
-        // false,
-        conditions,
-        propagation_rules,
-    )
+        cond_workload.unwrap_or(Workload::empty()),
+        prior_impls,
+    );
+
+    let res = run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true);
+    println!(
+        "[run_workload] Finished workload in {:.2}s",
+        start.elapsed().as_secs_f64()
+    );
+    res
 }
 
 /// The fast-forwarding algorithm
@@ -277,8 +264,8 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     n: usize,
     lang: Lang,
     prior: Ruleset<L>,
-    conditions: &HashMap<Vec<bool>, Vec<Pattern<L>>>,
-    propagation_rules: &Vec<Rewrite<L, SynthAnalysis>>,
+    prior_impls: ImplicationSet<L>,
+    conditions: Workload,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
@@ -288,8 +275,8 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             n - 1,
             lang.clone(),
             prior.clone(),
-            conditions,
-            propagation_rules,
+            prior_impls.clone(),
+            conditions.clone(),
         );
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
@@ -308,17 +295,17 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
         rec.extend(prior);
         let allow_empty = n < 3;
 
-        let new = run_workload_internal(
-            wkld,
-            rec.clone(),
+        let mut state: ChompyState<L> =
+            ChompyState::new(wkld, rec.clone(), conditions.clone(), prior_impls);
+
+        let new_rules = run_workload_internal(
+            &mut state,
             Limits::synthesis(),
             Limits::minimize(),
             true,
             allow_empty,
-            Some(conditions.clone()),
-            Some(propagation_rules.clone()),
         );
-        let mut all = new;
+        let mut all = new_rules;
         all.extend(rec);
         all
     }
@@ -332,40 +319,14 @@ pub fn recursive_rules<L: SynthLanguage>(
     lang: Lang,
     prior: Ruleset<L>,
 ) -> Ruleset<L> {
-    if n < 1 {
-        Ruleset::default()
-    } else {
-        let mut rec = recursive_rules(metric, n - 1, lang.clone(), prior.clone());
-        let base_lang = if lang.ops.len() == 2 {
-            base_lang(2)
-        } else {
-            base_lang(3)
-        };
-        let mut wkld = iter_metric(base_lang, "EXPR", metric, n)
-            .filter(Filter::Contains("VAR".parse().unwrap()))
-            .plug("VAR", &Workload::new(lang.vars))
-            .plug("VAL", &Workload::new(lang.vals));
-        // let ops = vec![lang.uops, lang.bops, lang.tops];
-        for (i, ops) in lang.ops.iter().enumerate() {
-            wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-        }
-        rec.extend(prior);
-        let allow_empty = n < 3;
-
-        let new = run_workload_internal(
-            wkld,
-            rec.clone(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            allow_empty,
-            None,
-            None,
-        );
-        let mut all = new;
-        all.extend(rec);
-        all
-    }
+    recursive_rules_cond(
+        metric,
+        n,
+        lang,
+        prior,
+        ImplicationSet::default(),
+        Workload::empty(),
+    )
 }
 
 /// Util function for making a grammar with variables, values, and operators with up to n arguments.
