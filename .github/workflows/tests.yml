@@ -80,10 +80,10 @@ jobs:
       - name: "Run Chompy"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: cargo run -- --mode llm_alphabet_soup --output-path chompy.rules
+        run: cargo run -- --mode handwritten --old-recipe-type og_recipe --output-path rules.txt
 
       - name: "Upload rules"
         uses: actions/upload-artifact@v4
         with:
-          name: chompy.rules
-          path: chompy.rules
+          name: rules.txt
+          path: rules.txt
