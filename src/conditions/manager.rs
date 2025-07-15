@@ -65,6 +65,24 @@ impl<L: SynthLanguage> EGraphManager<L> {
                  (edge ?x ?r))
                 ((path ?l ?r))
                 :ruleset {IMPL_RULESET_NAME})
+
+            ;;; Some Halide-specific helper implications that
+            ;;; we can't find normally.
+            ;;; (a && b) -> a
+            (rule
+                ((path ?a ?c)
+                 (And ?a ?b))
+                ((path (And ?a ?b) ?c))
+                :ruleset {IMPL_RULESET_NAME}
+            )
+
+            ;;; (a && b) -> b
+            (rule
+                ((path ?b ?c)
+                 (And ?a ?b))
+                ((path (And ?a ?b) ?c))
+                :ruleset {IMPL_RULESET_NAME}
+            )
         "#,
                 ),
             )

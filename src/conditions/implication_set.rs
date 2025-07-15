@@ -104,6 +104,11 @@ impl<L: SynthLanguage> ImplicationSet<L> {
             egraph.classes().len()
         );
         let mut manager: EGraphManager<L> = EGraphManager::new();
+        println!("prior: {}", prior.len());
+        for imp in prior.iter() {
+            // Add the prior implications to the manager.
+            println!("Adding prior implication: {}", imp.name());
+        }
         manager.add_implications(prior).unwrap();
 
         // Returns true iff cvec1 --> cvec2, i.e., forall i, !cvec[i] or cvec2[i].
@@ -330,7 +335,31 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 
     /// Converts the implications in this set to a vector of Egg rewrite rules.
     pub fn to_egg_rewrites(&self) -> Vec<Rewrite<L, SynthAnalysis>> {
-        self.iter().map(|imp| imp.rewrite()).collect()
+        let mut implications: Self = ImplicationSet::default();
+
+        // (&& ?a ?b) -> ?a
+        implications.add(
+            Implication::new(
+                "and-impl-left".into(),
+                Assumption::_new_unsafe("(&& ?a ?b)".to_string()).unwrap(),
+                Assumption::_new_unsafe("?a".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        // (&& ?a ?b) -> ?b
+        implications.add(
+            Implication::new(
+                "and-impl-left".into(),
+                Assumption::_new_unsafe("(&& ?a ?b)".to_string()).unwrap(),
+                Assumption::_new_unsafe("?b".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        implications.add_all(self.clone());
+
+        implications.iter().map(|imp| imp.rewrite()).collect()
     }
 
     /// Removes implications from the set that are subsumed by any of the rules present in the e-graph.

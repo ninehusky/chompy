@@ -509,7 +509,8 @@ impl<L: SynthLanguage> Ruleset<L> {
         predicate.insert_into_egraph(&mut colored_egraph);
 
         // 2. Run the implication rules on the egraph.
-        let rules = impl_rules.to_egg_rewrites();
+        let mut rules = impl_rules.to_egg_rewrites();
+        rules.push(merge_eqs());
 
         let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(colored_egraph.clone())

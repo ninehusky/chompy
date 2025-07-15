@@ -1264,26 +1264,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
 fn base_implications() -> ImplicationSet<Pred> {
     let mut implications = ImplicationSet::default();
 
-    // // (&& ?a ?b) -> ?a
-    // implications.add(
-    //     Implication::new(
-    //         "and-impl-left".into(),
-    //         "(&& ?a ?b)".parse().unwrap(),
-    //         "?a".parse().unwrap(),
-    //     )
-    //     .unwrap(),
-    // );
-
-    // // (&& ?a ?b) -> ?b
-    // implications.add(
-    //     Implication::new(
-    //         "and-impl-right".into(),
-    //         "(&& ?a ?b)".parse().unwrap(),
-    //         "?b".parse().unwrap(),
-    //     )
-    //     .unwrap(),
-    // );
-
     implications
 }
 
