@@ -1,11 +1,8 @@
 use egg::RecExpr;
 use reqwest::Client;
 use serde_json::json;
-use symbolic_expressions::{parser::parse_str, Sexp};
 
 use crate::{enumo::Workload, halide::Pred, SynthLanguage};
-
-use std::str::FromStr;
 
 use crate::{ConditionRecipe, Recipe};
 
@@ -123,7 +120,7 @@ pub async fn generate_alphabet_soup(
 
     println!("term workload:");
     for t in &term_workload.clone().force() {
-        println!("{}", t);
+        println!("{t}");
     }
 
     if let Some(cond_recipe) = cond_r {
@@ -142,7 +139,7 @@ pub async fn generate_alphabet_soup(
 
         println!("conditional workload:");
         for c in &cond_workload.clone().force() {
-            println!("{}", c);
+            println!("{c}");
         }
 
         (term_workload, Some(cond_workload))
@@ -153,7 +150,7 @@ pub async fn generate_alphabet_soup(
 
 pub async fn condition_soup(
     client: &Client,
-    term_workload_as_vec: &Vec<String>,
+    term_workload_as_vec: &[String],
     vars: &Vec<String>,
     r: &ConditionRecipe,
 ) -> Result<Vec<String>, reqwest::Error> {
@@ -166,7 +163,7 @@ pub async fn condition_soup(
         )
         .replace("{max_size}", &r.max_size.to_string())
         .replace("{vals}", format!("{:?}", r.vals).as_str())
-        .replace("{vars}", format!("{:?}", vars).as_str())
+        .replace("{vars}", format!("{vars:?}").as_str())
         .replace("{ops}", format!("{:?}", r.ops).as_str());
 
     // Define request payload for the Responses API
@@ -230,7 +227,7 @@ pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, r
         "temperature": 0.0,
     });
 
-    println!("SENDING REQUEST TO: {}", url);
+    println!("SENDING REQUEST TO: {url}");
 
     let response = client
         .post("https://api.openai.com/v1/chat/completions") // <-- Using Responses API
@@ -266,12 +263,12 @@ pub fn soup_to_workload<L: SynthLanguage>(
 ) -> Result<Workload, Box<dyn std::error::Error>> {
     println!("soup:");
     for s in &soup {
-        println!("{}", s);
+        println!("{s}");
     }
     let mut good_expressions = vec![];
     for r in &soup {
         // if it has no parentheses, and it is not a variable/value, then skip it.
-        println!("checking expression: {}", r);
+        println!("checking expression: {r}");
         let r = r.trim();
         println!("starts with )? {}", r.starts_with(')'));
         println!("ends with (? {}", r.ends_with(')'));
@@ -282,16 +279,16 @@ pub fn soup_to_workload<L: SynthLanguage>(
         let ends_with_paren = r.ends_with(')');
 
         if starts_with_paren != ends_with_paren {
-            println!("skipping expression: {}", r);
+            println!("skipping expression: {r}");
             continue;
         }
 
-        if (!starts_with_paren || !ends_with_paren) && !vals.contains(&r.to_string())
+        if (!starts_with_paren || !ends_with_paren)
+            && !vals.contains(&r.to_string())
             && !vars.contains(&r.to_string())
         {
-            println!("skipping expression: {}", r);
+            println!("skipping expression: {r}");
             continue;
-
         }
 
         let t: Result<RecExpr<L>, _> = r.parse();
@@ -301,7 +298,7 @@ pub fn soup_to_workload<L: SynthLanguage>(
             }
             Err(_) => {
                 // If we can't parse the expression, skip it.
-                println!("skipping expression: {}", r);
+                println!("skipping expression: {r}");
                 continue;
             }
         }
@@ -313,7 +310,6 @@ pub fn soup_to_workload<L: SynthLanguage>(
 }
 
 pub mod tests {
-    use egg::Pattern;
 
     #[allow(unused_imports)]
     use super::*;
@@ -416,12 +412,12 @@ pub mod tests {
             soup,
             vec!["a".to_string(), "b".to_string(), "c".to_string()],
             vec!["1".to_string()],
-        ).unwrap();
+        )
+        .unwrap();
 
         for t in &wkld.force() {
-            println!("{}", t);
+            println!("{t}");
         }
-
 
         assert_eq!(wkld.force().len(), expected_length);
     }

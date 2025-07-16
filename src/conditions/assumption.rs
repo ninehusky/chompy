@@ -39,16 +39,13 @@ impl<L: SynthLanguage> Assumption<L> {
     pub fn new(assumption: String) -> Result<Self, String> {
         let pat: Result<Pattern<L>, _> = assumption.parse();
         if pat.is_err() {
-            return Err(format!(
-                "Failed to parse assumption pattern: {}",
-                assumption
-            ));
+            return Err(format!("Failed to parse assumption pattern: {assumption}"));
         }
         let pat = pat.unwrap();
         if L::pattern_is_assumption(&pat) {
-            return Err(format!("Pattern is already an assumption: {}", pat));
+            return Err(format!("Pattern is already an assumption: {pat}"));
         } else if !L::pattern_is_predicate(&pat) {
-            return Err(format!("Pattern is not a valid predicate: {}", pat));
+            return Err(format!("Pattern is not a valid predicate: {pat}"));
         }
 
         Ok(Self {
@@ -102,19 +99,17 @@ impl<L: SynthLanguage> From<Assumption<L>> for RecExpr<L> {
     }
 }
 
-impl <L: SynthLanguage> From<String> for Assumption<L> {
+impl<L: SynthLanguage> From<String> for Assumption<L> {
     fn from(assumption: String) -> Self {
         Assumption::new(assumption).expect("Failed to create assumption from string")
     }
 }
 
-impl <L: SynthLanguage> From<&str> for Assumption<L> {
+impl<L: SynthLanguage> From<&str> for Assumption<L> {
     fn from(assumption: &str) -> Self {
         Assumption::new(assumption.to_string()).expect("Failed to create assumption from string")
     }
 }
-
-        
 
 impl<L: SynthLanguage> Display for Assumption<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

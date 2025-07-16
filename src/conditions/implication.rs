@@ -5,7 +5,6 @@ use egg::{Analysis, Applier, Language, Pattern, PatternAst, Rewrite, Var};
 use crate::{
     apply_pat,
     enumo::{lookup_pattern, Sexp},
-    halide::Pred,
     SynthAnalysis, SynthLanguage,
 };
 
@@ -43,8 +42,7 @@ impl<L: SynthLanguage> Implication<L> {
 
         if rhs_vars.iter().any(|v| !lhs_vars.contains(v)) {
             return Err(format!(
-                "Right-hand side of implication '{}' contains variables not present in the left-hand side: {:?}",
-                name, rhs_vars
+                "Right-hand side of implication '{name}' contains variables not present in the left-hand side: {rhs_vars:?}"
             ));
         }
 
@@ -94,11 +92,11 @@ impl<L: SynthLanguage> Implication<L> {
         fn size(sexp: &Sexp) -> f64 {
             match sexp {
                 Sexp::Atom(a) => {
-                    if let Ok(_) = a.parse::<i64>() {
+                    if a.parse::<i64>().is_ok() {
                         // slight penalty for literals.
-                        return 1.1;
+                        1.1
                     } else {
-                        return 1.0;
+                        1.0
                     }
                 }
                 Sexp::List(l) => l.iter().map(size).sum(),
@@ -391,6 +389,7 @@ mod implication_tests {
 
 #[allow(unused_imports)]
 mod eq_tests {
+    use crate::halide::Pred;
     use crate::ImplicationSwitch;
     use egg::{EGraph, Runner};
 

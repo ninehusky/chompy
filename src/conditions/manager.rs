@@ -137,11 +137,10 @@ impl<L: SynthLanguage> EGraphManager<L> {
         let rw_prog = format!(
             r#"
         (rewrite
-            {}
-            {}
-            :ruleset {})
-        "#,
-            lhs, rhs, RW_RULESET_NAME
+            {lhs}
+            {rhs}
+            :ruleset {RW_RULESET_NAME})
+        "#
         );
         match self.egraph.parse_and_run_program(None, &rw_prog) {
             Ok(_) => Ok(()),
@@ -176,15 +175,13 @@ impl<L: SynthLanguage> EGraphManager<L> {
     pub fn check_path(&mut self, from: &Assumption<L>, to: &Assumption<L>) -> Result<bool, String> {
         if !is_concrete(&from.clone().into()) {
             return Err(format!(
-                "Assumption must be concrete (no symbolic variables): {}",
-                from
+                "Assumption must be concrete (no symbolic variables): {from}"
             ));
         }
 
         if !is_concrete(&to.clone().into()) {
             return Err(format!(
-                "Assumption must be concrete (no symbolic variables): {}",
-                to
+                "Assumption must be concrete (no symbolic variables): {to}"
             ));
         }
 
@@ -256,7 +253,7 @@ impl<L: SynthLanguage> EGraphManager<L> {
         self.egraph
             .parse_and_run_program(
                 None,
-                &format!(r#"(run-schedule (saturate {}))"#, ruleset_name),
+                &format!(r#"(run-schedule (saturate {ruleset_name}))"#),
             )
             .unwrap_or_else(|e| {
                 panic!(
@@ -264,24 +261,6 @@ impl<L: SynthLanguage> EGraphManager<L> {
                     e
                 );
             });
-    }
-}
-
-/// A lil helper function to see if two assumptions are equal in the egraph.
-pub fn check_equal<L: SynthLanguage>(
-    manager: &mut EGraphManager<L>,
-    from: &Assumption<L>,
-    to: &Assumption<L>,
-) -> bool {
-    let lhs = L::to_egglog_term(from.clone().chop_assumption());
-    let rhs = L::to_egglog_term(to.clone().chop_assumption());
-    let query = format!("(check (= {lhs} {rhs}))");
-    match manager.egraph.parse_and_run_program(None, &query) {
-        Ok(_) => true,
-        Err(e) => {
-            assert!(e.to_string().contains("Check failed"));
-            false
-        }
     }
 }
 
@@ -341,14 +320,29 @@ mod concrete_generalized_tests {
 #[cfg(test)]
 mod tests {
     use crate::{
-        conditions::{
-            assumption::Assumption,
-            implication::Implication,
-            manager::{check_equal, EGraphManager},
-        },
+        conditions::{assumption::Assumption, implication::Implication, manager::EGraphManager},
         enumo::Rule,
         halide::Pred,
+        SynthLanguage,
     };
+
+    fn check_equal<L: SynthLanguage>(
+        manager: &mut EGraphManager<L>,
+        lhs: &Assumption<L>,
+        rhs: &Assumption<L>,
+    ) -> bool {
+        manager
+            .egraph
+            .parse_and_run_program(
+                None,
+                &format!(
+                    "(check (= {} {}))",
+                    L::to_egglog_term(lhs.chop_assumption()),
+                    L::to_egglog_term(rhs.chop_assumption())
+                ),
+            )
+            .is_ok()
+    }
 
     #[test]
     fn egraph_construction_doesnt_blow_up() {

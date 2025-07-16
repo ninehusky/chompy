@@ -1,21 +1,16 @@
-use egg::{
-    Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
-};
+use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner, Searcher};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
-use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
+use std::{io::Write, sync::Arc};
 
 use crate::{
-    conditions::{assumption::Assumption, implication_set::ImplicationSet, merge_eqs},
-    enumo::Sexp,
-    halide::{self, Pred},
-    recipe_utils::run_workload,
+    conditions::{assumption::Assumption, implication_set::ImplicationSet},
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
     SynthAnalysis, SynthLanguage,
 };
 
-use super::{Rule, Scheduler, Workload};
+use super::{Rule, Scheduler};
 
 /// A mapping from pvecs to their corresponding predicates.
 pub type PredicateMap<L> = IndexMap<PVec, Vec<Assumption<L>>>;
@@ -135,7 +130,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 continue;
             }
             let reverse = if let Some(c) = &rule.cond {
-                Rule::new_cond(&rule.rhs, &rule.lhs, &c, rule.true_count)
+                Rule::new_cond(&rule.rhs, &rule.lhs, c, rule.true_count)
             } else {
                 Rule::new(&rule.rhs, &rule.lhs)
             };
@@ -231,7 +226,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut file = std::fs::File::create(filename)
             .unwrap_or_else(|_| panic!("Failed to open '{}'", filename));
         for (name, _) in &self.0 {
-            writeln!(file, "{}", name).expect("Unable to write");
+            writeln!(file, "{name}").expect("Unable to write");
         }
     }
 
@@ -381,7 +376,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             i += 1;
             for cvec2 in by_cvec.keys().skip(i) {
                 let predicates =
-                    Self::find_matching_conditions(cvec1.clone(), cvec2.clone(), &conditions);
+                    Self::find_matching_conditions(cvec1.clone(), cvec2.clone(), conditions);
 
                 // 2. For each predicate, construct a "colored" egraph that
                 //    models the implications of the predicate.
@@ -697,8 +692,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     if mini_egraph.find(l) == mini_egraph.find(r) {
                         // e1 and e2 are equivalent in the mini egraph
                         println!(
-                            "skipping {} and {} because they are equivalent in the mini egraph",
-                            e1, e2
+                            "skipping {e1} and {e2} because they are equivalent in the mini egraph"
                         );
                         continue;
                     }
@@ -753,9 +747,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     fn shrink_cond(
         &mut self,
         chosen: &Self,
-        scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
-        by_cond: &IndexMap<String, Ruleset<L>>,
         most_recent_condition: &Assumption<L>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
@@ -775,7 +767,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .values()
                 .filter(|rule| {
                     if let Some(cond) = &rule.cond {
-                        cond.to_string() == condition.to_string()
+                        cond.to_string() == *condition
                     } else {
                         false
                     }
@@ -789,7 +781,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             let cond_pat: &Pattern<L> = &condition.parse().unwrap();
 
             let cond_ast = &L::instantiate(cond_pat);
-            egraph.add_expr(&format!("(assume {})", cond_ast).parse().unwrap());
+            egraph.add_expr(&format!("(assume {cond_ast})").parse().unwrap());
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
             let mut initial = vec![];
@@ -821,7 +813,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
             let scheduler = Scheduler::Compress(Limits::deriving());
-            let egraph = scheduler.run(&runner.egraph, &chosen);
+            let egraph = scheduler.run(&runner.egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
@@ -866,7 +858,6 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn minimize_cond(
         &mut self,
         prior: Ruleset<L>,
-        scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> (Self, Self) {
         let start_time = std::time::Instant::now();
@@ -913,13 +904,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             chosen.extend(selected.clone());
 
-            self.shrink_cond(
-                &chosen,
-                scheduler,
-                prop_rules,
-                &by_cond,
-                most_recent_condition,
-            );
+            self.shrink_cond(&chosen, prop_rules, most_recent_condition);
         }
         // Return only the new rules
         chosen.remove_all(prior);
@@ -993,10 +978,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         let rexpr = &L::instantiate(&rule.rhs);
 
         let condition = rule.cond.clone().unwrap();
-
         let cond = &L::instantiate(&condition.chop_assumption());
 
-        condition.insert_into_egraph(&mut egraph);
+        egraph.add_expr(
+            &format!("({} {})", L::assumption_label(), cond)
+                .parse()
+                .unwrap(),
+        );
 
         match derive_type {
             DeriveType::Lhs => {
@@ -1123,6 +1111,8 @@ impl<L: SynthLanguage> Ruleset<L> {
 
 #[cfg(test)]
 mod ruleset_tests {
+    use crate::enumo::Workload;
+    use crate::halide::Pred;
     use crate::{conditions::implication::Implication, enumo::ChompyState};
 
     use super::*;
@@ -1220,25 +1210,24 @@ mod ruleset_tests {
         let result = Ruleset::get_canonical_conditional_rule(
             &"(+ (/ x x) (/ x x))".parse().unwrap(),
             &"2".parse().unwrap(),
+            &predicate,
             &mini_egraph,
         );
 
         assert!(result.is_some());
 
-        let (lhs, rhs, cond) = result.unwrap();
+        let (lhs, rhs) = result.unwrap();
 
         assert_eq!(
             lhs.to_string(),
             "(+ 1 1)".to_string(),
-            "Expected lhs to be (+ 1 1), got {}",
-            lhs
+            "Expected lhs to be (+ 1 1), got {lhs}"
         );
 
         assert_eq!(
             rhs.to_string(),
             "2".to_string(),
-            "Expected rhs to be 2, got {}",
-            rhs
+            "Expected rhs to be 2, got {rhs}"
         );
     }
 
@@ -1265,6 +1254,7 @@ mod ruleset_tests {
         let result = Ruleset::get_canonical_conditional_rule(
             &"(+ (/ x x) (/ x x))".parse().unwrap(),
             &"2".parse().unwrap(),
+            &predicate,
             &mini_egraph,
         );
 
@@ -1328,6 +1318,7 @@ mod ruleset_tests {
             Workload::new(&["(/ x x)", "1"]),
             Ruleset::default(),
             Workload::new(&["(OP x 0)", "x"]).plug("OP", &Workload::new(&["<", "!="])),
+            Default::default(),
         );
 
         let candidates = Ruleset::conditional_cvec_match(
@@ -1337,11 +1328,9 @@ mod ruleset_tests {
             state.implications(),
         );
 
-        assert!(!candidates.is_empty());
-        for c in candidates.iter() {
-            println!("candidate: {}", c);
-        }
-        assert_eq!(candidates.len(), 3);
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.contains(&Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0));
+        assert!(candidates.contains(&Rule::from_string("(/ ?a ?a) ==> 1 if (< ?a 0)").unwrap().0));
     }
 
     #[test]
@@ -1350,6 +1339,7 @@ mod ruleset_tests {
             Workload::new(&["(/ x x)", "1"]),
             Ruleset::default(),
             Workload::new(&["(OP x 0)", "x"]).plug("OP", &Workload::new(&["<", "!="])),
+            Default::default(),
         );
 
         let mut ruleset: Ruleset<Pred> = Default::default();

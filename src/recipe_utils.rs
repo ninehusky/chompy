@@ -1,12 +1,11 @@
 use std::time::Instant;
 
-use egg::{AstSize, EGraph, Extractor, Pattern, Rewrite, Runner};
-use indexmap::IndexMap;
+use egg::EGraph;
 
 use crate::{
-    conditions::{implication::merge_eqs, implication_set::ImplicationSet},
+    conditions::implication_set::ImplicationSet,
     enumo::{ChompyState, Filter, Metric, Ruleset, Scheduler, Workload},
-    HashMap, Limits, PVec, SynthAnalysis, SynthLanguage,
+    Limits, SynthAnalysis, SynthLanguage,
 };
 
 /// Iterate a grammar (represented as a workload) up to a certain size metric
@@ -28,33 +27,6 @@ pub fn substitute(workload: Workload, sub: Workload, atom: &str) -> Workload {
         pegs = pegs.append(workload.clone().plug(atom, &Workload::Set(vec![sub])));
     }
     pegs
-}
-
-// kind of a hack because colors are hard.
-fn get_cond_egraphs<L: SynthLanguage>(
-    conditions: &Vec<String>,
-    black_egraph: &EGraph<L, SynthAnalysis>,
-    chosen: &Ruleset<L>,
-    impls: &Vec<Rewrite<L, SynthAnalysis>>,
-) -> HashMap<String, EGraph<L, SynthAnalysis>> {
-    let mut egraphs = HashMap::default();
-    for cond in conditions {
-        let mut egraph = black_egraph.clone();
-
-        // Add `(assume ?cond)` to the egraph.
-        egraph.add_expr(&format!("(assume {})", cond.to_string()).parse().unwrap());
-
-        let runner: Runner<L, SynthAnalysis> = Runner::default()
-            .with_egraph(egraph.clone())
-            .run(&impls.clone());
-
-        let scheduler = Scheduler::Compress(Limits::deriving());
-        let egraph = scheduler.run(&runner.egraph, &chosen);
-
-        let key = cond.to_string();
-        egraphs.insert(key, egraph);
-    }
-    egraphs
 }
 
 fn run_workload_internal<L: SynthLanguage>(
@@ -106,7 +78,6 @@ fn run_workload_internal<L: SynthLanguage>(
     let max_cond_size = 5;
 
     let impl_prop_rules = state.implications();
-    let pvec_to_patterns = state.pvec_to_patterns().clone();
 
     for cond_size in 1..=max_cond_size {
         let curr_wkld = cond_workload
@@ -121,14 +92,11 @@ fn run_workload_internal<L: SynthLanguage>(
             &compressed,
             &chosen,
             &state.pvec_to_patterns(),
-            &state.implications(),
+            state.implications(),
         );
 
-        let (chosen_cond, _) = conditional_candidates.minimize_cond(
-            chosen.clone(),
-            Scheduler::Compress(minimize_limits),
-            &impl_prop_rules.to_egg_rewrites(),
-        );
+        let (chosen_cond, _) = conditional_candidates
+            .minimize_cond(chosen.clone(), &impl_prop_rules.to_egg_rewrites());
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
     }

@@ -54,7 +54,7 @@ mod test {
             Some(&cond_prop_rws),
         );
 
-        assert!(can.len() == 1);
+        assert_eq!(can.len(), 1);
         assert!(cannot.is_empty());
 
         let (can, cannot) = ruleset_b.derive(
@@ -110,5 +110,4 @@ mod test {
         assert!(can.is_empty());
         assert!(cannot.len() == 1);
     }
-
 }

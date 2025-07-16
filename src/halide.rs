@@ -1,23 +1,18 @@
-use std::{convert::TryInto, str::FromStr};
+use std::str::FromStr;
 
 use crate::{
     conditions::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
-        merge_eqs,
     },
-    enumo::Rule,
     *,
 };
 
 use conditions::implication_set::ImplicationSet;
-use egg::{RecExpr, Rewrite, Runner};
+use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
-use log::log;
 use num::ToPrimitive;
-use recipe_utils::{
-    base_lang, iter_metric, recursive_rules, recursive_rules_cond, run_workload, Lang,
-};
+use recipe_utils::{recursive_rules, recursive_rules_cond, run_workload, Lang};
 use z3::ast::Ast;
 
 type Constant = i64;
@@ -58,7 +53,6 @@ impl Pred {
         let forced = conditions.force();
 
         let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
-        let mut cache: HashMap<(String, String), bool> = Default::default();
         for c in &forced {
             let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
             let c_pat = Pattern::from(&c_recexpr.clone());
@@ -83,11 +77,11 @@ impl Pred {
                 }
                 .rewrite();
 
-                println!("c_pat: {}", c_pat);
-                println!("c2_pat: {}", c2_pat);
+                println!("c_pat: {c_pat}");
+                println!("c2_pat: {c2_pat}");
 
                 let imp: Result<Implication<Pred>, _> = Implication::new(
-                    format!("{} -> {}", c_pat, c2_pat).into(),
+                    format!("{c_pat} -> {c2_pat}").into(),
                     Assumption::new(c_pat.to_string()).unwrap(),
                     Assumption::new(c2_pat.to_string()).unwrap(),
                 );
@@ -168,12 +162,12 @@ impl SynthLanguage for Pred {
             match term {
                 Sexp::Atom(a) => {
                     if let Ok(num) = a.parse::<i64>() {
-                        return Sexp::Atom(format!("(Lit {})", num.to_string()));
+                        Sexp::Atom(format!("(Lit {num})"))
                     } else if a.starts_with("?") {
                         // a is a meta-variable, leave it alone.
                         return Sexp::Atom(a.into());
                     } else {
-                        return Sexp::Atom(format!("(Var \"{}\")", a).into());
+                        return Sexp::Atom(format!("(Var \"{a}\")"));
                     }
                 }
                 Sexp::List(l) => {
@@ -405,8 +399,8 @@ impl SynthLanguage for Pred {
 
         // chop off the assumptions, by taking everything except the last element.
         // we should definitely test this.
-        let lexpr = egg_to_z3(&ctx, &Pred::instantiate(&lexpr).as_ref());
-        let rexpr = egg_to_z3(&ctx, &Pred::instantiate(&rexpr).as_ref());
+        let lexpr = egg_to_z3(&ctx, Pred::instantiate(&lexpr).as_ref());
+        let rexpr = egg_to_z3(&ctx, Pred::instantiate(&rexpr).as_ref());
 
         let zero = z3::ast::Int::from_i64(&ctx, 0);
         let one = z3::ast::Int::from_i64(&ctx, 1);
@@ -557,35 +551,6 @@ impl SynthLanguage for Pred {
             z3::SatResult::Sat => ValidationResult::Invalid,
         }
     }
-}
-
-// 1. run "ruler" on the conditional workload, generating a series of rewrite
-//    rules.
-// 2. when it comes time to check condition implication, use these rules
-//    as opposed to Z3 checking.
-pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalysis>> {
-    panic!("Don't call me.");
-    let cond_lang = Lang {
-        vars: vec!["a".to_string(), "b".to_string()],
-        vals: vec!["0".to_string(), "1".to_string()],
-        ops: vec![
-            vec![],
-            vec![
-                "<".to_string(),
-                "<=".to_string(),
-                "!=".to_string(),
-                "->".to_string(),
-            ],
-        ],
-    };
-
-    vec![]
-}
-
-#[test]
-fn test_get_condition_propagation_rules_halide() {
-    // we just wanna call the function to test locally
-    let rules = get_condition_propagation_rules_halide();
 }
 
 pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
@@ -755,7 +720,7 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ))
             }
             Pred::Var(v) => buf.push(z3::ast::Int::new_const(ctx, v.to_string())),
-            Pred::Assume(x) => {
+            Pred::Assume(_) => {
                 panic!("assumption nodes should not be used in egg_to_z3");
             }
         }
@@ -1049,49 +1014,12 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
     }
 }
 
-pub fn compute_conditional_structures(
-    conditional_soup: &Workload,
-) -> (
-    HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
-    Vec<Rewrite<Pred, SynthAnalysis>>,
-) {
-    let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
-    let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
-
-    // TODO: nuke this
-    let cond_prop_ruleset = vec![];
-
-    for cond in conditional_soup.force() {
-        let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
-        let cond_pat = Pattern::from(&cond);
-
-        let cond_id = egraph
-            .lookup_expr(&cond_pat.to_string().parse().unwrap())
-            .unwrap();
-
-        let pvec = egraph[cond_id]
-            .data
-            .cvec
-            .clone()
-            .iter()
-            .map(|b| *b != Some(0))
-            .collect();
-
-        pvec_to_terms
-            .entry(pvec)
-            .or_default()
-            .push(cond_pat.clone());
-    }
-
-    (pvec_to_terms, cond_prop_ruleset)
-}
-
 pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let start_time = std::time::Instant::now();
-    let mut wkld = conditions::generate::get_condition_workload();
+    let wkld = conditions::generate::get_condition_workload();
     let mut all_rules = Ruleset::default();
-    let base_implications = base_implications();
+    let base_implications = ImplicationSet::default();
 
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
@@ -1258,78 +1186,4 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules
-}
-
-// A helper function which includes some nice baseline implications.
-fn base_implications() -> ImplicationSet<Pred> {
-    let mut implications = ImplicationSet::default();
-
-    // // (&& ?a ?b) -> ?a
-    // implications.add(
-    //     Implication::new(
-    //         "and-impl-left".into(),
-    //         "(&& ?a ?b)".parse().unwrap(),
-    //         "?a".parse().unwrap(),
-    //     )
-    //     .unwrap(),
-    // );
-
-    // // (&& ?a ?b) -> ?b
-    // implications.add(
-    //     Implication::new(
-    //         "and-impl-right".into(),
-    //         "(&& ?a ?b)".parse().unwrap(),
-    //         "?b".parse().unwrap(),
-    //     )
-    //     .unwrap(),
-    // );
-
-    implications
-}
-
-mod tests {
-    use std::str::FromStr;
-
-    use egg::{EGraph, RecExpr};
-
-    use crate::{
-        conditions::assumption::Assumption,
-        enumo::{self, Rule, Ruleset, Sexp, Workload},
-        halide::Pred,
-        recipe_utils::run_workload,
-        Limits, Pattern, SynthAnalysis, SynthLanguage,
-    };
-
-    #[test]
-    fn test_derive_all_caviar() {
-        let rules = r#"(== (max ?x ?c) 0) ==> (== ?x 0) if (< ?c 0)
-(&& (== ?x ?c0) (== ?x ?c1)) ==> 0 if (!= ?c1 ?c0)
-(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)
-(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))
-(< (- ?a ?y) ?a) ==> 1 if (> ?y 0)
-(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
-(+ (* ?x ?a) (* ?y ?b)) ==> (* (+ (* ?x (/ ?a ?b)) ?y) ?b) if (&& (!= ?b 0) (== (% ?a ?b) 0))
-(< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0)
-(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)
-(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
-(< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0)
-(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0)
-(< ?a (% ?x ?b)) ==> 0 if (>= ?a (abs ?b))
-(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)
-(/ (min ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (> ?z 0)
-(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (min ?x ?y) ?z) if (> ?z 0)
-(/ (max ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (< ?z 0)
-(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (max ?x ?y) ?z) if (< ?z 0)
-(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)
-(min (% ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 (- 0 (abs (+ ?c0 1))))
-(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)
-(max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)
-(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))"#
-            .lines()
-            .map(|s| Rule::<Pred>::from_string(s).unwrap().0);
-    }
 }
