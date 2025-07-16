@@ -1,6 +1,4 @@
-use egg::{
-    AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
-};
+use egg::{AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
@@ -1120,6 +1118,8 @@ impl<L: SynthLanguage> Ruleset<L> {
 
 #[cfg(test)]
 mod ruleset_tests {
+    use crate::enumo::Workload;
+    use crate::halide::Pred;
     use crate::{conditions::implication::Implication, enumo::ChompyState};
 
     use super::*;
@@ -1217,12 +1217,13 @@ mod ruleset_tests {
         let result = Ruleset::get_canonical_conditional_rule(
             &"(+ (/ x x) (/ x x))".parse().unwrap(),
             &"2".parse().unwrap(),
+            &predicate,
             &mini_egraph,
         );
 
         assert!(result.is_some());
 
-        let (lhs, rhs, cond) = result.unwrap();
+        let (lhs, rhs) = result.unwrap();
 
         assert_eq!(
             lhs.to_string(),
@@ -1262,6 +1263,7 @@ mod ruleset_tests {
         let result = Ruleset::get_canonical_conditional_rule(
             &"(+ (/ x x) (/ x x))".parse().unwrap(),
             &"2".parse().unwrap(),
+            &predicate,
             &mini_egraph,
         );
 
@@ -1325,6 +1327,7 @@ mod ruleset_tests {
             Workload::new(&["(/ x x)", "1"]),
             Ruleset::default(),
             Workload::new(&["(OP x 0)", "x"]).plug("OP", &Workload::new(&["<", "!="])),
+            Default::default(),
         );
 
         let candidates = Ruleset::conditional_cvec_match(
@@ -1347,6 +1350,7 @@ mod ruleset_tests {
             Workload::new(&["(/ x x)", "1"]),
             Ruleset::default(),
             Workload::new(&["(OP x 0)", "x"]).plug("OP", &Workload::new(&["<", "!="])),
+            Default::default(),
         );
 
         let mut ruleset: Ruleset<Pred> = Default::default();

@@ -12,9 +12,7 @@ use conditions::implication_set::ImplicationSet;
 use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
-use recipe_utils::{
-    recursive_rules, recursive_rules_cond, run_workload, Lang,
-};
+use recipe_utils::{recursive_rules, recursive_rules_cond, run_workload, Lang};
 use z3::ast::Ast;
 
 type Constant = i64;
@@ -1088,7 +1086,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
     let start_time = std::time::Instant::now();
     let wkld = conditions::generate::get_condition_workload();
     let mut all_rules = Ruleset::default();
-    let base_implications = base_implications();
+    let base_implications = ImplicationSet::default();
 
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
@@ -1255,72 +1253,4 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules
-}
-
-// A helper function which includes some nice baseline implications.
-fn base_implications() -> ImplicationSet<Pred> {
-    
-
-    // // (&& ?a ?b) -> ?a
-    // implications.add(
-    //     Implication::new(
-    //         "and-impl-left".into(),
-    //         "(&& ?a ?b)".parse().unwrap(),
-    //         "?a".parse().unwrap(),
-    //     )
-    //     .unwrap(),
-    // );
-
-    // // (&& ?a ?b) -> ?b
-    // implications.add(
-    //     Implication::new(
-    //         "and-impl-right".into(),
-    //         "(&& ?a ?b)".parse().unwrap(),
-    //         "?b".parse().unwrap(),
-    //     )
-    //     .unwrap(),
-    // );
-
-    ImplicationSet::default()
-}
-
-mod tests {
-    
-
-    
-
-    
-
-    #[test]
-    fn test_derive_all_caviar() {
-        let rules = r#"(== (max ?x ?c) 0) ==> (== ?x 0) if (< ?c 0)
-(&& (== ?x ?c0) (== ?x ?c1)) ==> 0 if (!= ?c1 ?c0)
-(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)
-(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))
-(< (- ?a ?y) ?a) ==> 1 if (> ?y 0)
-(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
-(+ (* ?x ?a) (* ?y ?b)) ==> (* (+ (* ?x (/ ?a ?b)) ?y) ?b) if (&& (!= ?b 0) (== (% ?a ?b) 0))
-(< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0)
-(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)
-(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
-(< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0)
-(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0)
-(< ?a (% ?x ?b)) ==> 0 if (>= ?a (abs ?b))
-(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)
-(/ (min ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (> ?z 0)
-(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (min ?x ?y) ?z) if (> ?z 0)
-(/ (max ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (< ?z 0)
-(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (max ?x ?y) ?z) if (< ?z 0)
-(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)
-(min (% ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 (- 0 (abs (+ ?c0 1))))
-(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)
-(max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)
-(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))"#
-            .lines()
-            .map(|s| Rule::<Pred>::from_string(s).unwrap().0);
-    }
 }

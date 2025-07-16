@@ -390,6 +390,7 @@ mod implication_tests {
 
 #[allow(unused_imports)]
 mod eq_tests {
+    use crate::halide::Pred;
     use crate::ImplicationSwitch;
     use egg::{EGraph, Runner};
 

@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use egg::{AstSize, EGraph, Extractor, Id, RecExpr, Rewrite};
 
-
 #[allow(unused_imports)]
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
@@ -108,9 +107,13 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         // Returns true iff cvec1 --> cvec2, i.e., forall i, !cvec[i] or cvec2[i].
         let compare = |cvec1: &CVec<L>, cvec2: &CVec<L>| -> bool {
             for tup in cvec1.iter().zip(cvec2) {
-                if let (Some(a), Some(b)) = tup { if let (Some(true), Some(false)) = (L::to_bool(a.clone()), L::to_bool(b.clone())) {
-                    return false;
-                } }
+                if let (Some(a), Some(b)) = tup {
+                    if let (Some(true), Some(false)) =
+                        (L::to_bool(a.clone()), L::to_bool(b.clone()))
+                    {
+                        return false;
+                    }
+                }
             }
             true
         };
@@ -405,6 +408,7 @@ mod run_implication_workload_tests {
             the_bools.clone(),
             None,
             Ruleset::default(),
+            ImplicationSet::default(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
@@ -416,6 +420,7 @@ mod run_implication_workload_tests {
             Workload::new(&["(&& V V)"]).plug("V", &Workload::new(&["a", "b", "0", "1"])),
             None,
             Ruleset::default(),
+            ImplicationSet::default(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
@@ -652,6 +657,7 @@ mod pvec_match_tests {
             the_bools.clone(),
             None,
             Ruleset::default(),
+            Default::default(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
@@ -663,6 +669,7 @@ mod pvec_match_tests {
             Workload::new(&["(&& V V)"]).plug("V", &Workload::new(&["a", "b", "0", "1"])),
             None,
             Ruleset::default(),
+            Default::default(),
             Limits::synthesis(),
             Limits::minimize(),
             true,
