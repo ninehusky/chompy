@@ -988,10 +988,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         let rexpr = &L::instantiate(&rule.rhs);
 
         let condition = rule.cond.clone().unwrap();
-
         let cond = &L::instantiate(&condition.chop_assumption());
 
-        condition.insert_into_egraph(&mut egraph);
+        egraph.add_expr(
+            &format!("({} {})", L::assumption_label(), cond)
+                .parse()
+                .unwrap(),
+        );
 
         match derive_type {
             DeriveType::Lhs => {
@@ -1337,10 +1340,9 @@ mod ruleset_tests {
             state.implications(),
         );
 
-        assert!(!candidates.is_empty());
         assert_eq!(candidates.len(), 2);
-        assert!(candidates.contains(&Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0));
-        assert!(candidates.contains(&Rule::from_string("(/ ?x ?x) ==> 1 if (< ?x 0)").unwrap().0));
+        assert!(candidates.contains(&Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0));
+        assert!(candidates.contains(&Rule::from_string("(/ ?a ?a) ==> 1 if (< ?a 0)").unwrap().0));
     }
 
     #[test]

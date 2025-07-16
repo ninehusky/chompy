@@ -6,8 +6,8 @@ use std::{
 
 use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language,
-    PatternAst, RecExpr, Rewrite, Subst,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, PatternAst,
+    RecExpr, Rewrite, Subst,
 };
 use enumo::lookup_pattern;
 
@@ -669,6 +669,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
 pub mod tests {
     use super::*;
     use crate::halide::Pred;
+    use conditions::merge_eqs;
     use egg::{EGraph, Id, Runner};
     use symbolic_expressions::ser;
 
@@ -926,7 +927,7 @@ pub mod tests {
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
-            .run(&[rule.rewrite()]);
+            .run(&[rule.rewrite(), merge_eqs()]);
 
         let egraph = runner.egraph.clone();
 

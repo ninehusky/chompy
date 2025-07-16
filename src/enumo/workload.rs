@@ -34,7 +34,7 @@ impl Workload {
 
     /// Check if the workload is empty.
     /// ```
-    /// use enumo::Workload;
+    /// use ruler::enumo::Workload;
     /// let wkld = Workload::new(["a", "b"]);
     /// assert!(!wkld.is_empty());
     /// let wkld = Workload::empty();
