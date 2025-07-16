@@ -164,6 +164,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         let cond = Assumption::new(L::generalize(cond, map).to_string()).unwrap();
         let forward = Rule::new_cond(&l_pat, &r_pat, &cond, Some(true_count));
         let backward = Rule::new_cond(&r_pat, &l_pat, &cond, Some(true_count));
+        println!(
+            "[add_cond_from_recexprs] Adding rule candidate: {} ==> {} if {}",
+            l_pat, r_pat, cond
+        );
         if let Some(forward) = forward {
             self.add(forward);
         }
@@ -476,7 +480,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         if l_id == r_id {
             // e1 and e2 are equivalent in the condition egraph
             println!(
-                "Skipping {} and {} because they are equivalent in the egraph representing {}",
+                "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
                 l_expr, r_expr, cond.pat
             );
             return None;
