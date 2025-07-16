@@ -428,7 +428,12 @@ mod run_implication_workload_tests {
 
         all_rules.extend(and_rules.clone());
 
-        let rules = run_implication_workload::<Pred>(&and_wkld, &ImplicationSet::new(), &all_rules);
+        let rules = run_implication_workload::<Pred>(
+            &and_wkld,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &ImplicationSet::new(),
+            &all_rules,
+        );
     }
 }
 

@@ -1338,10 +1338,9 @@ mod ruleset_tests {
         );
 
         assert!(!candidates.is_empty());
-        for c in candidates.iter() {
-            println!("candidate: {}", c);
-        }
-        assert_eq!(candidates.len(), 3);
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.contains(&Rule::from_string("(/ ?x ?x) ==> 1 if (!= ?x 0)").unwrap().0));
+        assert!(candidates.contains(&Rule::from_string("(/ ?x ?x) ==> 1 if (< ?x 0)").unwrap().0));
     }
 
     #[test]

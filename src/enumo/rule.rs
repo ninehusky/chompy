@@ -1,7 +1,7 @@
 use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst,
-    Rewrite, Subst,
+    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite,
+    Subst,
 };
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -321,7 +321,7 @@ mod test {
     #[test]
     fn parse() {
         // Unidirectional rule with => delimeter
-        let (forwards, backwards) = Rule::<egg::SymbolLang>::from_string("(* a b) => (* c d)")
+        let (forwards, backwards) = Rule::<Pred>::from_string("(* a b) => (* c d)")
             .ok()
             .unwrap();
         assert!(backwards.is_none());
@@ -329,7 +329,7 @@ mod test {
         assert_eq!(forwards.cond, None);
 
         // Unidirectional rule with ==> delimeter
-        let (forwards, backwards) = Rule::<egg::SymbolLang>::from_string("(* a b) ==> (* c d)")
+        let (forwards, backwards) = Rule::<Pred>::from_string("(* a b) ==> (* c d)")
             .ok()
             .unwrap();
         assert!(backwards.is_none());
@@ -337,7 +337,7 @@ mod test {
         assert_eq!(forwards.cond, None);
 
         // Bidirectional rule <=>
-        let (forwards, backwards) = Rule::<egg::SymbolLang>::from_string("(* a b) <=> (* c d)")
+        let (forwards, backwards) = Rule::<Pred>::from_string("(* a b) <=> (* c d)")
             .ok()
             .unwrap();
         assert!(backwards.is_some());
@@ -348,14 +348,16 @@ mod test {
         assert_eq!(forwards.cond, None);
 
         // Conditional rules:
-        let (forwards, backwards) =
-            Rule::<egg::SymbolLang>::from_string("(* a b) ==> (* c d) if (+ e f)")
-                .ok()
-                .unwrap();
+        let (forwards, backwards) = Rule::<Pred>::from_string("(* a b) ==> (* c d) if (< e f)")
+            .ok()
+            .unwrap();
         assert!(backwards.is_none());
-        assert_eq!(forwards.name.to_string(), "(* a b) ==> (* c d) if (+ e f)");
+        assert_eq!(forwards.name.to_string(), "(* a b) ==> (* c d) if (< e f)");
         assert!(forwards.cond.is_some());
-        assert_eq!(forwards.cond.unwrap().to_string(), "(+ e f)");
+        assert_eq!(
+            forwards.cond.unwrap().chop_assumption().to_string(),
+            "(< e f)"
+        );
     }
 
     #[test]
