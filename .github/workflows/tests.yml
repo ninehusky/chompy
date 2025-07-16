@@ -10,8 +10,8 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@main
+      - uses: dtolnay/rust-toolchain@stable
         with:
           profile: minimal
           override: true
@@ -26,12 +26,9 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: 1.66
-          override: true
+      - uses: actions/checkout@main
+      - uses: dtolnay/rust-toolchain@stable
+
       - run: rustup component add clippy
 
       - uses: actions-rs/cargo@v1
@@ -46,14 +43,7 @@ jobs:
       SKIP_RECIPES: 1
     steps:
       - uses: actions/checkout@main
-
-      - name: Install Rust compiler
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.66
-          default: true
-          override: true
-          components: rustfmt, clippy
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: "Build"
         run: cargo build --release
@@ -71,7 +61,6 @@ jobs:
     steps:
       - uses: actions/checkout@main
       - uses: dtolnay/rust-toolchain@stable
-
 
       - name: "Build"
         run: cargo build --release
