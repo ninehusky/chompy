@@ -161,7 +161,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                                 // skip self-implications.
                                 continue;
                             }
-                            let name = format!("{} --> {}", e1, e2);
+                            let name = format!("{e1} --> {e2}");
                             // attempt to make an implication, and if it doesn't work, skip it.
 
                             match (
@@ -297,7 +297,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
                 let lhs_assumption = Assumption::new(lhs.to_string()).unwrap();
                 let rhs_assumption = Assumption::new(rhs.to_string()).unwrap();
                 let generalized_imp = Implication::new(
-                    format!("{} -> {}", lhs, rhs).into(),
+                    format!("{lhs} -> {rhs}").into(),
                     lhs_assumption,
                     rhs_assumption,
                 )

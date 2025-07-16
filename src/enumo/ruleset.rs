@@ -226,7 +226,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut file = std::fs::File::create(filename)
             .unwrap_or_else(|_| panic!("Failed to open '{}'", filename));
         for (name, _) in &self.0 {
-            writeln!(file, "{}", name).expect("Unable to write");
+            writeln!(file, "{name}").expect("Unable to write");
         }
     }
 
@@ -692,8 +692,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     if mini_egraph.find(l) == mini_egraph.find(r) {
                         // e1 and e2 are equivalent in the mini egraph
                         println!(
-                            "skipping {} and {} because they are equivalent in the mini egraph",
-                            e1, e2
+                            "skipping {e1} and {e2} because they are equivalent in the mini egraph"
                         );
                         continue;
                     }
@@ -782,7 +781,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             let cond_pat: &Pattern<L> = &condition.parse().unwrap();
 
             let cond_ast = &L::instantiate(cond_pat);
-            egraph.add_expr(&format!("(assume {})", cond_ast).parse().unwrap());
+            egraph.add_expr(&format!("(assume {cond_ast})").parse().unwrap());
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
             let mut initial = vec![];
@@ -1222,15 +1221,13 @@ mod ruleset_tests {
         assert_eq!(
             lhs.to_string(),
             "(+ 1 1)".to_string(),
-            "Expected lhs to be (+ 1 1), got {}",
-            lhs
+            "Expected lhs to be (+ 1 1), got {lhs}"
         );
 
         assert_eq!(
             rhs.to_string(),
             "2".to_string(),
-            "Expected rhs to be 2, got {}",
-            rhs
+            "Expected rhs to be 2, got {rhs}"
         );
     }
 

@@ -39,16 +39,13 @@ impl<L: SynthLanguage> Assumption<L> {
     pub fn new(assumption: String) -> Result<Self, String> {
         let pat: Result<Pattern<L>, _> = assumption.parse();
         if pat.is_err() {
-            return Err(format!(
-                "Failed to parse assumption pattern: {}",
-                assumption
-            ));
+            return Err(format!("Failed to parse assumption pattern: {assumption}"));
         }
         let pat = pat.unwrap();
         if L::pattern_is_assumption(&pat) {
-            return Err(format!("Pattern is already an assumption: {}", pat));
+            return Err(format!("Pattern is already an assumption: {pat}"));
         } else if !L::pattern_is_predicate(&pat) {
-            return Err(format!("Pattern is not a valid predicate: {}", pat));
+            return Err(format!("Pattern is not a valid predicate: {pat}"));
         }
 
         Ok(Self {

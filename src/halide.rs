@@ -77,11 +77,11 @@ impl Pred {
                 }
                 .rewrite();
 
-                println!("c_pat: {}", c_pat);
-                println!("c2_pat: {}", c2_pat);
+                println!("c_pat: {c_pat}");
+                println!("c2_pat: {c2_pat}");
 
                 let imp: Result<Implication<Pred>, _> = Implication::new(
-                    format!("{} -> {}", c_pat, c2_pat).into(),
+                    format!("{c_pat} -> {c2_pat}").into(),
                     Assumption::new(c_pat.to_string()).unwrap(),
                     Assumption::new(c2_pat.to_string()).unwrap(),
                 );
@@ -162,12 +162,12 @@ impl SynthLanguage for Pred {
             match term {
                 Sexp::Atom(a) => {
                     if let Ok(num) = a.parse::<i64>() {
-                        Sexp::Atom(format!("(Lit {})", num))
+                        Sexp::Atom(format!("(Lit {num})"))
                     } else if a.starts_with("?") {
                         // a is a meta-variable, leave it alone.
                         return Sexp::Atom(a.into());
                     } else {
-                        return Sexp::Atom(format!("(Var \"{}\")", a));
+                        return Sexp::Atom(format!("(Var \"{a}\")"));
                     }
                 }
                 Sexp::List(l) => {

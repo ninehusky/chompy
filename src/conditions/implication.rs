@@ -42,8 +42,7 @@ impl<L: SynthLanguage> Implication<L> {
 
         if rhs_vars.iter().any(|v| !lhs_vars.contains(v)) {
             return Err(format!(
-                "Right-hand side of implication '{}' contains variables not present in the left-hand side: {:?}",
-                name, rhs_vars
+                "Right-hand side of implication '{name}' contains variables not present in the left-hand side: {rhs_vars:?}"
             ));
         }
 

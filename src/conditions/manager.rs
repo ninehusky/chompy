@@ -137,11 +137,10 @@ impl<L: SynthLanguage> EGraphManager<L> {
         let rw_prog = format!(
             r#"
         (rewrite
-            {}
-            {}
-            :ruleset {})
-        "#,
-            lhs, rhs, RW_RULESET_NAME
+            {lhs}
+            {rhs}
+            :ruleset {RW_RULESET_NAME})
+        "#
         );
         match self.egraph.parse_and_run_program(None, &rw_prog) {
             Ok(_) => Ok(()),
@@ -176,15 +175,13 @@ impl<L: SynthLanguage> EGraphManager<L> {
     pub fn check_path(&mut self, from: &Assumption<L>, to: &Assumption<L>) -> Result<bool, String> {
         if !is_concrete(&from.clone().into()) {
             return Err(format!(
-                "Assumption must be concrete (no symbolic variables): {}",
-                from
+                "Assumption must be concrete (no symbolic variables): {from}"
             ));
         }
 
         if !is_concrete(&to.clone().into()) {
             return Err(format!(
-                "Assumption must be concrete (no symbolic variables): {}",
-                to
+                "Assumption must be concrete (no symbolic variables): {to}"
             ));
         }
 
@@ -256,7 +253,7 @@ impl<L: SynthLanguage> EGraphManager<L> {
         self.egraph
             .parse_and_run_program(
                 None,
-                &format!(r#"(run-schedule (saturate {}))"#, ruleset_name),
+                &format!(r#"(run-schedule (saturate {ruleset_name}))"#),
             )
             .unwrap_or_else(|e| {
                 panic!(

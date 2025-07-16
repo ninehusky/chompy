@@ -49,8 +49,8 @@ impl<L: SynthLanguage> Rule<L> {
         let make_name =
             |lhs: &Pattern<L>, rhs: &Pattern<L>, cond: Option<Assumption<L>>| -> String {
                 match cond {
-                    None => format!("{} ==> {}", lhs, rhs),
-                    Some(cond) => format!("{} ==> {} if {}", lhs, rhs, cond),
+                    None => format!("{lhs} ==> {rhs}"),
+                    Some(cond) => format!("{lhs} ==> {rhs} if {cond}"),
                 }
             };
 
@@ -102,7 +102,7 @@ impl<L: SynthLanguage> Rule<L> {
                 Ok((forwards, None))
             }
         } else {
-            Err(format!("Failed to parse {}", s))
+            Err(format!("Failed to parse {s}"))
         }
     }
 }
@@ -207,7 +207,7 @@ impl<L: SynthLanguage> Rule<L> {
         let cond_pat: Pattern<L> = cond.clone().into();
         let cond_display = cond.chop_assumption();
 
-        let name = format!("{} ==> {} if {}", l_pat, r_pat, cond_display);
+        let name = format!("{l_pat} ==> {r_pat} if {cond_display}");
 
         let cond_vars = cond_pat.vars();
         let l_vars = l_pat.vars();
@@ -239,7 +239,7 @@ impl<L: SynthLanguage> Rule<L> {
     }
 
     pub fn new(l_pat: &Pattern<L>, r_pat: &Pattern<L>) -> Option<Self> {
-        let name = format!("{} ==> {}", l_pat, r_pat);
+        let name = format!("{l_pat} ==> {r_pat}");
         let rhs = Rhs { rhs: r_pat.clone() };
         let rewrite = Rewrite::new(name.clone(), l_pat.clone(), rhs).ok();
 

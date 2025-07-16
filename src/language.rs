@@ -121,7 +121,7 @@ impl<L: SynthLanguage> ImplicationSwitch<L> {
             my_cond: self.my_cond.clone(),
         };
 
-        println!("searcher is for : {}", searcher);
+        println!("searcher is for : {searcher}");
         // NOTE @ninehusky: I made the string like this so that we don't confuse it with
         // a rewrite rule.
         Rewrite::new(
@@ -399,7 +399,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     /// Given a node, construct a pattern node
     fn to_enode_or_var(self) -> ENodeOrVar<Self> {
         match self.to_var() {
-            Some(var) => ENodeOrVar::Var(format!("?{}", var).parse().unwrap()),
+            Some(var) => ENodeOrVar::Var(format!("?{var}").parse().unwrap()),
             None => ENodeOrVar::ENode(self),
         }
     }
@@ -636,8 +636,8 @@ pub mod tests {
     use super::*;
     use crate::halide::Pred;
     use conditions::merge_eqs;
-    use egg::{EGraph, Id, Runner};
-    use symbolic_expressions::ser;
+    use egg::{EGraph, Runner};
+    
 
     #[test]
     // in previous step, we have (IsTrue foo)
