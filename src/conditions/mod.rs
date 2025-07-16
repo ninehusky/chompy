@@ -1,11 +1,9 @@
-use std::sync::Arc;
 
-use egg::{Analysis, Applier, Language, Pattern, Rewrite, Var};
-use z3::ast::Ast;
+use egg::{Pattern, Rewrite};
 
 use crate::conditions::implication::{EqApplier, Implication};
-use crate::halide::{egg_to_z3, Pred};
-use crate::{SynthAnalysis, SynthLanguage, ValidationResult};
+use crate::halide::Pred;
+use crate::{SynthAnalysis, ValidationResult};
 
 pub mod assumption;
 mod derive;

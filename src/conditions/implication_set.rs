@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use egg::{AstSize, EGraph, ENodeOrVar, Extractor, Id, RecExpr, Rewrite};
+use egg::{AstSize, EGraph, Extractor, Id, RecExpr, Rewrite};
 
-use egglog::EGraph as EgglogEGraph;
 
 #[allow(unused_imports)]
 use crate::{
@@ -109,15 +108,9 @@ impl<L: SynthLanguage> ImplicationSet<L> {
         // Returns true iff cvec1 --> cvec2, i.e., forall i, !cvec[i] or cvec2[i].
         let compare = |cvec1: &CVec<L>, cvec2: &CVec<L>| -> bool {
             for tup in cvec1.iter().zip(cvec2) {
-                match tup {
-                    (Some(a), Some(b)) => match (L::to_bool(a.clone()), L::to_bool(b.clone())) {
-                        (Some(true), Some(false)) => {
-                            return false;
-                        }
-                        _ => {}
-                    },
-                    _ => {}
-                }
+                if let (Some(a), Some(b)) = tup { if let (Some(true), Some(false)) = (L::to_bool(a.clone()), L::to_bool(b.clone())) {
+                    return false;
+                } }
             }
             true
         };
@@ -367,7 +360,7 @@ pub fn run_implication_workload<L: SynthLanguage>(
     // 1. Initialize the e-graph with the variables. You need this
     //    because pvecs are just cvecs, and cvecs need variables!
     let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
-    L::initialize_vars(&mut egraph, &vars);
+    L::initialize_vars(&mut egraph, vars);
 
     for size in 1..=max_size {
         let curr_workload = wkld.clone().filter(Filter::MetricEq(Metric::Atoms, size));

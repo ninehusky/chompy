@@ -1,12 +1,11 @@
 use std::time::Instant;
 
-use egg::{AstSize, EGraph, Extractor, Pattern, Rewrite, Runner};
-use indexmap::IndexMap;
+use egg::{EGraph, Rewrite, Runner};
 
 use crate::{
-    conditions::{implication::merge_eqs, implication_set::ImplicationSet},
+    conditions::implication_set::ImplicationSet,
     enumo::{ChompyState, Filter, Metric, Ruleset, Scheduler, Workload},
-    HashMap, Limits, PVec, SynthAnalysis, SynthLanguage,
+    HashMap, Limits, SynthAnalysis, SynthLanguage,
 };
 
 /// Iterate a grammar (represented as a workload) up to a certain size metric
@@ -42,14 +41,14 @@ fn get_cond_egraphs<L: SynthLanguage>(
         let mut egraph = black_egraph.clone();
 
         // Add `(assume ?cond)` to the egraph.
-        egraph.add_expr(&format!("(assume {})", cond.to_string()).parse().unwrap());
+        egraph.add_expr(&format!("(assume {})", cond).parse().unwrap());
 
         let runner: Runner<L, SynthAnalysis> = Runner::default()
             .with_egraph(egraph.clone())
             .run(&impls.clone());
 
         let scheduler = Scheduler::Compress(Limits::deriving());
-        let egraph = scheduler.run(&runner.egraph, &chosen);
+        let egraph = scheduler.run(&runner.egraph, chosen);
 
         let key = cond.to_string();
         egraphs.insert(key, egraph);
@@ -121,7 +120,7 @@ fn run_workload_internal<L: SynthLanguage>(
             &compressed,
             &chosen,
             &state.pvec_to_patterns(),
-            &state.implications(),
+            state.implications(),
         );
 
         let (chosen_cond, _) = conditional_candidates.minimize_cond(

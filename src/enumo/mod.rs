@@ -1,9 +1,9 @@
 use crate::{
     conditions::implication_set::{run_implication_workload, ImplicationSet},
-    HashMap, IndexMap, PVec, SynthAnalysis, SynthLanguage,
+    HashMap, IndexMap, PVec, SynthLanguage,
 };
 
-use egg::{AstSize, ENodeOrVar, Extractor, RecExpr, Rewrite};
+use egg::{AstSize, ENodeOrVar, Extractor, RecExpr};
 pub use filter::*;
 pub use metric::*;
 pub use pattern::*;

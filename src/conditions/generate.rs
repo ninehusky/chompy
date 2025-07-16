@@ -1,26 +1,18 @@
-use std::str::FromStr;
 
-use egg::{AstSize, EClass, Extractor, Id, Pattern, RecExpr, Rewrite, Runner};
-use env_logger::filter;
+use egg::{AstSize, Extractor, Rewrite};
 use z3::ast::Ast;
 
-use crate::conditions::assumption::Assumption;
-use crate::conditions::derive::{egg_to_egglog, new_impl_egraph};
 use crate::conditions::implication_set::ImplicationSet;
 use crate::enumo::Sexp;
 use crate::language::SynthLanguage;
 use crate::{
-    conditions::{derive::minimize_implications, Implication},
     enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload},
     halide::{egg_to_z3, Pred},
-    recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang},
-    CVec, EGraph, HashMap, HashSet, ImplicationSwitch, IndexMap, Limits, Signature, SynthAnalysis,
+    recipe_utils::{recursive_rules, run_workload, Lang}, HashSet, Limits, SynthAnalysis,
     ValidationResult,
 };
 
-use egglog::{extract, EGraph as EgglogEGraph};
 
-use super::derive::select_implications;
 
 // oh my god
 #[derive(PartialEq, Eq)]
@@ -201,7 +193,7 @@ pub fn get_condition_workload() -> Workload {
 
     let mut eq_rules = Ruleset::default();
     eq_rules.add(
-        Rule::from_string("(&& (<= ?a ?b) (<= ?b ?a)) ==> (== ?a ?b)".into())
+        Rule::from_string("(&& (<= ?a ?b) (<= ?b ?a)) ==> (== ?a ?b)")
             .unwrap()
             .0,
     );
@@ -241,7 +233,7 @@ fn prune_rules(rules: Vec<Rewrite<Pred, SynthAnalysis>>) -> Vec<Rewrite<Pred, Sy
     let mut seen = HashSet::default();
     for rule in rules {
         if !seen.contains(&rule.name) {
-            seen.insert(rule.name.clone());
+            seen.insert(rule.name);
             result.push(rule);
         }
     }

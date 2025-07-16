@@ -1,11 +1,9 @@
 use egg::RecExpr;
 use reqwest::Client;
 use serde_json::json;
-use symbolic_expressions::{parser::parse_str, Sexp};
 
 use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
-use std::str::FromStr;
 
 use crate::{ConditionRecipe, Recipe};
 
@@ -313,7 +311,7 @@ pub fn soup_to_workload<L: SynthLanguage>(
 }
 
 pub mod tests {
-    use egg::Pattern;
+    
 
     #[allow(unused_imports)]
     use super::*;

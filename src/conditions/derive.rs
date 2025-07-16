@@ -2,10 +2,9 @@
 
 use std::str::FromStr;
 
-use egg::Rewrite;
 
 use crate::{
-    conditions::implication::Implication, enumo::{self, Sexp}, halide::Pred, SynthAnalysis, SynthLanguage, ValidationResult
+    conditions::implication::Implication, enumo::{self, Sexp}, halide::Pred, SynthLanguage, ValidationResult
 };
 
 use super::{validate_implication};
@@ -18,11 +17,11 @@ fn score<L: SynthLanguage>(imp: &Implication<L>) -> f64 {
     fn size(sexp: &enumo::Sexp) -> f64 {
         match sexp {
             enumo::Sexp::Atom(a) => {
-                if let Ok(_) = a.parse::<i64>() {
+                if a.parse::<i64>().is_ok() {
                     // slight penalty for literals.
-                    return 1.1;
+                    1.1
                 } else {
-                    return 1.0;
+                    1.0
                 }
             }
             enumo::Sexp::List(l) => l.iter().map(size).sum(),
@@ -50,7 +49,7 @@ pub fn minimize_implications(
     let mut chosen = prior.clone();
     let step_size = 10;
     let mut mut_imps = imps.clone();
-    let mut egraph = new_impl_egraph();
+    let egraph = new_impl_egraph();
     while !mut_imps.is_empty() {
         let selected = select_implications(&mut mut_imps, step_size, &mut invalid);
         // println!("i have selected these impls:");
@@ -77,12 +76,12 @@ pub fn egg_to_egglog(term: &Sexp) -> Sexp {
     match term {
         Sexp::Atom(a) => {
             if let Ok(num) = a.parse::<i64>() {
-                return Sexp::Atom(format!("(Lit {})", num.to_string()));
+                Sexp::Atom(format!("(Lit {})", num))
             } else if a.starts_with("?") {
                 // a is a meta-variable, leave it alone.
                 return Sexp::Atom(a.into());
             } else {
-                return Sexp::Atom(format!("(Var \"{}\")", a).into());
+                return Sexp::Atom(format!("(Var \"{}\")", a));
             }
         }
         Sexp::List(l) => {
@@ -210,9 +209,8 @@ pub fn shrink_implications(
             &enumo::Sexp::from_str(&Pred::instantiate(&imp.rhs().clone().into()).to_string()).unwrap(),
         );
 
-        if !egraph
-            .parse_and_run_program(None, format!("(check (path {} {}))", lhs, rhs).as_str())
-            .is_ok()
+        if egraph
+            .parse_and_run_program(None, format!("(check (path {} {}))", lhs, rhs).as_str()).is_err()
         {
             // the path does not exist
             println!("we are keeping: {}", imp.name());

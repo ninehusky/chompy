@@ -5,7 +5,6 @@ use egg::{Analysis, Applier, Language, Pattern, PatternAst, Rewrite, Var};
 use crate::{
     apply_pat,
     enumo::{lookup_pattern, Sexp},
-    halide::Pred,
     SynthAnalysis, SynthLanguage,
 };
 
@@ -94,11 +93,11 @@ impl<L: SynthLanguage> Implication<L> {
         fn size(sexp: &Sexp) -> f64 {
             match sexp {
                 Sexp::Atom(a) => {
-                    if let Ok(_) = a.parse::<i64>() {
+                    if a.parse::<i64>().is_ok() {
                         // slight penalty for literals.
-                        return 1.1;
+                        1.1
                     } else {
-                        return 1.0;
+                        1.0
                     }
                 }
                 Sexp::List(l) => l.iter().map(size).sum(),

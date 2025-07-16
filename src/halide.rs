@@ -1,22 +1,19 @@
-use std::{convert::TryInto, str::FromStr};
+use std::str::FromStr;
 
 use crate::{
     conditions::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
-        merge_eqs,
     },
-    enumo::Rule,
     *,
 };
 
 use conditions::implication_set::ImplicationSet;
-use egg::{RecExpr, Rewrite, Runner};
+use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
-use log::log;
 use num::ToPrimitive;
 use recipe_utils::{
-    base_lang, iter_metric, recursive_rules, recursive_rules_cond, run_workload, Lang,
+    recursive_rules, recursive_rules_cond, run_workload, Lang,
 };
 use z3::ast::Ast;
 
@@ -58,7 +55,7 @@ impl Pred {
         let forced = conditions.force();
 
         let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
-        let mut cache: HashMap<(String, String), bool> = Default::default();
+        let cache: HashMap<(String, String), bool> = Default::default();
         for c in &forced {
             let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
             let c_pat = Pattern::from(&c_recexpr.clone());
@@ -168,12 +165,12 @@ impl SynthLanguage for Pred {
             match term {
                 Sexp::Atom(a) => {
                     if let Ok(num) = a.parse::<i64>() {
-                        return Sexp::Atom(format!("(Lit {})", num.to_string()));
+                        Sexp::Atom(format!("(Lit {})", num))
                     } else if a.starts_with("?") {
                         // a is a meta-variable, leave it alone.
                         return Sexp::Atom(a.into());
                     } else {
-                        return Sexp::Atom(format!("(Var \"{}\")", a).into());
+                        return Sexp::Atom(format!("(Var \"{}\")", a));
                     }
                 }
                 Sexp::List(l) => {
@@ -405,8 +402,8 @@ impl SynthLanguage for Pred {
 
         // chop off the assumptions, by taking everything except the last element.
         // we should definitely test this.
-        let lexpr = egg_to_z3(&ctx, &Pred::instantiate(&lexpr).as_ref());
-        let rexpr = egg_to_z3(&ctx, &Pred::instantiate(&rexpr).as_ref());
+        let lexpr = egg_to_z3(&ctx, Pred::instantiate(&lexpr).as_ref());
+        let rexpr = egg_to_z3(&ctx, Pred::instantiate(&rexpr).as_ref());
 
         let zero = z3::ast::Int::from_i64(&ctx, 0);
         let one = z3::ast::Int::from_i64(&ctx, 1);
@@ -1089,7 +1086,7 @@ pub fn compute_conditional_structures(
 pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let start_time = std::time::Instant::now();
-    let mut wkld = conditions::generate::get_condition_workload();
+    let wkld = conditions::generate::get_condition_workload();
     let mut all_rules = Ruleset::default();
     let base_implications = base_implications();
 
@@ -1262,7 +1259,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
 // A helper function which includes some nice baseline implications.
 fn base_implications() -> ImplicationSet<Pred> {
-    let mut implications = ImplicationSet::default();
+    
 
     // // (&& ?a ?b) -> ?a
     // implications.add(
@@ -1284,21 +1281,15 @@ fn base_implications() -> ImplicationSet<Pred> {
     //     .unwrap(),
     // );
 
-    implications
+    ImplicationSet::default()
 }
 
 mod tests {
-    use std::str::FromStr;
+    
 
-    use egg::{EGraph, RecExpr};
+    
 
-    use crate::{
-        conditions::assumption::Assumption,
-        enumo::{self, Rule, Ruleset, Sexp, Workload},
-        halide::Pred,
-        recipe_utils::run_workload,
-        Limits, Pattern, SynthAnalysis, SynthLanguage,
-    };
+    
 
     #[test]
     fn test_derive_all_caviar() {

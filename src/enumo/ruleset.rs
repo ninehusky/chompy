@@ -1,21 +1,18 @@
 use egg::{
-    Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
+    AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
 };
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
-use std::{fmt::Display, io::Write, str::FromStr, sync::Arc};
+use std::{io::Write, sync::Arc};
 
 use crate::{
-    conditions::{assumption::Assumption, implication_set::ImplicationSet, merge_eqs},
-    enumo::Sexp,
-    halide::{self, Pred},
-    recipe_utils::run_workload,
+    conditions::{assumption::Assumption, implication_set::ImplicationSet},
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
     SynthAnalysis, SynthLanguage,
 };
 
-use super::{Rule, Scheduler, Workload};
+use super::{Rule, Scheduler};
 
 /// A mapping from pvecs to their corresponding predicates.
 pub type PredicateMap<L> = IndexMap<PVec, Vec<Assumption<L>>>;
@@ -135,7 +132,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 continue;
             }
             let reverse = if let Some(c) = &rule.cond {
-                Rule::new_cond(&rule.rhs, &rule.lhs, &c, rule.true_count)
+                Rule::new_cond(&rule.rhs, &rule.lhs, c, rule.true_count)
             } else {
                 Rule::new(&rule.rhs, &rule.lhs)
             };
@@ -381,7 +378,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             i += 1;
             for cvec2 in by_cvec.keys().skip(i) {
                 let predicates =
-                    Self::find_matching_conditions(cvec1.clone(), cvec2.clone(), &conditions);
+                    Self::find_matching_conditions(cvec1.clone(), cvec2.clone(), conditions);
 
                 // 2. For each predicate, construct a "colored" egraph that
                 //    models the implications of the predicate.
@@ -775,7 +772,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .values()
                 .filter(|rule| {
                     if let Some(cond) = &rule.cond {
-                        cond.to_string() == condition.to_string()
+                        cond.to_string() == *condition
                     } else {
                         false
                     }
@@ -821,7 +818,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
             let scheduler = Scheduler::Compress(Limits::deriving());
-            let egraph = scheduler.run(&runner.egraph, &chosen);
+            let egraph = scheduler.run(&runner.egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {

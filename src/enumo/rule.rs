@@ -1,6 +1,6 @@
 use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst,
+    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst,
     Rewrite, Subst,
 };
 use std::fmt::{Debug, Formatter};

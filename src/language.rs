@@ -6,15 +6,14 @@ use std::{
 
 use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, Extractor, FromOp, Language,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language,
     PatternAst, RecExpr, Rewrite, Subst,
 };
-use enumo::{lookup_pattern, Workload};
+use enumo::lookup_pattern;
 
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
     enumo::Sexp,
-    recipe_utils::Lang,
     *,
 };
 
@@ -526,24 +525,24 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             match sexp {
                 Sexp::Atom(a) => {
                     // if we can parse `a` into a number, then...
-                    if let Ok(_) = a.parse::<i32>() {
+                    if a.parse::<i32>().is_ok() {
                         // slight penalty for constants
                         2
                     } else {
                         1
                     }
                 }
-                Sexp::List(l) => l.into_iter().map(|s| sexp_to_cost(s)).sum::<i32>(),
+                Sexp::List(l) => l.into_iter().map(sexp_to_cost).sum::<i32>(),
             }
         }
 
         let c_cost = if cond.is_some() {
-            sexp_to_cost(Sexp::from_str(&cond.clone().unwrap().to_string().as_str()).unwrap())
+            sexp_to_cost(Sexp::from_str(cond.clone().unwrap().to_string().as_str()).unwrap())
         } else {
             0
         };
-        let l_cost = sexp_to_cost(Sexp::from_str(&lhs.to_string().as_str()).unwrap());
-        let r_cost = sexp_to_cost(Sexp::from_str(&rhs.to_string().as_str()).unwrap());
+        let l_cost = sexp_to_cost(Sexp::from_str(lhs.to_string().as_str()).unwrap());
+        let r_cost = sexp_to_cost(Sexp::from_str(rhs.to_string().as_str()).unwrap());
 
         let mut vars: HashSet<Var> = Default::default();
         vars.extend(lhs.vars());
