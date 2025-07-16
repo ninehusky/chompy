@@ -1,7 +1,7 @@
+use ruler::enumo::Ruleset;
 use ruler::halide::Pred;
-use ruler::enumo::{Ruleset};
 
-use ruler::halide::{og_recipe};
+use ruler::halide::og_recipe;
 
 use std::fs::File;
 use std::path::PathBuf;
@@ -46,7 +46,6 @@ impl FromStr for RecipeType {
     }
 }
 
-
 #[derive(Parser, Debug)]
 struct ChompyArgs {
     #[clap(long)]
@@ -79,22 +78,18 @@ pub async fn main() {
                     match recipe {
                         RecipeType::OgRecipe => og_recipe(),
                     }
-                },
+                }
                 (Some(_), Some(_)) => panic!("both recipe types provided."),
-                (None, _) => panic!("no recipe type provided.")
-
+                (None, _) => panic!("no recipe type provided."),
             }
         }
-        ChompyMode::LLMAlphabetSoup => {
-            run_gpt_eval().await
-        }
+        ChompyMode::LLMAlphabetSoup => run_gpt_eval().await,
         ChompyMode::LLMRecipe => {
             todo!("Not implemented yet.");
         }
     };
     rules.to_file(output_file.to_str().unwrap());
 }
-
 
 pub async fn run_gpt_eval() -> Ruleset<Pred> {
     todo!("This is pretty out of date.");

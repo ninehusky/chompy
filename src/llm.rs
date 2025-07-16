@@ -4,7 +4,6 @@ use serde_json::json;
 
 use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
-
 use crate::{ConditionRecipe, Recipe};
 
 const PROMPT_DE_LA_SOPA_ALFABETO: &str = r#"
@@ -284,12 +283,12 @@ pub fn soup_to_workload<L: SynthLanguage>(
             continue;
         }
 
-        if (!starts_with_paren || !ends_with_paren) && !vals.contains(&r.to_string())
+        if (!starts_with_paren || !ends_with_paren)
+            && !vals.contains(&r.to_string())
             && !vars.contains(&r.to_string())
         {
             println!("skipping expression: {}", r);
             continue;
-
         }
 
         let t: Result<RecExpr<L>, _> = r.parse();
@@ -311,7 +310,6 @@ pub fn soup_to_workload<L: SynthLanguage>(
 }
 
 pub mod tests {
-    
 
     #[allow(unused_imports)]
     use super::*;
@@ -414,12 +412,12 @@ pub mod tests {
             soup,
             vec!["a".to_string(), "b".to_string(), "c".to_string()],
             vec!["1".to_string()],
-        ).unwrap();
+        )
+        .unwrap();
 
         for t in &wkld.force() {
             println!("{}", t);
         }
-
 
         assert_eq!(wkld.force().len(), expected_length);
     }
