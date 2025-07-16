@@ -554,35 +554,6 @@ impl SynthLanguage for Pred {
     }
 }
 
-// 1. run "ruler" on the conditional workload, generating a series of rewrite
-//    rules.
-// 2. when it comes time to check condition implication, use these rules
-//    as opposed to Z3 checking.
-pub fn get_condition_propagation_rules_halide() -> Vec<Rewrite<Pred, SynthAnalysis>> {
-    panic!("Don't call me.");
-    let cond_lang = Lang {
-        vars: vec!["a".to_string(), "b".to_string()],
-        vals: vec!["0".to_string(), "1".to_string()],
-        ops: vec![
-            vec![],
-            vec![
-                "<".to_string(),
-                "<=".to_string(),
-                "!=".to_string(),
-                "->".to_string(),
-            ],
-        ],
-    };
-
-    vec![]
-}
-
-#[test]
-fn test_get_condition_propagation_rules_halide() {
-    // we just wanna call the function to test locally
-    let rules = get_condition_propagation_rules_halide();
-}
-
 pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
     let mut buf: Vec<z3::ast::Int> = vec![];
     let zero = z3::ast::Int::from_i64(ctx, 0);
