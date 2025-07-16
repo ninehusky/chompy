@@ -637,7 +637,6 @@ pub mod tests {
     use crate::halide::Pred;
     use conditions::merge_eqs;
     use egg::{EGraph, Runner};
-    
 
     #[test]
     // in previous step, we have (IsTrue foo)
