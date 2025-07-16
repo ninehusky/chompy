@@ -36,7 +36,6 @@ pub struct ChompyState<L: SynthLanguage> {
     terms: Workload,
     chosen: Ruleset<L>,
     predicates: Workload,
-    pvec_to_patterns: PredicateMap<L>,
     implications: ImplicationSet<L>,
 }
 
@@ -93,12 +92,6 @@ impl<L: SynthLanguage> ChompyState<L> {
             }
         }
 
-        let pvec_to_patterns = if predicates.is_empty() {
-            Default::default()
-        } else {
-            build_pvec_to_patterns(predicates.clone())
-        };
-
         let implications = if predicates.is_empty() {
             ImplicationSet::default()
         } else {
@@ -108,7 +101,6 @@ impl<L: SynthLanguage> ChompyState<L> {
         Self {
             terms,
             chosen: prior,
-            pvec_to_patterns,
             predicates,
             implications,
         }

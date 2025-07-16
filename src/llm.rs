@@ -151,7 +151,7 @@ pub async fn generate_alphabet_soup(
 
 pub async fn condition_soup(
     client: &Client,
-    term_workload_as_vec: &Vec<String>,
+    term_workload_as_vec: &[String],
     vars: &Vec<String>,
     r: &ConditionRecipe,
 ) -> Result<Vec<String>, reqwest::Error> {

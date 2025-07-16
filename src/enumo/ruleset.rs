@@ -1,4 +1,4 @@
-use egg::{AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher};
+use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner, Searcher};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
@@ -748,9 +748,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     fn shrink_cond(
         &mut self,
         chosen: &Self,
-        scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
-        by_cond: &IndexMap<String, Ruleset<L>>,
         most_recent_condition: &Assumption<L>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
@@ -861,7 +859,6 @@ impl<L: SynthLanguage> Ruleset<L> {
     pub fn minimize_cond(
         &mut self,
         prior: Ruleset<L>,
-        scheduler: Scheduler,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
     ) -> (Self, Self) {
         let start_time = std::time::Instant::now();
@@ -908,13 +905,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             chosen.extend(selected.clone());
 
-            self.shrink_cond(
-                &chosen,
-                scheduler,
-                prop_rules,
-                &by_cond,
-                most_recent_condition,
-            );
+            self.shrink_cond(&chosen, prop_rules, most_recent_condition);
         }
         // Return only the new rules
         chosen.remove_all(prior);

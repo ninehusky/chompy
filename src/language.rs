@@ -37,47 +37,6 @@ struct ImplicationApplier<L: SynthLanguage> {
     my_cond: Pattern<L>,
 }
 
-// returns Option<Id> if the pattern is found in the egraph, otherwise None.
-fn search_pat<L: Language, A: Analysis<L>>(
-    pat: &Pattern<L>,
-    egraph: &EGraph<L, A>,
-    subst: &Subst,
-) -> Option<Id> {
-    let mut ids = vec![None; pat.ast.as_ref().len()];
-
-    for (i, pat_node) in pat.ast.as_ref().iter().enumerate() {
-        match pat_node {
-            ENodeOrVar::Var(v) => {
-                ids[i] = subst.get(*v).copied();
-            }
-            ENodeOrVar::ENode(e) => {
-                let mut resolved_enode: L = e.clone();
-                for child in resolved_enode.children_mut() {
-                    match ids[usize::from(*child)] {
-                        None => {
-                            return None;
-                        }
-                        Some(id) => {
-                            *child = id;
-                        }
-                    }
-                }
-                match egraph.lookup(resolved_enode) {
-                    None => {
-                        return None;
-                    }
-                    Some(id) => {
-                        ids[i] = Some(id);
-                    }
-                }
-            }
-        }
-    }
-
-    // the first id.
-    ids[0]
-}
-
 // Given a subst and a pattern, this function adds the substituted pattern to the egraph.
 pub(crate) fn apply_pat<L: Language, A: Analysis<L>>(
     pat: &[ENodeOrVar<L>],
@@ -107,17 +66,27 @@ where
     fn apply_one(
         &self,
         egraph: &mut egg::EGraph<L, SynthAnalysis>,
-        eclass: egg::Id,
+        _eclass: egg::Id,
         subst: &egg::Subst,
         _searcher_ast: Option<&PatternAst<L>>,
-        rule_name: egg::Symbol,
+        _rule_name: egg::Symbol,
     ) -> Vec<egg::Id> {
         // it better be the case that the parent condition exists in the e-graph.
-
         let is_true_parent_pattern: Pattern<L> =
-            format!("(assume {})", self.parent_cond).parse().unwrap();
+            format!("({} {})", L::assumption_label(), self.parent_cond)
+                .parse()
+                .unwrap();
 
-        let is_true_my_pattern: Pattern<L> = format!("(assume {})", self.my_cond).parse().unwrap();
+        assert!(
+            lookup_pattern(&is_true_parent_pattern, egraph, subst),
+            "Parent condition {} must be true in the e-graph before applying implication.",
+            self.parent_cond
+        );
+
+        let is_true_my_pattern: Pattern<L> =
+            format!("({} {})", L::assumption_label(), self.my_cond)
+                .parse()
+                .unwrap();
 
         if lookup_pattern(&is_true_my_pattern, egraph, subst) {
             // we already have the condition in the egraph, so no need to add it.
@@ -130,10 +99,7 @@ where
             subst,
         );
 
-        let mut changed = vec![];
-
-        changed.push(new_id);
-        changed
+        vec![new_id]
     }
 }
 
@@ -367,13 +333,13 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
 
     /// Returns the egglog representation of a pattern in this language.
     /// See the implementation of [`crate::halide::Pred`] for an example of how to do this.
-    fn to_egglog_term(pat: Pattern<Self>) -> String {
+    fn to_egglog_term(_pat: Pattern<Self>) -> String {
         unimplemented!()
     }
 
     /// Convert a constant to a bool if possible.
-    fn to_bool(c: Self::Constant) -> Option<bool> {
-        None
+    fn to_bool(_c: Self::Constant) -> Option<bool> {
+        unimplemented!()
     }
 
     /// Label for assumption nodes.

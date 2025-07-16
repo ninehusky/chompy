@@ -267,24 +267,6 @@ impl<L: SynthLanguage> EGraphManager<L> {
     }
 }
 
-/// A lil helper function to see if two assumptions are equal in the egraph.
-pub fn check_equal<L: SynthLanguage>(
-    manager: &mut EGraphManager<L>,
-    from: &Assumption<L>,
-    to: &Assumption<L>,
-) -> bool {
-    let lhs = L::to_egglog_term(from.clone().chop_assumption());
-    let rhs = L::to_egglog_term(to.clone().chop_assumption());
-    let query = format!("(check (= {lhs} {rhs}))");
-    match manager.egraph.parse_and_run_program(None, &query) {
-        Ok(_) => true,
-        Err(e) => {
-            assert!(e.to_string().contains("Check failed"));
-            false
-        }
-    }
-}
-
 // Returns true if the term is generalized (i.e., contains no concrete variables).
 fn is_generalized<L: SynthLanguage>(pat: &Pattern<L>) -> bool {
     pat.ast.as_ref().iter().all(|node| match node {
@@ -341,14 +323,29 @@ mod concrete_generalized_tests {
 #[cfg(test)]
 mod tests {
     use crate::{
-        conditions::{
-            assumption::Assumption,
-            implication::Implication,
-            manager::{check_equal, EGraphManager},
-        },
+        conditions::{assumption::Assumption, implication::Implication, manager::EGraphManager},
         enumo::Rule,
         halide::Pred,
+        SynthLanguage,
     };
+
+    fn check_equal<L: SynthLanguage>(
+        manager: &mut EGraphManager<L>,
+        lhs: &Assumption<L>,
+        rhs: &Assumption<L>,
+    ) -> bool {
+        manager
+            .egraph
+            .parse_and_run_program(
+                None,
+                &format!(
+                    "(check (= {} {}))",
+                    L::to_egglog_term(lhs.chop_assumption()),
+                    L::to_egglog_term(rhs.chop_assumption())
+                ),
+            )
+            .is_ok()
+    }
 
     #[test]
     fn egraph_construction_doesnt_blow_up() {

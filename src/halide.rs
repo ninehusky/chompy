@@ -53,7 +53,6 @@ impl Pred {
         let forced = conditions.force();
 
         let mut result: Vec<Rewrite<Self, SynthAnalysis>> = vec![];
-        let cache: HashMap<(String, String), bool> = Default::default();
         for c in &forced {
             let c_recexpr: RecExpr<Self> = c.to_string().parse().unwrap();
             let c_pat = Pattern::from(&c_recexpr.clone());
@@ -721,7 +720,7 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 ))
             }
             Pred::Var(v) => buf.push(z3::ast::Int::new_const(ctx, v.to_string())),
-            Pred::Assume(x) => {
+            Pred::Assume(_) => {
                 panic!("assumption nodes should not be used in egg_to_z3");
             }
         }
@@ -1013,43 +1012,6 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
         z3::SatResult::Unknown => ValidationResult::Unknown,
         z3::SatResult::Sat => ValidationResult::Unknown,
     }
-}
-
-pub fn compute_conditional_structures(
-    conditional_soup: &Workload,
-) -> (
-    HashMap<Vec<bool>, Vec<Pattern<Pred>>>,
-    Vec<Rewrite<Pred, SynthAnalysis>>,
-) {
-    let egraph: EGraph<Pred, SynthAnalysis> = conditional_soup.to_egraph();
-    let mut pvec_to_terms: HashMap<Vec<bool>, Vec<Pattern<Pred>>> = HashMap::default();
-
-    // TODO: nuke this
-    let cond_prop_ruleset = vec![];
-
-    for cond in conditional_soup.force() {
-        let cond: RecExpr<Pred> = cond.to_string().parse().unwrap();
-        let cond_pat = Pattern::from(&cond);
-
-        let cond_id = egraph
-            .lookup_expr(&cond_pat.to_string().parse().unwrap())
-            .unwrap();
-
-        let pvec = egraph[cond_id]
-            .data
-            .cvec
-            .clone()
-            .iter()
-            .map(|b| *b != Some(0))
-            .collect();
-
-        pvec_to_terms
-            .entry(pvec)
-            .or_default()
-            .push(cond_pat.clone());
-    }
-
-    (pvec_to_terms, cond_prop_ruleset)
 }
 
 pub fn og_recipe() -> Ruleset<Pred> {

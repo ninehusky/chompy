@@ -1,9 +1,7 @@
-use ruler::llm;
 use ruler::halide::Pred;
-use ruler::enumo::{Ruleset, Workload};
+use ruler::enumo::{Ruleset};
 
 use ruler::halide::{og_recipe};
-use ruler::{ConditionRecipe, Recipe};
 
 use std::fs::File;
 use std::path::PathBuf;
@@ -82,13 +80,8 @@ pub async fn main() {
                         RecipeType::OgRecipe => og_recipe(),
                     }
                 },
-                (None, Some(recipe_path)) => {
-                    // let recipe = json_to_recipe(recipe_path.to_str().unwrap());
-                    // recipe_to_rules(&recipe)
-                    Default::default()
-                }
                 (Some(_), Some(_)) => panic!("both recipe types provided."),
-                (None, None) => panic!("no recipe type provided.")
+                (None, _) => panic!("no recipe type provided.")
 
             }
         }
@@ -104,88 +97,5 @@ pub async fn main() {
 
 
 pub async fn run_gpt_eval() -> Ruleset<Pred> {
-    // TODO: @ninehusky -- in the eval, this should be replaced eventually with reading straight from the JSON representing
-    // the handwritten recipe.
-    let minmax_recipe = Recipe {
-        name: "minmax".to_string(),
-        max_size: 7,
-        vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-        ops: vec![
-            vec!["!".to_string()],
-            vec!["==".to_string(), "!=".to_string(), "<".to_string(), ">".to_string(), "<=".to_string(), ">=".to_string(), "min".to_string(), "max".to_string(),
-                "&&".to_string(), "||".to_string()], // Conditional operators
-        ],
-        conditions: None,
-    };
-
-    let bool_recipe = Recipe {
-        name: "bool".to_string(),
-        max_size: 5,
-        vals: vec!["0".to_string(), "1".to_string()],
-        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-        ops: vec![
-            vec!["!".to_string()],
-            vec!["&&".to_string(), "||".to_string()],
-        ],
-        conditions: None,
-    };
-
-    let rat_recipe = Recipe {
-        name: "rat".to_string(),
-        max_size: 5,
-        vals: vec!["-1".to_string(), "0".to_string(), "1".to_string(), "2".to_string()],
-        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-        ops: vec![
-            vec![],
-            vec!["+".to_string(), "-".to_string(), "*".to_string(), "/".to_string()],
-        ],
-        conditions: Some(
-            ConditionRecipe {
-                max_size: 7,
-                ops: vec![vec![],
-                    vec!["<".to_string(), "<=".to_string(), "!=".to_string(), "&&".to_string(), "||".to_string()],
-                ],
-                vals: vec!["0".to_string()],
-            }
-        )
-    };
-
-    let min_lt_le_recipe = Recipe {
-        name: "min_lt_le".to_string(),
-        max_size: 7,
-        vals: vec![],
-        vars: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-        ops: vec![
-            vec![],
-            vec!["!".to_string()],
-            vec!["<".to_string(), "<=".to_string(), "min".to_string(), "&&".to_string(), "||".to_string()],
-        ],
-        conditions: None,
-    };
-
-    let recipe_list = vec![bool_recipe, rat_recipe, minmax_recipe, min_lt_le_recipe];
-
-    let mut prior_ruleset: Ruleset<Pred> = Ruleset::default();
-
-    for recipe in recipe_list {
-        let vars = recipe.vars.clone();
-        let cond_recipe = recipe.conditions.clone();
-        let (workload, mut cond_r) = llm::generate_alphabet_soup(&recipe, cond_recipe.as_ref()).await;
-        if let Some(c) = cond_r {
-            // we append `vars` here because without them, we don't get the correct cvec length.
-            cond_r = Some(c.append(Workload::new(vars.clone())));
-        }
-        // let ruleset = halide::soup_to_rules(
-        //     &workload,
-        //     cond_r.as_ref(),
-        //     &prior_ruleset,
-        //     recipe.max_size
-        // );
-        let ruleset = Default::default();
-
-        prior_ruleset.extend(ruleset);
-    }
-
-    prior_ruleset
+    todo!("This is pretty out of date.");
 }

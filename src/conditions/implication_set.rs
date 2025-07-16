@@ -378,65 +378,6 @@ pub fn run_implication_workload<L: SynthLanguage>(
     chosen
 }
 
-/// TESTS
-#[cfg(test)]
-mod run_implication_workload_tests {
-    use super::*;
-
-    use crate::{
-        enumo::{Ruleset, Workload},
-        halide::Pred,
-        recipe_utils::run_workload,
-        Limits,
-    };
-
-    // This test checks that the implication workload runner can
-    // find implications in a simple workload.
-    #[test]
-    fn run_implication_workload_ok() {
-        let the_bools = Workload::new(&["(OP2 V V)", "V"])
-            .plug("OP2", &Workload::new(&["<", "!="]))
-            .plug("V", &Workload::new(&["a", "b", "c", "0"]));
-
-        let and_wkld = Workload::new(&["(&& V V)"])
-            .plug("V", &the_bools.clone())
-            .append(the_bools.clone());
-
-        let mut all_rules: Ruleset<Pred> = Ruleset::default();
-
-        let bool_rules: Ruleset<Pred> = run_workload(
-            the_bools.clone(),
-            None,
-            Ruleset::default(),
-            ImplicationSet::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-        );
-
-        all_rules.extend(bool_rules.clone());
-
-        let and_rules: Ruleset<Pred> = run_workload(
-            Workload::new(&["(&& V V)"]).plug("V", &Workload::new(&["a", "b", "0", "1"])),
-            None,
-            Ruleset::default(),
-            ImplicationSet::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-        );
-
-        all_rules.extend(and_rules.clone());
-
-        let rules = run_implication_workload::<Pred>(
-            &and_wkld,
-            &["a".to_string(), "b".to_string(), "c".to_string()],
-            &ImplicationSet::new(),
-            &all_rules,
-        );
-    }
-}
-
 #[cfg(test)]
 mod select_tests {
     use crate::{conditions::assumption::Assumption, halide::Pred};
@@ -630,7 +571,6 @@ mod pvec_match_tests {
     use egg::EGraph;
 
     use crate::{
-        conditions::implication_set::ImplicationSet,
         enumo::{Ruleset, Scheduler, Workload},
         halide::Pred,
         recipe_utils::run_workload,
