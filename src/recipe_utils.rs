@@ -3,7 +3,7 @@ use std::time::Instant;
 use egg::EGraph;
 
 use crate::{
-    conditions::implication_set::ImplicationSet,
+    conditions::{implication_set::ImplicationSet, merge_eqs},
     enumo::{ChompyState, Filter, Metric, Ruleset, Scheduler, Workload},
     Limits, SynthAnalysis, SynthLanguage,
 };
@@ -95,8 +95,10 @@ fn run_workload_internal<L: SynthLanguage>(
             state.implications(),
         );
 
-        let (chosen_cond, _) = conditional_candidates
-            .minimize_cond(chosen.clone(), &impl_prop_rules.to_egg_rewrites());
+        let mut rws = impl_prop_rules.to_egg_rewrites();
+        rws.push(merge_eqs());
+
+        let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
     }
