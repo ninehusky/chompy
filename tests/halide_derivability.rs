@@ -216,6 +216,11 @@ pub mod halide_derive_tests {
 
     #[test]
     fn chompy_vs_caviar() {
+        // Don't run this test as part of the "unit tests" thing in CI.
+        if std::env::var("SKIP_RECIPES").is_ok() {
+            return;
+        }
+
         let caviar_rules = caviar_rules();
         let chompy_rules = og_recipe();
 

@@ -54,6 +54,23 @@ jobs:
       - name: "Unit tests"
         run: cargo test --release
 
+  derivability:
+    name: "Derivability Tests"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: "Build"
+        run: cargo build --release
+
+      - name: "Setup tests"
+        run: mkdir -p out/
+
+      - name: "Derivability tests"
+        run: cargo test --package ruler --test halide_derivability -- halide_derive_tests --show-output
+
+
   run_chompy:
     name: "Run Chompy"
     environment: nightly
