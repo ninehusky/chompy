@@ -476,10 +476,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         // 2. check if the lhs and rhs are equivalent in the egraph
         if l_id == r_id {
             // e1 and e2 are equivalent in the condition egraph
-            println!(
-                "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
-                l_expr, r_expr, cond.pat
-            );
+            // println!(
+            //     "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
+            //     l_expr, r_expr, cond.pat
+            // );
             return None;
         }
 
