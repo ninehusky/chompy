@@ -3,10 +3,10 @@ use crate::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
     },
     enumo::{Rule, Ruleset},
-    SynthLanguage,
+    Symbol, SynthLanguage,
 };
 
-use egg::{Pattern, RecExpr};
+use egg::{Pattern, RecExpr, Var};
 use egglog::EGraph as EgglogEGraph;
 
 const IMPL_RULESET_NAME: &str = "path-finding";
@@ -201,6 +201,20 @@ impl<L: SynthLanguage> EGraphManager<L> {
     /// Implications should **never** add new predicates to the egraph; it should only
     /// link together existing ones.
     fn impl_to_egglog_rule(imp: &Implication<L>) -> Result<String, String> {
+        // This is a hack to deal with the "and" rule:
+        // the rule is that (&& a b) -> a, for example, meaning that "a" doesn't
+        // need to be a predicate. Moreover, we can't have an egglog rule that just
+        // matches on "?a", so we need to just omit it in the egglog fact body.
+        let get_term = |pat: &Pattern<L>| -> String {
+            if pat.ast.as_ref().len() == 1
+                && matches!(pat.ast.as_ref().first().unwrap(), egg::ENodeOrVar::Var(_))
+            {
+                "".into()
+            } else {
+                L::to_egglog_term(pat.clone())
+            }
+        };
+
         let lhs = imp.lhs().clone();
         let rhs = imp.rhs().clone();
 
@@ -217,19 +231,27 @@ impl<L: SynthLanguage> EGraphManager<L> {
 
         let lhs_recexpr: RecExpr<L> = L::instantiate(&imp.lhs().clone().chop_assumption());
         let rhs_recexpr: RecExpr<L> = L::instantiate(&imp.rhs().clone().chop_assumption());
-
         let mut map = Default::default();
+        let lhs_pat = L::generalize(&lhs_recexpr, &mut map);
+        let rhs_pat = L::generalize(&rhs_recexpr, &mut map);
 
-        let lhs = L::to_egglog_term(L::generalize(&lhs_recexpr, &mut map));
-        let rhs = L::to_egglog_term(L::generalize(&rhs_recexpr, &mut map));
+        let lhs_fact = get_term(&lhs_pat);
+        let rhs_fact = get_term(&rhs_pat);
+        let lhs = L::to_egglog_term(lhs_pat);
+        let rhs = L::to_egglog_term(rhs_pat);
+
+        if lhs_fact == "" && rhs_fact == "" {
+            return Err("Implication seems to be over two non-predicate terms".into());
+        }
+
         // sanity check: there should be no concrete variables in the lhs or rhs.
         // if you're able to match on lhs, rhs, draw an edge between them.
         let rs_name = IMPL_RULESET_NAME;
         Ok(format!(
             r#"
         (rule
-            ({lhs}
-             {rhs})
+            ({lhs_fact}
+             {rhs_fact})
             ((edge {lhs} {rhs}))
             :ruleset {rs_name})
         "#,

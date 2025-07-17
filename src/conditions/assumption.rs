@@ -54,6 +54,28 @@ impl<L: SynthLanguage> Assumption<L> {
         })
     }
 
+    /// Like `new`, but does not check if the pattern is a valid predicate.
+    /// Dangerous! Only call this if you have a very good reason to believe
+    /// the pattern in question is a predicate.
+    pub fn new_unsafe(assumption: String) -> Result<Self, String> {
+        let pat: Result<Pattern<L>, _> = assumption.parse();
+        if pat.is_err() {
+            return Err(format!(
+                "Failed to parse assumption pattern: {}",
+                assumption
+            ));
+        }
+        let pat = pat.unwrap();
+        if L::pattern_is_assumption(&pat) {
+            return Err(format!("Pattern is already an assumption: {}", pat));
+        }
+
+        Ok(Self {
+            pat: assumption,
+            _marker: std::marker::PhantomData,
+        })
+    }
+
     /// Inserts the assumption as an expression into the provided e-graph.
     pub fn insert_into_egraph(&self, egraph: &mut egg::EGraph<L, crate::SynthAnalysis>) {
         let expr: RecExpr<L> = self.clone().into();
