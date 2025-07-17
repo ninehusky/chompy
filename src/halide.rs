@@ -12,7 +12,7 @@ use conditions::implication_set::ImplicationSet;
 use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
-use recipe_utils::{recursive_rules, recursive_rules_cond, run_workload, Lang};
+use recipe_utils::{recursive_rules_cond, run_workload, Lang};
 use z3::ast::Ast;
 
 type Constant = i64;
@@ -1024,40 +1024,40 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
-    let and_rules = recursive_rules(
-        Metric::Atoms,
-        5,
-        Lang::new(
-            &["0", "1"],
-            &["a", "b", "c"],
-            &[&[], &["&&", "||", "==", "!="]],
-        ),
-        Ruleset::default(),
-    );
+    // let and_rules = recursive_rules(
+    //     Metric::Atoms,
+    //     5,
+    //     Lang::new(
+    //         &["0", "1"],
+    //         &["a", "b", "c"],
+    //         &[&[], &["&&", "||", "==", "!="]],
+    //     ),
+    //     Ruleset::default(),
+    // );
 
-    all_rules.extend(and_rules.clone());
+    // all_rules.extend(and_rules.clone());
 
-    let comps = Workload::new(&["(OP V V)"])
-        .plug("OP", &Workload::new(&["=="]))
-        .plug("V", &Workload::new(&["a", "b", "c"]));
+    // let comps = Workload::new(&["(OP V V)"])
+    //     .plug("OP", &Workload::new(&["=="]))
+    //     .plug("V", &Workload::new(&["a", "b", "c"]));
 
-    let and_workload = Workload::new(&["0", "1", "(OP V V)"])
-        .plug("OP", &Workload::new(&["&&"]))
-        .plug("V", &comps);
+    // let and_workload = Workload::new(&["0", "1", "(OP V V)"])
+    //     .plug("OP", &Workload::new(&["&&"]))
+    //     .plug("V", &comps);
 
-    let comp_eq = run_workload(
-        and_workload.clone(),
-        Some(wkld.clone()),
-        all_rules.clone(),
-        base_implications.clone(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true,
-    );
+    // let comp_eq = run_workload(
+    //     and_workload.clone(),
+    //     Some(wkld.clone()),
+    //     all_rules.clone(),
+    //     base_implications.clone(),
+    //     Limits::synthesis(),
+    //     Limits::minimize(),
+    //     true,
+    // );
 
-    all_rules.extend(comp_eq.clone());
+    // all_rules.extend(comp_eq.clone());
 
-    all_rules.pretty_print();
+    // all_rules.pretty_print();
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
