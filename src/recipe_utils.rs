@@ -80,7 +80,7 @@ fn run_workload_internal<L: SynthLanguage>(
     let impl_prop_rules = state.implications();
 
     for cond_size in 1..=max_cond_size {
-        println!("[run_workload] cond size: {}", cond_size);
+        println!("[run_workload] cond size: {cond_size}");
         let mut predicates: PredicateMap<L> = Default::default();
 
         for pvec in state.pvec_to_patterns().keys() {
@@ -96,7 +96,7 @@ fn run_workload_internal<L: SynthLanguage>(
         }
 
         if predicates.is_empty() {
-            println!("[run_workload] No predicates of size {}", cond_size);
+            println!("[run_workload] No predicates of size {cond_size}");
             continue;
         }
 

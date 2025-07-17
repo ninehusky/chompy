@@ -165,8 +165,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let forward = Rule::new_cond(&l_pat, &r_pat, &cond, Some(true_count));
         let backward = Rule::new_cond(&r_pat, &l_pat, &cond, Some(true_count));
         println!(
-            "[add_cond_from_recexprs] Adding rule candidate: {} ==> {} if {}",
-            l_pat, r_pat, cond
+            "[add_cond_from_recexprs] Adding rule candidate: {l_pat} ==> {r_pat} if {cond}"
         );
         if let Some(forward) = forward {
             self.add(forward);

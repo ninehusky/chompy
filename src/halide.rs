@@ -12,7 +12,7 @@ use conditions::implication_set::ImplicationSet;
 use egg::{RecExpr, Rewrite};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
-use recipe_utils::{recursive_rules, recursive_rules_cond, run_workload, Lang};
+use recipe_utils::{recursive_rules_cond, run_workload, Lang};
 use z3::ast::Ast;
 
 type Constant = i64;
