@@ -241,7 +241,16 @@ pub mod halide_derive_tests {
         // total caviar rules.
         let chompy_edited = override_total_rules(&caviar_rules, &chompy_rules);
 
-        run_derivability_tests(&chompy_edited, &caviar_rules, &implication_rules);
-        println!("results: {:#?}", chompy_edited);
+        let result = run_derivability_tests(&chompy_edited, &caviar_rules, &implication_rules);
+
+        println!("Chompy can derive:");
+        for rule in result.can.iter() {
+            println!("  {}", rule);
+        }
+
+        println!("Chompy cannot derive:");
+        for rule in result.cannot.iter() {
+            println!("  {}", rule);
+        }
     }
 }
