@@ -245,7 +245,7 @@ pub mod halide_derive_tests {
 
         println!("Chompy can derive:");
         for rule in result.can.iter() {
-            if result.cond.is_none() {
+            if rule.cond.is_none() {
                 // skip reporting of total rules
                 continue;
             }
