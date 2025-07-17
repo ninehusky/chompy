@@ -4,7 +4,7 @@ use egg::EGraph;
 
 use crate::{
     conditions::implication_set::ImplicationSet,
-    enumo::{ChompyState, Filter, Metric, Ruleset, Scheduler, Workload},
+    enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
     Limits, SynthAnalysis, SynthLanguage,
 };
 
@@ -80,18 +80,30 @@ fn run_workload_internal<L: SynthLanguage>(
     let impl_prop_rules = state.implications();
 
     for cond_size in 1..=max_cond_size {
-        let curr_wkld = cond_workload
-            .clone()
-            .filter(Filter::MetricEq(Metric::Atoms, cond_size + 1));
+        println!("[run_workload] cond size: {cond_size}");
+        let mut predicates: PredicateMap<L> = Default::default();
 
-        if curr_wkld.force().is_empty() {
+        for pvec in state.pvec_to_patterns().keys() {
+            for pattern in state.pvec_to_patterns().get(pvec).unwrap() {
+                let size = pattern.chop_assumption().ast.as_ref().len();
+                if size == cond_size {
+                    predicates
+                        .entry(pvec.clone())
+                        .or_default()
+                        .push(pattern.clone());
+                }
+            }
+        }
+
+        if predicates.is_empty() {
+            println!("[run_workload] No predicates of size {cond_size}");
             continue;
         }
 
         let mut conditional_candidates = Ruleset::conditional_cvec_match(
             &compressed,
             &chosen,
-            &state.pvec_to_patterns(),
+            &predicates,
             state.implications(),
         );
 
