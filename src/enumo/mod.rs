@@ -112,7 +112,7 @@ impl<L: SynthLanguage> ChompyState<L> {
 // candidates.
 // This is going to be really bad if the variables that are in the workload are not the same as
 // the variables in the "main egraph" that's inside the corresponding `ChompyState`.
-fn build_pvec_to_patterns<L: SynthLanguage>(wkld: Workload) -> PredicateMap<L> {
+pub fn build_pvec_to_patterns<L: SynthLanguage>(wkld: Workload) -> PredicateMap<L> {
     let egraph = wkld.to_egraph::<L>();
     let mut pvec_to_patterns: PredicateMap<L> = IndexMap::default();
     let extractor = Extractor::new(&egraph, AstSize);
