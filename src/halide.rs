@@ -1025,40 +1025,16 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
-    // let and_rules = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(
-    //         &["0", "1"],
-    //         &["a", "b", "c"],
-    //         &[&[], &["&&", "||", "==", "!="]],
-    //     ),
-    //     Ruleset::default(),
-    // );
+    let simp_comps = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", ">", "+", "-"]]),
+        Ruleset::default(),
+        base_implications.clone(),
+        wkld.clone(),
+    );
 
-    // all_rules.extend(and_rules.clone());
-
-    // let comps = Workload::new(&["(OP V V)"])
-    //     .plug("OP", &Workload::new(&["=="]))
-    //     .plug("V", &Workload::new(&["a", "b", "c"]));
-
-    // let and_workload = Workload::new(&["0", "1", "(OP V V)"])
-    //     .plug("OP", &Workload::new(&["&&"]))
-    //     .plug("V", &comps);
-
-    // let comp_eq = run_workload(
-    //     and_workload.clone(),
-    //     Some(wkld.clone()),
-    //     all_rules.clone(),
-    //     base_implications.clone(),
-    //     Limits::synthesis(),
-    //     Limits::minimize(),
-    //     true,
-    // );
-
-    // all_rules.extend(comp_eq.clone());
-
-    // all_rules.pretty_print();
+    all_rules.extend(simp_comps.clone());
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
@@ -1084,6 +1060,17 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(min_max.clone());
+
+    let min_max_add = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+        all_rules.clone(),
+        base_implications.clone(),
+        wkld.clone(),
+    );
+
+    all_rules.extend(min_max_add.clone());
 
     for op in &["min", "max"] {
         let int_workload = Workload::new(&["0", "1", "(OP V V)"])

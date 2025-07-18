@@ -2,7 +2,7 @@ use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
     },
-    enumo::{Rule, Ruleset},
+    enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload},
     halide::Pred,
     Limits, SynthLanguage,
 };
@@ -12,35 +12,7 @@ struct DerivabilityResult<L: SynthLanguage> {
     cannot: Ruleset<L>,
 }
 
-fn override_total_rules<L: SynthLanguage>(
-    keep_total: &Ruleset<L>,
-    keep_cond: &Ruleset<L>,
-) -> Ruleset<L> {
-    let mut result = Ruleset::default();
-    result.extend(keep_total.partition(|r| r.cond.is_none()).0);
-    result.extend(keep_cond.partition(|r| r.cond.is_some()).0);
-    result
-}
-
-fn run_derivability_tests<L: SynthLanguage>(
-    base: &Ruleset<L>,
-    against: &Ruleset<L>,
-    implications: &ImplicationSet<L>,
-) -> DerivabilityResult<L> {
-    let impl_rules = implications.to_egg_rewrites();
-
-    let (can, cannot) = base.derive(
-        ruler::DeriveType::LhsAndRhs,
-        &against,
-        Limits::deriving(),
-        Some(&impl_rules),
-    );
-
-    DerivabilityResult { can, cannot }
-}
-
-fn caviar_rules() -> Ruleset<Pred> {
-    let rules = r#"
+const CAVIAR_RULES: &str = r#"
 (== ?x ?y) ==> (== ?y ?x)
 (== ?x ?y) ==> (== (- ?x ?y) 0)
 (== (+ ?x ?y) ?z) ==> (== ?x (- ?z ?y))
@@ -174,6 +146,36 @@ fn caviar_rules() -> Ruleset<Pred> {
 ( % ( + ( * ?x ?c0 ) ?y ) ?c1 ) ==> ( % ?y ?c1 ) if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
 (% (* ?c0 ?x) ?c1) ==> 0 if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
 "#;
+
+fn override_total_rules<L: SynthLanguage>(
+    keep_total: &Ruleset<L>,
+    keep_cond: &Ruleset<L>,
+) -> Ruleset<L> {
+    let mut result = Ruleset::default();
+    result.extend(keep_total.partition(|r| r.cond.is_none()).0);
+    result.extend(keep_cond.partition(|r| r.cond.is_some()).0);
+    result
+}
+
+fn run_derivability_tests<L: SynthLanguage>(
+    base: &Ruleset<L>,
+    against: &Ruleset<L>,
+    implications: &ImplicationSet<L>,
+) -> DerivabilityResult<L> {
+    let impl_rules = implications.to_egg_rewrites();
+
+    let (can, cannot) = base.derive(
+        ruler::DeriveType::LhsAndRhs,
+        &against,
+        Limits::deriving(),
+        Some(&impl_rules),
+    );
+
+    DerivabilityResult { can, cannot }
+}
+
+fn caviar_rules() -> Ruleset<Pred> {
+    let rules = CAVIAR_RULES;
     let mut ruleset = Ruleset::default();
     for rule in rules.trim().lines() {
         match Rule::from_string(rule) {
@@ -184,6 +186,8 @@ fn caviar_rules() -> Ruleset<Pred> {
                     ruleset.add(rule);
                 }
             }
+            // This error can come from the inclusion of backwards rules:
+            // the Caviar ruleset shouldn't have them.
             _ => panic!("Unable to parse single rule: {}", rule),
         }
     }
@@ -208,6 +212,60 @@ fn pairwise_implication_building<L: SynthLanguage>(
     implications
 }
 
+// Given a ruleset, can Chompy come up with each rule?
+// Explodes if rules contains non-conditional rules.
+fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Ruleset<L>) {
+    let mut can = Ruleset::default();
+    let mut cannot = Ruleset::default();
+    for rule in rules.iter() {
+        // we do this weird dummy rulest thing because
+        // we need to make sure that the candidates that Chompy spits out
+        // are equivalent to the rules in the ruleset under renaming.
+        // that is, if the rule is `(f ?x) => (f ?y)`, we want to make
+        // sure we're looking for `(f ?a) => (f ?b)`, because that's what
+        // Chompy will spit out (if it finds it).
+        let mut dummy_ruleset: Ruleset<L> = Ruleset::default();
+        let lhs = L::instantiate(&rule.lhs);
+        let rhs = L::instantiate(&rule.rhs);
+        let cond = L::instantiate(&rule.cond.clone().unwrap().chop_assumption());
+
+        dummy_ruleset.add_cond_from_recexprs(&lhs, &rhs, &cond, 0);
+
+        // it might have accepted the backwards version of the rule, i guess.
+        assert!(dummy_ruleset.len() <= 2);
+        let desired_rule = dummy_ruleset.iter().take(1).next().unwrap();
+
+        let workload = Workload::new(&[lhs.to_string(), rhs.to_string()]);
+
+        // we append the term workload here because the condition workload
+        // needs to have the same environment to evaluate cvecs under as the parent,
+        // which means their set of variables must match.
+        let cond_workload = Workload::new(&[cond.to_string()]).append(workload.clone());
+
+        let predicate_map = build_pvec_to_patterns(cond_workload);
+
+        let candidates = Ruleset::conditional_cvec_match(
+            &workload.to_egraph(),
+            &Ruleset::default(),
+            &predicate_map,
+            &ImplicationSet::default(),
+        );
+
+        println!("candidates: (tried to synthesize {})", rule);
+        for candidate in candidates.iter() {
+            println!("  {}", candidate);
+        }
+
+        if candidates.contains(desired_rule) {
+            can.add(rule.clone());
+        } else {
+            cannot.add(rule.clone());
+        }
+    }
+
+    (can, cannot)
+}
+
 #[cfg(test)]
 pub mod halide_derive_tests {
     use ruler::halide::og_recipe;
@@ -215,6 +273,7 @@ pub mod halide_derive_tests {
     use super::*;
 
     #[test]
+    // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
     fn chompy_vs_caviar() {
         // Don't run this test as part of the "unit tests" thing in CI.
         if std::env::var("SKIP_RECIPES").is_ok() {
@@ -254,6 +313,29 @@ pub mod halide_derive_tests {
 
         println!("Chompy cannot derive:");
         for rule in result.cannot.iter() {
+            println!("  {}", rule);
+        }
+    }
+
+    // A test to see if we can correctly choose all Caviar handwritten rules
+    // as candidates.
+    #[test]
+    fn synthesize_all_caviar_as_candidates() {
+        // Don't run this test as part of the "unit tests" thing in CI.
+        if std::env::var("SKIP_RECIPES").is_ok() {
+            return;
+        }
+
+        let caviar_conditional_rules = caviar_rules().partition(|r| r.cond.is_some()).0;
+        let (can, cannot) = can_synthesize_all(caviar_conditional_rules);
+
+        println!("Chompy can synthesize:");
+        for rule in can.iter() {
+            println!("  {}", rule);
+        }
+
+        println!("Chompy cannot synthesize:");
+        for rule in cannot.iter() {
             println!("  {}", rule);
         }
     }

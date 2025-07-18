@@ -5,7 +5,7 @@ use rayon::prelude::ParallelIterator;
 use std::{io::Write, sync::Arc};
 
 use crate::{
-    conditions::{assumption::Assumption, implication_set::ImplicationSet},
+    conditions::{assumption::Assumption, implication_set::ImplicationSet, merge_eqs},
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
     SynthAnalysis, SynthLanguage,
 };
@@ -151,7 +151,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         self.0.insert(rule.name.clone(), rule);
     }
 
-    fn add_cond_from_recexprs(
+    pub fn add_cond_from_recexprs(
         &mut self,
         e1: &RecExpr<L>,
         e2: &RecExpr<L>,
@@ -797,7 +797,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
                 .run(prop_rules)
-                .with_node_limit(500);
+                .with_node_limit(1000);
 
             let egraph = runner.egraph.clone();
 
@@ -813,7 +813,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Compress(Limits::deriving());
+            let scheduler = Scheduler::Saturating(Limits::deriving());
             let egraph = scheduler.run(&runner.egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
