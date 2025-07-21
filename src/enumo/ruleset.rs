@@ -2,6 +2,7 @@ use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner, Searche
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
+use serde::Serialize;
 use std::{io::Write, sync::Arc};
 
 use crate::{
