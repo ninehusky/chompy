@@ -25,8 +25,8 @@ use crate::{
 // in the e-graph through adding the term `(IsTrue c)`.
 //
 // When the corresponding `ImplicationSwitch` is run (i.e., when it's run as a rule),
-// then it will add `(IsTrue c')` to the e-graph, paving the way for conditional rewrite
-// rules. See `ConditionalRewrite` for more details.
+// then it will add `(assume c')` to the e-graph, paving the way for conditional rewrite
+// rules.
 pub struct ImplicationSwitch<L: SynthLanguage> {
     pub(crate) parent_cond: Pattern<L>,
     pub(crate) my_cond: Pattern<L>,
@@ -630,9 +630,8 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
     }
 }
 
-// run these tests with `cargo test --test implication`
 #[cfg(test)]
-pub mod tests {
+pub mod implication_switch_tests {
     use super::*;
     use crate::halide::Pred;
     use conditions::merge_eqs;

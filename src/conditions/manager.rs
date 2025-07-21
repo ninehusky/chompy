@@ -2,11 +2,10 @@ use crate::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
     },
-    enumo::{Rule, Ruleset},
-    Symbol, SynthLanguage,
+    enumo::{Rule, Ruleset}, SynthLanguage,
 };
 
-use egg::{Pattern, RecExpr, Var};
+use egg::{Pattern, RecExpr};
 use egglog::EGraph as EgglogEGraph;
 
 const IMPL_RULESET_NAME: &str = "path-finding";
@@ -240,7 +239,7 @@ impl<L: SynthLanguage> EGraphManager<L> {
         let lhs = L::to_egglog_term(lhs_pat);
         let rhs = L::to_egglog_term(rhs_pat);
 
-        if lhs_fact == "" && rhs_fact == "" {
+        if lhs_fact.is_empty() && rhs_fact.is_empty() {
             return Err("Implication seems to be over two non-predicate terms".into());
         }
 

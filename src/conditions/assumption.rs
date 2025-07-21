@@ -61,13 +61,12 @@ impl<L: SynthLanguage> Assumption<L> {
         let pat: Result<Pattern<L>, _> = assumption.parse();
         if pat.is_err() {
             return Err(format!(
-                "Failed to parse assumption pattern: {}",
-                assumption
+                "Failed to parse assumption pattern: {assumption}"
             ));
         }
         let pat = pat.unwrap();
         if L::pattern_is_assumption(&pat) {
-            return Err(format!("Pattern is already an assumption: {}", pat));
+            return Err(format!("Pattern is already an assumption: {pat}"));
         }
 
         Ok(Self {
@@ -165,7 +164,7 @@ mod tests {
     fn new_unsafe_is_actually_unsafe() {
         let not_predicate = "?a".to_string();
         let result: Result<Assumption<Pred>, String> = Assumption::new_unsafe(not_predicate);
-        println!("{:?}", result);
+        println!("{result:?}");
         assert!(
             result.is_ok(),
             "Expected new_unsafe to succeed even if not a predicate"
