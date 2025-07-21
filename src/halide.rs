@@ -1020,7 +1020,24 @@ pub fn og_recipe() -> Ruleset<Pred> {
     let start_time = std::time::Instant::now();
     let wkld = conditions::generate::get_condition_workload();
     let mut all_rules = Ruleset::default();
-    let base_implications = ImplicationSet::default();
+    let mut base_implications = ImplicationSet::default();
+    // and the "and" rules here.
+    let and_implies_left: Implication<Pred> = Implication::new(
+        "and_implies_left".into(),
+        Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        Assumption::new_unsafe("?a".to_string()).unwrap(),
+    )
+    .unwrap();
+
+    let and_implies_right: Implication<Pred> = Implication::new(
+        "and_implies_right".into(),
+        Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        Assumption::new_unsafe("?b".to_string()).unwrap(),
+    )
+    .unwrap();
+
+    base_implications.add(and_implies_left);
+    base_implications.add(and_implies_right);
 
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
