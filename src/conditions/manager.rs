@@ -2,7 +2,8 @@ use crate::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
     },
-    enumo::{Rule, Ruleset}, SynthLanguage,
+    enumo::{Rule, Ruleset},
+    SynthLanguage,
 };
 
 use egg::{Pattern, RecExpr};
