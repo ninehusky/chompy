@@ -1,8 +1,10 @@
-use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner, Searcher};
+use egg::{
+    Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
+};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
-use std::{io::Write, sync::Arc};
+use std::{fmt::Display, io::Write, sync::Arc};
 
 use crate::{
     conditions::{assumption::Assumption, implication_set::ImplicationSet, merge_eqs},
@@ -15,6 +17,34 @@ use super::{Rule, Scheduler};
 /// A mapping from pvecs to their corresponding predicates.
 pub type PredicateMap<L> = IndexMap<PVec, Vec<Assumption<L>>>;
 
+// TODO: dump this somewhere proper
+pub fn egg_to_serialized_egraph<L, A>(egraph: &EGraph<L, A>) -> egraph_serialize::EGraph
+where
+    L: Language + Display,
+    A: Analysis<L>,
+{
+    use egraph_serialize::*;
+    let mut out = EGraph::default();
+    for class in egraph.classes() {
+        for (i, node) in class.nodes.iter().enumerate() {
+            out.add_node(
+                format!("{}.{}", class.id, i),
+                Node {
+                    op: node.to_string(),
+                    children: node
+                        .children()
+                        .iter()
+                        .map(|id| NodeId::from(format!("{}.0", id)))
+                        .collect(),
+                    eclass: ClassId::from(format!("{}", class.id)),
+                    cost: Cost::new(1.0).unwrap(),
+                    subsumed: false,
+                },
+            )
+        }
+    }
+    out
+}
 /// A set of rewrite rules
 #[derive(Clone, Debug)]
 pub struct Ruleset<L: SynthLanguage>(pub IndexMap<Arc<str>, Rule<L>>);
@@ -750,6 +780,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         chosen: &Self,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
         most_recent_condition: &Assumption<L>,
+        expected: &Ruleset<L>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
@@ -821,6 +852,36 @@ impl<L: SynthLanguage> Ruleset<L> {
                 if egraph.find(l_id) == egraph.find(r_id) {
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
+                    println!(
+                        "{} and {} merged in the e-graph representing condition {}",
+                        rule.lhs, rule.rhs, condition
+                    );
+
+                    if rule.lhs.to_string() == "?a" && rule.rhs.to_string() == "(max ?a (+ ?a ?b))"
+                    {
+                        for chosen_rule in chosen.iter() {
+                            println!("Chosen rule: {}", chosen_rule);
+                        }
+
+                        for imp in prop_rules {
+                            println!("Implication: {}", imp.name);
+                        }
+                    }
+
+                    if expected.contains(&rule)
+                        && !chosen.can_derive_cond(
+                            DeriveType::LhsAndRhs,
+                            &rule,
+                            Limits::deriving(),
+                            &prop_rules,
+                        )
+                    {
+                        for chosen_rule in chosen.iter() {
+                            println!("Chosen rule: {}", chosen_rule);
+                        }
+                        // really expensive.
+                        panic!("You shouldn't have gotten rid of: {}", rule);
+                    }
                     self.remove_all(dummy.clone());
                 }
             }
@@ -860,7 +921,13 @@ impl<L: SynthLanguage> Ruleset<L> {
         &mut self,
         prior: Ruleset<L>,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
+        expected: &Ruleset<L>,
     ) -> (Self, Self) {
+        assert!(
+            expected.iter().all(|rule| self.contains(rule)),
+            "Expected ruleset should only contain rules from the current ruleset."
+        );
+
         let start_time = std::time::Instant::now();
         println!(
             "[minimize_cond]: Minimizing {} rules with {} prior rules and {} prop rules",
@@ -905,7 +972,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             chosen.extend(selected.clone());
 
-            self.shrink_cond(&chosen, prop_rules, most_recent_condition);
+            self.shrink_cond(&chosen, prop_rules, most_recent_condition, &expected);
         }
         // Return only the new rules
         chosen.remove_all(prior);
@@ -1000,11 +1067,37 @@ impl<L: SynthLanguage> Ruleset<L> {
         // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
         // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
         // but maybe eventually we should just have a single Scheduler that can run both?
+
         let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
             .run(condition_propagation_rules);
 
         let egraph = runner.egraph;
+        let egraph = Scheduler::Saturating(Limits::deriving()).run(&egraph, self);
+
+        // let serialized = egg_to_serialized_egraph(&egraph);
+        // serialized.to_json_file("dump.json").unwrap();
+
+        // assert!(
+        //     egraph
+        //         .lookup_expr(&"(assume (>= z 0))".parse().unwrap())
+        //         .is_some(),
+        //     "Condition propagation rules did not propagate the condition to the egraph"
+        // );
+
+        // assert!(
+        //     egraph
+        //         .lookup_expr(&"(assume (<= 0 z))".parse().unwrap())
+        //         .is_some(),
+        //     "Condition propagation rules did not rewrite the condition to the egraph"
+        // );
+
+        // assert_eq!(
+        //     egraph.lookup_expr(&"(> z 0)".parse().unwrap()),
+        //     egraph.lookup_expr(&"(< 0 z)".parse().unwrap())
+        // );
+        //
+        let scheduler = Scheduler::Saturating(Limits::super_deriving());
 
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
 

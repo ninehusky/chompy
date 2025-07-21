@@ -1,16 +1,224 @@
+use std::fmt::Display;
+
+use egg::{Analysis, Language};
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
     },
     enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload},
     halide::Pred,
-    Limits, SynthLanguage,
+    EGraph, Limits, SynthLanguage,
 };
 
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
     cannot: Ruleset<L>,
 }
+
+const CHOMPY_RULES: &str = r#"
+(== ?x ?y) ==> (== ?y ?x)
+(== ?x ?y) ==> (== (- ?x ?y) 0)
+(== (+ ?x ?y) ?z) ==> (== ?x (- ?z ?y))
+(== ?x ?x) ==> 1
+(== (* ?x ?y) 0) ==> (|| (== ?x 0) (== ?y 0))
+(== (max ?x ?y) ?y) ==> (<= ?x ?y)
+(== (min ?x ?y) ?y) ==> (<= ?y ?x)
+(<= ?y ?x) ==> (== (min ?x ?y) ?y)
+(|| ?x ?y) ==> (! (&& (! ?x) (! ?y)))
+(|| ?y ?x) ==> (|| ?x ?y)
+(+ ?a ?b) ==> (+ ?b ?a)
+(+ ?a (+ ?b ?c)) ==> (+ (+ ?a ?b) ?c)
+(+ ?a 0) ==> ?a
+(* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c))
+(+ (* ?a ?b) (* ?a ?c)) ==> (* ?a (+ ?b ?c))
+(/ 0 ?x) ==> 0
+(/ (* -1 ?a) ?b) ==> (/ ?a (* -1 ?b))
+(/ ?a (* -1 ?b)) ==> (/ (* -1 ?a) ?b)
+(* -1 (/ ?a ?b)) ==> (/ (* -1 ?a) ?b)
+(/ (* -1 ?a) ?b) ==> (* -1 (/ ?a ?b))
+(!= ?x ?y) ==> (! (== ?x ?y))
+(max ?a ?b) ==> (* -1 (min (* -1 ?a) (* -1 ?b)))
+(&& ?y ?x) ==> (&& ?x ?y)
+(&& ?a (&& ?b ?c)) ==> (&& (&& ?a ?b) ?c)
+(&& ?x (! ?x)) ==> 0
+(&& (< ?x ?y) (< ?x ?z)) ==> (< ?x (min ?y ?z))
+(< ?x (min ?y ?z)) ==> (&& (< ?x ?y) (< ?x ?z))
+(&& (<= ?x ?y) (<= ?x ?z)) ==> (<= ?x (min ?y ?z))
+(<= ?x (min ?y ?z)) ==> (&& (<= ?x ?y) (<= ?x ?z))
+(&& (< ?y ?x) (< ?z ?x)) ==> (< (max ?y ?z) ?x)
+(> ?x (max ?y ?z)) ==> (&& (< ?z ?x) (< ?y ?x))
+(&& (<= ?y ?x) (<= ?z ?x)) ==> (<= (max ?y ?z) ?x)
+(>= ?x (max ?y ?z)) ==> (&& (<= ?z ?x) (<= ?y ?x))
+(&& ?a (|| ?b ?c)) ==> (|| (&& ?a ?b) (&& ?a ?c))
+(|| ?a (&& ?b ?c)) ==> (&& (|| ?a ?b) (|| ?a ?c))
+(- ?a ?b) ==> (+ ?a (* -1 ?b))
+(* ?a ?b) ==> (* ?b ?a)
+(* ?a (* ?b ?c)) ==> (* (* ?a ?b) ?c)
+(* ?a 0) ==> 0
+(* ?a 1) ==> ?a
+(* (max ?a ?b) (min ?a ?b)) ==> (* ?a ?b)
+(<= ?x ?y) ==> (! (< ?y ?x))
+(! (< ?y ?x)) ==> (<= ?x ?y)
+(>= ?x ?y) ==> (! (< ?x ?y))
+(! (== ?x ?y)) ==> (!= ?x ?y)
+(> ?x ?z) ==> (< ?z ?x)
+(< ?x ?y) ==> (< (* -1 ?y) (* -1 ?x))
+(< ?a ?a) ==> 0
+(< (+ ?x ?y) ?z) ==> (< ?x (- ?z ?y))
+(< ?z (+ ?x ?y)) ==> (< (- ?z ?y) ?x)
+(< (min ?x ?y) ?x) ==> (< ?y ?x)
+(< (min ?z ?y) (min ?x ?y)) ==> (< ?z (min ?x ?y))
+(< (max ?z ?y) (max ?x ?y)) ==> (< (max ?z ?y) ?x)
+(< (max ?a ?c) (min ?a ?b)) ==> 0
+(min ?a ?b) ==> (min ?b ?a)
+(min (min ?x ?y) ?z) ==> (min ?x (min ?y ?z))
+(min ?x ?x) ==> ?x
+(min (max ?x ?y) ?x) ==> ?x
+(min (max ?x ?y) (max ?x ?z)) ==> (max (min ?y ?z) ?x)
+(min (max (min ?x ?y) ?z) ?y) ==> (min (max ?x ?z) ?y)
+(min (+ ?a ?b) ?c) ==> (+ (min ?b (- ?c ?a)) ?a)
+(+ (min ?x ?y) ?z) ==> (min (+ ?x ?z) (+ ?y ?z))
+(< (min ?y ?c0) ?c1) ==> (|| (< ?y ?c1) (< ?c0 ?c1))
+(< (max ?y ?c0) ?c1) ==> (&& (< ?y ?c1) (< ?c0 ?c1))
+(< ?c1 (max ?y ?c0)) ==> (|| (< ?c1 ?y) (< ?c1 ?c0))
+("%" 0 ?x) ==> 0
+("%" ?x 1) ==> 0
+("%" (* ?x -1) ?c) ==> (* -1 ("%" ?x ?c))
+(* -1 ("%" ?x ?c)) ==> ("%" (* ?x -1) ?c)
+(== (min ?b ?c) (min ?b ?a)) ==> (== ?b (min ?b ?a)) if (< ?a ?c)
+(== (max ?c ?b) (max ?a ?b)) ==> (== (min ?a ?b) ?a) if (< ?c ?a)
+(== (max ?a ?b) 1) ==> (== ?a 1) if (<= ?b 0)
+(== (min ?b ?a) 1) ==> 0 if (<= ?b 0)
+(== (min ?b ?c) (max ?b ?a)) ==> 0 if (< ?c ?a)
+(== (min ?b ?a) 1) ==> ?a if (== ?a 0)
+(== (min ?c ?a) ?b) ==> (== ?b ?a) if (< ?b ?c)
+(== ?a (max ?b ?c)) ==> (== ?b ?a) if (< ?c ?a)
+(== ?c (max ?b ?a)) ==> 0 if (< ?c ?a)
+(== ?a 1) ==> 0 if (<= ?a 0)
+(== (min ?c ?b) ?a) ==> 0 if (< ?c ?a)
+(== ?b ?a) ==> 0 if (!= ?b ?a)
+(min ?b ?a) ==> ?a if (<= ?a ?b)
+(max ?a ?b) ==> ?a if (<= ?b ?a)
+(- ?b ?a) ==> 0 if (== ?a ?b)
+?a ==> 0 if (== ?a 0)
+(- ?b ?a) ==> 0 if (&& 1 (== ?b ?a))
+(&& (< ?c ?b) (<= ?b ?a)) ==> (&& (< ?c ?a) (<= ?b ?a)) if (<= ?a ?b)
+(&& (< ?c ?a) (<= ?b ?a)) ==> (&& (< ?c ?b) (<= ?b ?a)) if (<= ?a ?b)
+(&& (< ?a ?c) (<= ?b ?a)) ==> (&& (< ?b ?c) (<= ?b ?a)) if (<= ?a ?b)
+(&& (< ?b ?c) (<= ?b ?a)) ==> (&& (< ?a ?c) (<= ?b ?a)) if (<= ?a ?b)
+(&& (<= ?c ?b) (<= ?b ?a)) ==> (&& (<= ?c ?a) (<= ?b ?a)) if (<= ?a ?b)
+(&& (<= ?c ?a) (<= ?b ?a)) ==> (&& (<= ?c ?b) (<= ?b ?a)) if (<= ?a ?b)
+(&& (<= ?c ?b) (<= ?b ?a)) ==> (&& (<= ?c ?a) (<= ?c ?b)) if (<= ?b ?c)
+(&& (<= ?c ?a) (<= ?c ?b)) ==> (&& (<= ?c ?b) (<= ?b ?a)) if (<= ?b ?c)
+(&& (< ?c ?a) (<= ?b ?a)) ==> (<= ?b ?a) if (< ?c ?b)
+(&& (< ?b ?c) (<= ?b ?a)) ==> (<= ?b ?a) if (< ?a ?c)
+(&& (< ?b ?c) (< ?b ?a)) ==> (< ?b ?a) if (<= ?a ?c)
+(&& (<= ?c ?a) (<= ?b ?a)) ==> (<= ?c ?a) if (<= ?b ?c)
+(&& (<= ?b ?c) (<= ?b ?a)) ==> (<= ?b ?a) if (<= ?a ?c)
+(&& (< ?b ?a) (<= ?c ?a)) ==> (< ?b ?a) if (<= ?c ?b)
+(&& (< ?c ?a) (< ?b ?a)) ==> (< ?b ?a) if (<= ?c ?b)
+(&& (< ?b ?a) (<= ?b ?c)) ==> (< ?b ?a) if (<= ?a ?c)
+(&& (<= ?c ?b) (<= ?b ?a)) ==> 0 if (< ?a ?c)
+(&& (< ?c ?b) (<= ?b ?a)) ==> 0 if (<= ?a ?c)
+(&& (< ?a ?c) (<= ?b ?a)) ==> 0 if (<= ?c ?b)
+(&& (< ?a ?c) (< ?b ?a)) ==> 0 if (<= ?c ?b)
+(< ?b ?a) ==> (<= ?b ?a) if (!= ?b ?a)
+(<= ?b ?a) ==> (< ?b ?a) if (!= ?b ?a)
+(< ?b ?a) ==> (<= ?b ?a) if (!= ?a ?b)
+(<= ?b ?a) ==> (< ?b ?a) if (!= ?a ?b)
+(< ?b ?a) ==> 1 if (< ?b ?a)
+(<= ?b ?a) ==> 0 if (< ?a ?b)
+(<= ?b ?a) ==> 1 if (<= ?b ?a)
+(< ?b ?a) ==> 0 if (<= ?a ?b)
+(< ?a 1) ==> (< ?a 0) if (!= ?a 0)
+(< ?a 0) ==> (< ?a 1) if (!= ?a 0)
+(< ?a 1) ==> 1 if (<= ?a 0)
+(< 1 ?a) ==> 0 if (<= ?a 0)
+(< ?a 1) ==> 0 if (< 0 ?a)
+?a ==> (< 1 ?a) if (== ?a 0)
+(< 1 ?a) ==> ?a if (== ?a 0)
+(- ?b ?a) ==> 0 if (&& 1 (== ?a ?b))
+(- ?b ?a) ==> 0 if (== ?b ?a)
+(+ ?b ?a) ==> (+ ?b ?b) if (&& 1 (== ?b ?a))
+(< ?a (< ?c ?b)) ==> (< ?a 0) if (!= ?a 0)
+(< ?a (< ?b ?a)) ==> (< ?a 0) if (!= ?a 0)
+(< ?b ?a) ==> (< ?b (+ ?a 1)) if (!= ?b ?a)
+(< ?b (+ ?a 1)) ==> (< ?b ?a) if (!= ?b ?a)
+(< ?a (< ?b ?a)) ==> 1 if (< ?a 0)
+(- ?a) ==> ?a if (== ?a 0)
+?a ==> (- ?a) if (== ?a 0)
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(/ ?b ?a) ==> (/ ?a ?a) if (== ?b ?a)
+(/ ?a ?b) ==> (/ ?a ?a) if (&& 1 (== ?a ?b))
+(/ (- 1 ?a) ?a) ==> (- (/ 1 ?a) 1) if (< ?a 0)
+(- (/ 1 ?a) 1) ==> (/ (- 1 ?a) ?a) if (< ?a 0)
+(/ 1 (- ?a 1)) ==> (- (/ ?a ?a) 1) if (<= ?a 0)
+(- (/ ?a ?a) 1) ==> (/ 1 (- ?a 1)) if (<= ?a 0)
+(+ 1 (/ 1 ?a)) ==> (/ (+ ?a 1) ?a) if (< 0 ?a)
+(/ (+ ?a 1) ?a) ==> (+ 1 (/ 1 ?a)) if (< 0 ?a)
+(- (/ 1 ?a)) ==> (* ?a (/ 1 ?a)) if (< ?a 0)
+(* ?a (/ 1 ?a)) ==> (- (/ 1 ?a)) if (< ?a 0)
+(/ (+ ?a 1) ?a) ==> 0 if (<= ?a 0)
+(/ ?a (- ?a 1)) ==> 0 if (<= ?a 0)
+(/ ?a (+ ?a 1)) ==> 0 if (<= 0 ?a)
+(/ (- 1 ?a) ?a) ==> 0 if (<= 0 ?a)
+(- (/ 1 ?a)) ==> (* ?a (/ 1 ?a)) if (&& 1 (<= ?a 0))
+(* ?a (/ 1 ?a)) ==> (- (/ 1 ?a)) if (&& 1 (<= ?a 0))
+(/ 1 ?a) ==> (* ?a (/ 1 ?a)) if (&& 1 (<= 0 ?a))
+(* ?a (/ 1 ?a)) ==> (/ 1 ?a) if (&& 1 (<= 0 ?a))
+(max ?c (min ?b ?a)) ==> (min ?a (max ?b ?c)) if (<= ?c ?a)
+(min ?a (max ?b ?c)) ==> (max ?c (min ?b ?a)) if (<= ?c ?a)
+(+ ?b ?a) ==> (max ?b (+ ?b ?a)) if (<= 0 ?a)
+(max ?b (+ ?b ?a)) ==> (+ ?b ?a) if (<= 0 ?a)
+(max ?a (+ ?a ?b)) ==> ?a if (<= ?b 0)
+(min ?b (+ ?b ?a)) ==> ?b if (<= 0 ?a)
+(min ?a (- ?a ?b)) ==> ?a if (<= ?b 0)
+(max ?b (- ?b ?a)) ==> ?b if (<= 0 ?a)
+(min ?b (* ?a ?a)) ==> ?b if (<= ?b 0)
+(min ?c (* ?b (max ?b ?a))) ==> (min ?c (* ?a (min ?b ?a))) if (<= ?c 0)
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?b (max ?b ?a))) if (<= ?c 0)
+(min ?a (* ?b (* ?a ?a))) ==> (min ?a (* ?b (max ?a ?b))) if (<= 0 ?b)
+(min ?a (* ?b (max ?a ?b))) ==> (min ?a (* ?b (* ?a ?a))) if (<= 0 ?b)
+(min ?b (max ?a (* ?b ?a))) ==> (min ?b (* ?b (* ?b ?a))) if (<= 0 ?a)
+(min ?b (* ?b (* ?b ?a))) ==> (min ?b (max ?a (* ?b ?a))) if (<= 0 ?a)
+(* ?c (min ?b ?a)) ==> (max (* ?c ?b) (* ?c ?a)) if (<= ?c 0)
+(max (* ?c ?b) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (<= ?c 0)
+(* ?b (min ?b ?a)) ==> (max (* ?b ?b) (* ?b ?a)) if (<= ?b 0)
+(max (* ?b ?b) (* ?b ?a)) ==> (* ?b (min ?b ?a)) if (<= ?b 0)
+(* ?b (max ?c ?a)) ==> (min (* ?c ?b) (* ?b ?a)) if (<= ?b 0)
+(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (max ?c ?a)) if (<= ?b 0)
+(min ?a (* ?b ?a)) ==> (min ?a (* ?b (min ?b ?a))) if (<= ?a 0)
+(min ?a (* ?b (min ?b ?a))) ==> (min ?a (* ?b ?a)) if (<= ?a 0)
+(min ?b (* ?b ?a)) ==> (min ?b (* ?b (min ?b ?a))) if (<= ?a 0)
+(min ?b (* ?b (min ?b ?a))) ==> (min ?b (* ?b ?a)) if (<= ?a 0)
+(min ?a (* ?b ?b)) ==> (min ?a (* ?b (min ?b ?a))) if (<= ?b 0)
+(min ?a (* ?b (min ?b ?a))) ==> (min ?a (* ?b ?b)) if (<= ?b 0)
+(min ?a (* ?b ?a)) ==> (min ?a (* ?a (max ?b ?a))) if (<= ?a 0)
+(min ?a (* ?a (max ?b ?a))) ==> (min ?a (* ?b ?a)) if (<= ?a 0)
+(min ?a (* ?b ?a)) ==> (min ?a (* ?a (max ?b ?a))) if (< 0 ?b)
+(min ?a (* ?a (max ?b ?a))) ==> (min ?a (* ?b ?a)) if (< 0 ?b)
+(* ?b (min ?c ?a)) ==> (min (* ?c ?b) (* ?b ?a)) if (<= 0 ?b)
+(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (min ?c ?a)) if (<= 0 ?b)
+(min ?b (* ?a ?a)) ==> (min ?b (* ?a (min ?a ?b))) if (<= 0 ?b)
+(min ?b (* ?a (min ?a ?b))) ==> (min ?b (* ?a ?a)) if (<= 0 ?b)
+(* ?a (max ?c ?b)) ==> (max (* ?c ?a) (* ?b ?a)) if (<= 0 ?a)
+(max (* ?c ?a) (* ?b ?a)) ==> (* ?a (max ?c ?b)) if (<= 0 ?a)
+(min ?a (* ?b ?a)) ==> (min ?a (* ?a (min ?b ?a))) if (<= 0 ?a)
+(min ?a (* ?a (min ?b ?a))) ==> (min ?a (* ?b ?a)) if (<= 0 ?a)
+(max ?a (* ?a (* ?a ?b))) ==> ?a if (< ?b 0)
+?a ==> (max ?a (* ?a (* ?a ?a))) if (<= ?a 0)
+(max ?a (* ?a (* ?a ?a))) ==> ?a if (<= ?a 0)
+(min ?a (* ?b (max ?b ?a))) ==> ?a if (<= ?a 0)
+(min ?b (* ?b (max ?b ?a))) ==> ?b if (<= ?a 0)
+(min ?a (max ?b (* ?b ?a))) ==> ?a if (<= ?a 0)
+(min ?a (* ?b (* ?a ?a))) ==> ?a if (< 0 ?b)
+(min ?b (max ?a (* ?b ?a))) ==> ?b if (< 0 ?a)
+(min ?a (* ?a (min ?a ?b))) ==> ?a if (< 0 ?b)
+(min ?a (* ?a (max ?b ?a))) ==> ?a if (<= 0 ?a)
+?a ==> (min ?a (* ?a (* ?a ?a))) if (<= 0 ?a)
+(min ?a (* ?a (* ?a ?a))) ==> ?a if (<= 0 ?a)
+(max ?b ?a) ==> ?b if (< ?a ?b)
+"#;
 
 const CAVIAR_RULES: &str = r#"
 (== ?x ?y) ==> (== ?y ?x)
@@ -203,7 +411,7 @@ fn pairwise_implication_building<L: SynthLanguage>(
             let name = format!("{} -> {}", a1, a2);
             let implication = Implication::new(name.into(), a1.clone(), a2.clone());
             if let Ok(implication) = implication {
-                if implication.is_valid() {
+                if !implications.contains(&implication) && implication.is_valid() {
                     implications.add(implication);
                 }
             }
@@ -268,7 +476,12 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
 
 #[cfg(test)]
 pub mod halide_derive_tests {
-    use ruler::halide::og_recipe;
+    use ruler::{
+        conditions::{generate::compress, implication_set::run_implication_workload},
+        enumo::Metric,
+        halide::og_recipe,
+        recipe_utils::{recursive_rules_cond, run_workload, Lang},
+    };
 
     use super::*;
 
@@ -280,21 +493,63 @@ pub mod halide_derive_tests {
             return;
         }
 
+        let mut chompy_rules = og_recipe(Ruleset::default());
+        // let mut chompy_rules = Ruleset::default();
+        // for line in CHOMPY_RULES.lines() {
+        //     if line.trim().is_empty() {
+        //         continue;
+        //     }
+        //     let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
+        //     assert!(rule.is_valid());
+        //     chompy_rules.add(rule);
+        // }
+
         let caviar_rules = caviar_rules();
-        let chompy_rules = og_recipe();
+
+        let mut caviar_rules_generalized = Ruleset::default();
+
+        for r in caviar_rules.iter() {
+            if r.cond.is_none() {
+                // skip total rules
+                continue;
+            }
+            let lhs = Pred::instantiate(&r.lhs);
+            let rhs = Pred::instantiate(&r.rhs);
+            let cond = Pred::instantiate(&r.cond.clone().unwrap().chop_assumption());
+            caviar_rules_generalized.add_cond_from_recexprs(&lhs, &rhs, &cond, 0);
+        }
+
+        // let chompy_rules = og_recipe(caviar_rules_generalized);
 
         let all_conditions: Vec<_> = caviar_rules
             .iter()
             .chain(chompy_rules.iter())
             .filter_map(|r| {
-                r.cond
-                    .as_ref()
-                    .and_then(|c| Assumption::new(c.to_string()).ok())
+                r.cond.as_ref().and_then(|c| {
+                    Assumption::new(
+                        Pred::generalize(
+                            &Pred::instantiate(&c.chop_assumption()),
+                            &mut Default::default(),
+                        )
+                        .to_string(),
+                    )
+                    .ok()
+                })
             })
             .collect();
 
+        println!("all conditions:");
+        for c in all_conditions.iter() {
+            println!("  {}", c);
+        }
+
         let implication_rules: ImplicationSet<Pred> =
             pairwise_implication_building(&all_conditions);
+
+        println!("implications: ");
+        for i in implication_rules.iter() {
+            println!("  {}", i.name());
+        }
 
         // see how many caviar rules we can derive, given the same
         // total caviar rules.
@@ -313,8 +568,70 @@ pub mod halide_derive_tests {
 
         println!("Chompy cannot derive:");
         for rule in result.cannot.iter() {
+            if rule.cond.is_none() {
+                // skip reporting of total rules
+                continue;
+            }
             println!("  {}", rule);
         }
+
+        let chompy_only_conditional_rules = chompy_edited.partition(|r| r.cond.is_some()).0;
+
+        let reverse_result = run_derivability_tests(
+            &caviar_rules,
+            &chompy_only_conditional_rules,
+            &implication_rules,
+        );
+
+        println!("Caviar can derive:");
+        for rule in reverse_result.can.iter() {
+            if rule.cond.is_none() {
+                // skip reporting of total rules
+                continue;
+            }
+            println!("  {}", rule);
+        }
+
+        println!("Caviar cannot derive:");
+        for rule in reverse_result.cannot.iter() {
+            if rule.cond.is_none() {
+                // skip reporting of total rules
+                continue;
+            }
+            println!("  {}", rule);
+        }
+    }
+
+    #[test]
+    fn i_hate_this() {
+        let our_version = "(* ?b (min ?c ?a)) ==> (min (* ?c ?b) (* ?b ?a)) if (<= 0 ?b)";
+        let their_version = "(* (min ?x ?y) ?z) ==> (min (* ?x ?z) (* ?y ?z)) if (> ?z 0)";
+
+        let mut implications = ImplicationSet::default();
+        implications.add(
+            Implication::new(
+                "gt_implies_ge".into(),
+                Assumption::new("(> ?a ?b)".to_string()).unwrap(),
+                Assumption::new("(>= ?a ?b)".to_string()).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let mut our_rules: Ruleset<Pred> = Default::default();
+        our_rules.add(Rule::from_string(our_version).unwrap().0);
+        our_rules.add(Rule::from_string("(min ?a ?b) ==> (min ?b ?a)").unwrap().0);
+        our_rules.add(Rule::from_string("(* ?a ?b) ==> (* ?b ?a)").unwrap().0);
+        our_rules.add(Rule::from_string("(< ?a ?b) ==> (> ?b ?a)").unwrap().0);
+        our_rules.add(Rule::from_string("(> ?a ?b) ==> (< ?b ?a)").unwrap().0);
+        our_rules.add(Rule::from_string("(<= ?a ?b) ==> (>= ?b ?a)").unwrap().0);
+        our_rules.add(Rule::from_string("(>= ?a ?b) ==> (<= ?b ?a)").unwrap().0);
+
+        assert!(our_rules.can_derive_cond(
+            ruler::DeriveType::LhsAndRhs,
+            &Rule::from_string(their_version).unwrap().0,
+            Limits::deriving(),
+            &implications.to_egg_rewrites(),
+        ));
     }
 
     // A test to see if we can correctly choose all Caviar handwritten rules
@@ -337,6 +654,115 @@ pub mod halide_derive_tests {
         println!("Chompy cannot synthesize:");
         for rule in cannot.iter() {
             println!("  {}", rule);
+        }
+    }
+
+    #[test]
+    fn sanity() {
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+        let mut expected: Ruleset<Pred> = Default::default();
+        for line in r#"(* (min ?x ?y) ?z) ==> (min (* ?x ?z) (* ?y ?z)) if (> ?z 0)
+(min (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (> ?z 0)
+(* (min ?x ?y) ?z) ==> (max (* ?x ?z) (* ?y ?z)) if (< ?z 0)
+(max (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (< ?z 0)
+(min ?a ?b) ==> ?a if (<= ?a ?b)
+(max ?a ?b) ==> ?a if (<= ?b ?a)
+(min ?a (+ ?a ?b)) ==> ?a if (<= 0 ?b)
+(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (<= ?b 0)
+(max ?a (+ ?a ?b)) ==> ?a if (<= ?b 0)
+(max ?a (+ ?a ?b)) ==> (+ ?a ?b) if (<= 0 ?b)"#
+            .lines()
+        {
+            let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
+            assert!(rule.is_valid());
+            expected.add(rule);
+        }
+
+        let cond_wkld = &Workload::new(&["(OP2 V V)"])
+            .plug("OP2", &Workload::new(&["<", "<=", ">"]))
+            .plug("V", &Workload::new(&["a", "b", "c", "0"]));
+
+        let cond_rules = run_workload(
+            cond_wkld.clone(),
+            None,
+            Ruleset::default(),
+            ImplicationSet::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        all_rules.extend(cond_rules.clone());
+
+        let cond_wkld = compress(cond_wkld, all_rules.clone());
+
+        let implications = run_implication_workload(
+            &cond_wkld,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &Default::default(),
+            &cond_rules,
+        );
+
+        let min_max_add_rules = recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "+"]]),
+            all_rules.clone(),
+            implications.clone(),
+            cond_wkld.clone(),
+            expected.clone(),
+        );
+
+        all_rules.extend(min_max_add_rules);
+
+        let min_max_sub_rules = recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "-"]]),
+            all_rules.clone(),
+            implications.clone(),
+            cond_wkld.clone(),
+            expected.clone(),
+        );
+
+        all_rules.extend(min_max_sub_rules);
+
+        let min_max_mul_rules = recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
+            all_rules.clone(),
+            implications.clone(),
+            cond_wkld.clone(),
+            expected.clone(),
+        );
+        // let min_max_mul_rules = run_workload(
+        //     Workload::new(&["(* (min a b) c)", "(min (* a c) (* b c))"]),
+        //     Some(cond_wkld.clone()),
+        //     all_rules.clone(),
+        //     implications.clone(),
+        //     Limits::synthesis(),
+        //     Limits::minimize(),
+        //     true,
+        // );
+
+        all_rules.extend(min_max_mul_rules);
+
+        for i in implications.iter() {
+            println!("implication: {}", i.name());
+        }
+
+        for r in expected.iter() {
+            assert!(
+                all_rules.can_derive_cond(
+                    ruler::DeriveType::LhsAndRhs,
+                    &r,
+                    Limits::deriving(),
+                    &implications.to_egg_rewrites(),
+                ),
+                "couldn't derive rule: {}",
+                r
+            );
         }
     }
 }

@@ -29,12 +29,54 @@ pub fn substitute(workload: Workload, sub: Workload, atom: &str) -> Workload {
     pegs
 }
 
+// we can figure out later how to make this the right visibility.
+// This runs the workload, but also takes an additional `expected` parameter
+// which consists of conditional rules you expect your ruleset to have.
+// This function crashes if for any rule in `expected`,
+// - it is generated as a candidate during cvec matching, and
+// - it is not in the final ruleset, i.e., it is discarded during minimization.
+// Good luck!
+// NOTE: It's the caller's responsibility to make sure the `expected` ruleset
+// is **generalized**. See `SynthLanguage::generalize()` for more details.
+pub fn run_workload_debug<L: SynthLanguage>(
+    workload: Workload,
+    cond_workload: Option<Workload>,
+    prior: Ruleset<L>,
+    prior_impls: ImplicationSet<L>,
+    prior_limits: Limits,
+    minimize_limits: Limits,
+    fast_match: bool,
+    expected: Ruleset<L>,
+) -> Ruleset<L> {
+    assert!(
+        expected.iter().all(|r| r.cond.is_some()),
+        "Expected can only contain conditional rules."
+    );
+    println!("[run_workload_debug] Running workload");
+    let mut state: ChompyState<L> = ChompyState::new(
+        workload,
+        prior,
+        cond_workload.unwrap_or(Workload::empty()),
+        prior_impls,
+    );
+
+    run_workload_internal(
+        &mut state,
+        prior_limits,
+        minimize_limits,
+        fast_match,
+        true,
+        expected,
+    )
+}
+
 fn run_workload_internal<L: SynthLanguage>(
     state: &mut ChompyState<L>,
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
     allow_empty: bool,
+    expected: Ruleset<L>,
 ) -> Ruleset<L> {
     let prior: Ruleset<L> = state.chosen().clone();
     let cond_workload = state.predicates().clone();
@@ -107,10 +149,21 @@ fn run_workload_internal<L: SynthLanguage>(
             state.implications(),
         );
 
+        // the intersection of `expected` and `conditional_candidates`.
+        // maybe there's a smarter way to do this using set operations, but rules
+        // aren't hashable afaik
+        let mut expected_this_round = Ruleset::default();
+        for rule in expected.iter() {
+            if conditional_candidates.contains(rule) {
+                expected_this_round.add(rule.clone());
+            }
+        }
+
         let mut rws = impl_prop_rules.to_egg_rewrites();
         rws.push(merge_eqs());
 
-        let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
+        let (chosen_cond, _) =
+            conditional_candidates.minimize_cond(chosen.clone(), &rws, &expected_this_round);
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
     }
@@ -158,7 +211,14 @@ pub fn run_workload<L: SynthLanguage>(
         prior_impls,
     );
 
-    let res = run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true);
+    let res = run_workload_internal(
+        &mut state,
+        prior_limits,
+        minimize_limits,
+        fast_match,
+        true,
+        Ruleset::default(),
+    );
     println!(
         "[run_workload] Finished workload in {:.2}s",
         start.elapsed().as_secs_f64()
@@ -248,6 +308,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     prior: Ruleset<L>,
     prior_impls: ImplicationSet<L>,
     conditions: Workload,
+    expected: Ruleset<L>,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
@@ -259,6 +320,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             prior.clone(),
             prior_impls.clone(),
             conditions.clone(),
+            expected.clone(),
         );
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
@@ -286,6 +348,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             Limits::minimize(),
             true,
             allow_empty,
+            expected,
         );
         let mut all = new_rules;
         all.extend(rec);
@@ -308,6 +371,7 @@ pub fn recursive_rules<L: SynthLanguage>(
         prior,
         ImplicationSet::default(),
         Workload::empty(),
+        Ruleset::default(),
     )
 }
 

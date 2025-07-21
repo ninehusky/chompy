@@ -3,9 +3,11 @@ use std::str::FromStr;
 use crate::{
     conditions::{
         assumption::Assumption,
+        generate::compress,
         implication::{Implication, ImplicationValidationResult},
+        implication_set::run_implication_workload,
     },
-    recipe_utils::iter_metric,
+    recipe_utils::{iter_metric, run_workload_debug},
     *,
 };
 
@@ -1015,7 +1017,7 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
     }
 }
 
-pub fn og_recipe() -> Ruleset<Pred> {
+pub fn og_recipe(expected: Ruleset<Pred>) -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let start_time = std::time::Instant::now();
     let wkld = conditions::generate::get_condition_workload();
@@ -1025,6 +1027,74 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
+    let int_wkld = Workload::new(&["(OP2 V V)", "0", "1"])
+        .plug("OP2", &Workload::new(&["min", "max"]))
+        .plug("V", &Workload::new(&["a", "b", "c"]));
+
+    let bool_wkld = Workload::new(&["(== V V)", "0", "1"]).plug("V", &int_wkld);
+
+    let simp_eq_min_max = run_workload(
+        bool_wkld.clone(),
+        Some(wkld.clone()),
+        Ruleset::default(),
+        ImplicationSet::default(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+    );
+
+    all_rules.extend(simp_eq_min_max.clone());
+
+    let add_rules = recursive_rules_cond(
+        Metric::Atoms,
+        3,
+        Lang::new(&["0"], &["a", "b", "c"], &[&[], &["+", "-"]]),
+        Ruleset::default(),
+        base_implications.clone(),
+        wkld.clone(),
+        expected.clone(),
+    );
+
+    all_rules.extend(add_rules.clone());
+
+    let comp_wkld = Workload::new(&["(OP2 V V)", "0", "1"])
+        .plug("OP2", &Workload::new(&["<", "<=", "!=", "=="]))
+        .plug("V", &Workload::new(&["a", "b", "c"]));
+
+    let bool_wkld = Workload::new(&["(&& V V)", "0", "1"]).plug("V", &comp_wkld);
+
+    let and_comps = run_workload(
+        bool_wkld.clone(),
+        Some(wkld.clone()),
+        Ruleset::default(),
+        ImplicationSet::default(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+    );
+
+    all_rules.extend(and_comps.clone());
+
+    // let ints = Workload::new(&["a", "b", "c", "(+ a b)", "0", "1"]);
+
+    // let min_maxes = Workload::new(&["(OP2 V V)"])
+    //     .plug("OP2", &Workload::new(&["min", "max"]))
+    //     .plug("V", &ints);
+
+    // let comps = Workload::new(&["(< V V)"]).plug("V", &min_maxes);
+
+    // let min_max_comps = run_workload(
+    //     comps.clone(),
+    //     Some(wkld.clone()),
+    //     Ruleset::default(),
+    //     ImplicationSet::default(),
+    //     Limits::synthesis(),
+    //     Limits::minimize(),
+    //     true,
+    // );
+
+    // all_rules.extend(min_max_comps.clone());
+
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
         5,
@@ -1032,6 +1102,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Ruleset::default(),
         base_implications.clone(),
         wkld.clone(),
+        expected.clone(),
     );
 
     all_rules.extend(simp_comps.clone());
@@ -1047,123 +1118,69 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Ruleset::default(),
         base_implications.clone(),
         wkld.clone(),
+        expected.clone(),
     );
     all_rules.extend(arith_basic.clone());
 
-    let min_max = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
-        all_rules.clone(),
-        base_implications.clone(),
-        wkld.clone(),
+    let cond_wkld = &Workload::new(&["(OP2 V V)"])
+        .plug("OP2", &Workload::new(&["<", "<=", ">"]))
+        .plug("V", &Workload::new(&["a", "b", "c", "0"]));
+
+    let cond_rules = run_workload(
+        cond_wkld.clone(),
+        None,
+        Ruleset::default(),
+        ImplicationSet::default(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
     );
 
-    all_rules.extend(min_max.clone());
+    all_rules.extend(cond_rules.clone());
 
-    let min_max_add = recursive_rules_cond(
+    let cond_wkld = compress(cond_wkld, all_rules.clone());
+
+    let implications = run_implication_workload(
+        &cond_wkld,
+        &["a".to_string(), "b".to_string(), "c".to_string()],
+        &Default::default(),
+        &cond_rules,
+    );
+
+    let min_max_add_rules = recursive_rules_cond(
         Metric::Atoms,
         5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "+"]]),
         all_rules.clone(),
-        base_implications.clone(),
-        wkld.clone(),
+        implications.clone(),
+        cond_wkld.clone(),
+        Ruleset::default(),
     );
 
-    all_rules.extend(min_max_add.clone());
+    all_rules.extend(min_max_add_rules);
 
-    for op in &["min", "max"] {
-        let int_workload = Workload::new(&["0", "1", "(OP V V)"])
-            .plug("OP", &Workload::new(&[op]))
-            .plug("V", &Workload::new(&["a", "b", "c"]));
+    let min_max_sub_rules = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "-"]]),
+        all_rules.clone(),
+        implications.clone(),
+        cond_wkld.clone(),
+        Ruleset::default(),
+    );
 
-        let eq_workload = Workload::new(&["0", "1", "(OP V V)"])
-            .plug("OP", &Workload::new(&["=="]))
-            .plug("V", &int_workload)
-            .filter(Filter::Canon(vec![
-                "a".to_string(),
-                "b".to_string(),
-                "c".to_string(),
-            ]));
+    all_rules.extend(min_max_sub_rules);
 
-        let eq_simp = run_workload(
-            eq_workload,
-            Some(wkld.clone()),
-            min_max.clone(),
-            base_implications.clone(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-        );
-
-        all_rules.extend(eq_simp);
-    }
-
-    let min_max_mul = recursive_rules_cond(
+    let min_max_mul_rules = recursive_rules_cond(
         Metric::Atoms,
         7,
         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
         all_rules.clone(),
-        base_implications.clone(),
-        wkld.clone(),
+        implications.clone(),
+        cond_wkld.clone(),
+        Ruleset::default(),
     );
-
-    all_rules.extend(min_max_mul);
-
-    // let min_max_div = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     7,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
-    //     all_rules.clone(),
-    //     wkld.clone(),
-    // );
-
-    // all_rules.extend(min_max_div);
-
-    // the special workloads, which mostly revolve around
-    // composing int2boolop(int_term, int_term) or things like that
-    // together.
-    let int_lang = Lang::new(
-        &[],
-        &["a", "b", "c"],
-        &[&[], &["+", "-", "*", "min", "max"]],
-    );
-    let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
-        .filter(Filter::Contains("VAR".parse().unwrap()))
-        .plug("VAR", &Workload::new(int_lang.vars))
-        .plug("VAL", &Workload::new(int_lang.vals));
-
-    // let ops = vec![lang.uops, lang.bops, lang.tops];
-    for (i, ops) in int_lang.ops.iter().enumerate() {
-        int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    }
-
-    for op in &["min", "max"] {
-        let big_wkld = Workload::new(&["0", "1"]).append(
-            Workload::new(&["(OP V V)"])
-                // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-                // thing where we have to basically feed in these operators one at a time.
-                .plug("OP", &Workload::new(&[op]))
-                .plug("V", &int_wkld)
-                .filter(Filter::MetricLt(Metric::Atoms, 8)),
-        );
-
-        let wrapped_rules = run_workload(
-            big_wkld,
-            Some(wkld.clone()),
-            all_rules.clone(),
-            base_implications.clone(),
-            Limits::synthesis(),
-            Limits {
-                iter: 1,
-                node: 100_000,
-                match_: 100_000,
-            },
-            true,
-        );
-
-        all_rules.extend(wrapped_rules);
-    }
+    all_rules.extend(min_max_mul_rules);
 
     let end_time = std::time::Instant::now();
 

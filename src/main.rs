@@ -76,7 +76,7 @@ pub async fn main() {
                 (Some(recipe_type), None) => {
                     let recipe: RecipeType = recipe_type.parse().unwrap();
                     match recipe {
-                        RecipeType::OgRecipe => og_recipe(),
+                        RecipeType::OgRecipe => og_recipe(Ruleset::default()),
                     }
                 }
                 (Some(_), Some(_)) => panic!("both recipe types provided."),

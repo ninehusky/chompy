@@ -138,6 +138,11 @@ pub fn build_pvec_to_patterns<L: SynthLanguage>(wkld: Workload) -> PredicateMap<
             })
             .collect::<PVec>();
 
+        if pvec.iter().all(|x| *x) || pvec.iter().all(|x| !*x) {
+            // Skip the all-true and all-false pvecs.
+            continue;
+        }
+
         pvec_to_patterns
             .entry(pvec.clone())
             .or_default()
