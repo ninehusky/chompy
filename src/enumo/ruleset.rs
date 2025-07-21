@@ -16,7 +16,7 @@ use super::{Rule, Scheduler};
 pub type PredicateMap<L> = IndexMap<PVec, Vec<Assumption<L>>>;
 
 /// A set of rewrite rules
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Ruleset<L: SynthLanguage>(pub IndexMap<Arc<str>, Rule<L>>);
 
 impl<L: SynthLanguage> PartialEq for Ruleset<L> {
