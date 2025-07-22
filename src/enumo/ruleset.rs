@@ -2,11 +2,10 @@ use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner, Searche
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
-use serde::Serialize;
 use std::{io::Write, sync::Arc};
 
 use crate::{
-    conditions::{assumption::Assumption, implication_set::ImplicationSet, merge_eqs},
+    conditions::{assumption::Assumption, implication_set::ImplicationSet},
     CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
     SynthAnalysis, SynthLanguage,
 };
@@ -17,7 +16,7 @@ use super::{Rule, Scheduler};
 pub type PredicateMap<L> = IndexMap<PVec, Vec<Assumption<L>>>;
 
 /// A set of rewrite rules
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Ruleset<L: SynthLanguage>(pub IndexMap<Arc<str>, Rule<L>>);
 
 impl<L: SynthLanguage> PartialEq for Ruleset<L> {
@@ -463,6 +462,8 @@ impl<L: SynthLanguage> Ruleset<L> {
     fn get_canonical_conditional_rule(
         l_expr: &RecExpr<L>,
         r_expr: &RecExpr<L>,
+        // TODO: let's figure out if we actually need `cond`; it seems
+        // like we only pass it in for logging.
         cond: &Assumption<L>,
         egraph: &EGraph<L, SynthAnalysis>,
     ) -> Option<(RecExpr<L>, RecExpr<L>)> {

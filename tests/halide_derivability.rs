@@ -11,216 +11,10 @@ use ruler::{
 };
 use serde::Serialize;
 
-#[derive(Serialize)]
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
     cannot: Ruleset<L>,
 }
-
-const CHOMPY_RULES: &str = r#"
-(== ?x ?y) ==> (== ?y ?x)
-(== ?x ?y) ==> (== (- ?x ?y) 0)
-(== (+ ?x ?y) ?z) ==> (== ?x (- ?z ?y))
-(== ?x ?x) ==> 1
-(== (* ?x ?y) 0) ==> (|| (== ?x 0) (== ?y 0))
-(== (max ?x ?y) ?y) ==> (<= ?x ?y)
-(== (min ?x ?y) ?y) ==> (<= ?y ?x)
-(<= ?y ?x) ==> (== (min ?x ?y) ?y)
-(|| ?x ?y) ==> (! (&& (! ?x) (! ?y)))
-(|| ?y ?x) ==> (|| ?x ?y)
-(+ ?a ?b) ==> (+ ?b ?a)
-(+ ?a (+ ?b ?c)) ==> (+ (+ ?a ?b) ?c)
-(+ ?a 0) ==> ?a
-(* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c))
-(+ (* ?a ?b) (* ?a ?c)) ==> (* ?a (+ ?b ?c))
-(/ 0 ?x) ==> 0
-(/ (* -1 ?a) ?b) ==> (/ ?a (* -1 ?b))
-(/ ?a (* -1 ?b)) ==> (/ (* -1 ?a) ?b)
-(* -1 (/ ?a ?b)) ==> (/ (* -1 ?a) ?b)
-(/ (* -1 ?a) ?b) ==> (* -1 (/ ?a ?b))
-(!= ?x ?y) ==> (! (== ?x ?y))
-(max ?a ?b) ==> (* -1 (min (* -1 ?a) (* -1 ?b)))
-(&& ?y ?x) ==> (&& ?x ?y)
-(&& ?a (&& ?b ?c)) ==> (&& (&& ?a ?b) ?c)
-(&& ?x (! ?x)) ==> 0
-(&& (< ?x ?y) (< ?x ?z)) ==> (< ?x (min ?y ?z))
-(< ?x (min ?y ?z)) ==> (&& (< ?x ?y) (< ?x ?z))
-(&& (<= ?x ?y) (<= ?x ?z)) ==> (<= ?x (min ?y ?z))
-(<= ?x (min ?y ?z)) ==> (&& (<= ?x ?y) (<= ?x ?z))
-(&& (< ?y ?x) (< ?z ?x)) ==> (< (max ?y ?z) ?x)
-(> ?x (max ?y ?z)) ==> (&& (< ?z ?x) (< ?y ?x))
-(&& (<= ?y ?x) (<= ?z ?x)) ==> (<= (max ?y ?z) ?x)
-(>= ?x (max ?y ?z)) ==> (&& (<= ?z ?x) (<= ?y ?x))
-(&& ?a (|| ?b ?c)) ==> (|| (&& ?a ?b) (&& ?a ?c))
-(|| ?a (&& ?b ?c)) ==> (&& (|| ?a ?b) (|| ?a ?c))
-(- ?a ?b) ==> (+ ?a (* -1 ?b))
-(* ?a ?b) ==> (* ?b ?a)
-(* ?a (* ?b ?c)) ==> (* (* ?a ?b) ?c)
-(* ?a 0) ==> 0
-(* ?a 1) ==> ?a
-(* (max ?a ?b) (min ?a ?b)) ==> (* ?a ?b)
-(<= ?x ?y) ==> (! (< ?y ?x))
-(! (< ?y ?x)) ==> (<= ?x ?y)
-(>= ?x ?y) ==> (! (< ?x ?y))
-(! (== ?x ?y)) ==> (!= ?x ?y)
-(> ?x ?z) ==> (< ?z ?x)
-(< ?x ?y) ==> (< (* -1 ?y) (* -1 ?x))
-(< ?a ?a) ==> 0
-(< (+ ?x ?y) ?z) ==> (< ?x (- ?z ?y))
-(< ?z (+ ?x ?y)) ==> (< (- ?z ?y) ?x)
-(< (min ?x ?y) ?x) ==> (< ?y ?x)
-(< (min ?z ?y) (min ?x ?y)) ==> (< ?z (min ?x ?y))
-(< (max ?z ?y) (max ?x ?y)) ==> (< (max ?z ?y) ?x)
-(< (max ?a ?c) (min ?a ?b)) ==> 0
-(min ?a ?b) ==> (min ?b ?a)
-(min (min ?x ?y) ?z) ==> (min ?x (min ?y ?z))
-(min ?x ?x) ==> ?x
-(min (max ?x ?y) ?x) ==> ?x
-(min (max ?x ?y) (max ?x ?z)) ==> (max (min ?y ?z) ?x)
-(min (max (min ?x ?y) ?z) ?y) ==> (min (max ?x ?z) ?y)
-(min (+ ?a ?b) ?c) ==> (+ (min ?b (- ?c ?a)) ?a)
-(+ (min ?x ?y) ?z) ==> (min (+ ?x ?z) (+ ?y ?z))
-(< (min ?y ?c0) ?c1) ==> (|| (< ?y ?c1) (< ?c0 ?c1))
-(< (max ?y ?c0) ?c1) ==> (&& (< ?y ?c1) (< ?c0 ?c1))
-(< ?c1 (max ?y ?c0)) ==> (|| (< ?c1 ?y) (< ?c1 ?c0))
-("%" 0 ?x) ==> 0
-("%" ?x 1) ==> 0
-("%" (* ?x -1) ?c) ==> (* -1 ("%" ?x ?c))
-(* -1 ("%" ?x ?c)) ==> ("%" (* ?x -1) ?c)
-(== (min ?b ?c) (min ?b ?a)) ==> (== ?b (min ?b ?a)) if (< ?a ?c)
-(== (max ?c ?b) (max ?a ?b)) ==> (== (min ?a ?b) ?a) if (< ?c ?a)
-(== (max ?a ?b) 1) ==> (== ?a 1) if (<= ?b 0)
-(== (min ?b ?a) 1) ==> 0 if (<= ?b 0)
-(== (min ?b ?c) (max ?b ?a)) ==> 0 if (< ?c ?a)
-(== (min ?b ?a) 1) ==> ?a if (== ?a 0)
-(== (min ?c ?a) ?b) ==> (== ?b ?a) if (< ?b ?c)
-(== ?a (max ?b ?c)) ==> (== ?b ?a) if (< ?c ?a)
-(== ?c (max ?b ?a)) ==> 0 if (< ?c ?a)
-(== ?a 1) ==> 0 if (<= ?a 0)
-(== (min ?c ?b) ?a) ==> 0 if (< ?c ?a)
-(== ?b ?a) ==> 0 if (!= ?b ?a)
-(min ?b ?a) ==> ?a if (<= ?a ?b)
-(max ?a ?b) ==> ?a if (<= ?b ?a)
-(- ?b ?a) ==> 0 if (== ?a ?b)
-?a ==> 0 if (== ?a 0)
-(- ?b ?a) ==> 0 if (&& 1 (== ?b ?a))
-(&& (< ?c ?b) (<= ?b ?a)) ==> (&& (< ?c ?a) (<= ?b ?a)) if (<= ?a ?b)
-(&& (< ?c ?a) (<= ?b ?a)) ==> (&& (< ?c ?b) (<= ?b ?a)) if (<= ?a ?b)
-(&& (< ?a ?c) (<= ?b ?a)) ==> (&& (< ?b ?c) (<= ?b ?a)) if (<= ?a ?b)
-(&& (< ?b ?c) (<= ?b ?a)) ==> (&& (< ?a ?c) (<= ?b ?a)) if (<= ?a ?b)
-(&& (<= ?c ?b) (<= ?b ?a)) ==> (&& (<= ?c ?a) (<= ?b ?a)) if (<= ?a ?b)
-(&& (<= ?c ?a) (<= ?b ?a)) ==> (&& (<= ?c ?b) (<= ?b ?a)) if (<= ?a ?b)
-(&& (<= ?c ?b) (<= ?b ?a)) ==> (&& (<= ?c ?a) (<= ?c ?b)) if (<= ?b ?c)
-(&& (<= ?c ?a) (<= ?c ?b)) ==> (&& (<= ?c ?b) (<= ?b ?a)) if (<= ?b ?c)
-(&& (< ?c ?a) (<= ?b ?a)) ==> (<= ?b ?a) if (< ?c ?b)
-(&& (< ?b ?c) (<= ?b ?a)) ==> (<= ?b ?a) if (< ?a ?c)
-(&& (< ?b ?c) (< ?b ?a)) ==> (< ?b ?a) if (<= ?a ?c)
-(&& (<= ?c ?a) (<= ?b ?a)) ==> (<= ?c ?a) if (<= ?b ?c)
-(&& (<= ?b ?c) (<= ?b ?a)) ==> (<= ?b ?a) if (<= ?a ?c)
-(&& (< ?b ?a) (<= ?c ?a)) ==> (< ?b ?a) if (<= ?c ?b)
-(&& (< ?c ?a) (< ?b ?a)) ==> (< ?b ?a) if (<= ?c ?b)
-(&& (< ?b ?a) (<= ?b ?c)) ==> (< ?b ?a) if (<= ?a ?c)
-(&& (<= ?c ?b) (<= ?b ?a)) ==> 0 if (< ?a ?c)
-(&& (< ?c ?b) (<= ?b ?a)) ==> 0 if (<= ?a ?c)
-(&& (< ?a ?c) (<= ?b ?a)) ==> 0 if (<= ?c ?b)
-(&& (< ?a ?c) (< ?b ?a)) ==> 0 if (<= ?c ?b)
-(< ?b ?a) ==> (<= ?b ?a) if (!= ?b ?a)
-(<= ?b ?a) ==> (< ?b ?a) if (!= ?b ?a)
-(< ?b ?a) ==> (<= ?b ?a) if (!= ?a ?b)
-(<= ?b ?a) ==> (< ?b ?a) if (!= ?a ?b)
-(< ?b ?a) ==> 1 if (< ?b ?a)
-(<= ?b ?a) ==> 0 if (< ?a ?b)
-(<= ?b ?a) ==> 1 if (<= ?b ?a)
-(< ?b ?a) ==> 0 if (<= ?a ?b)
-(< ?a 1) ==> (< ?a 0) if (!= ?a 0)
-(< ?a 0) ==> (< ?a 1) if (!= ?a 0)
-(< ?a 1) ==> 1 if (<= ?a 0)
-(< 1 ?a) ==> 0 if (<= ?a 0)
-(< ?a 1) ==> 0 if (< 0 ?a)
-?a ==> (< 1 ?a) if (== ?a 0)
-(< 1 ?a) ==> ?a if (== ?a 0)
-(- ?b ?a) ==> 0 if (&& 1 (== ?a ?b))
-(- ?b ?a) ==> 0 if (== ?b ?a)
-(+ ?b ?a) ==> (+ ?b ?b) if (&& 1 (== ?b ?a))
-(< ?a (< ?c ?b)) ==> (< ?a 0) if (!= ?a 0)
-(< ?a (< ?b ?a)) ==> (< ?a 0) if (!= ?a 0)
-(< ?b ?a) ==> (< ?b (+ ?a 1)) if (!= ?b ?a)
-(< ?b (+ ?a 1)) ==> (< ?b ?a) if (!= ?b ?a)
-(< ?a (< ?b ?a)) ==> 1 if (< ?a 0)
-(- ?a) ==> ?a if (== ?a 0)
-?a ==> (- ?a) if (== ?a 0)
-(/ ?a ?a) ==> 1 if (!= ?a 0)
-(/ ?b ?a) ==> (/ ?a ?a) if (== ?b ?a)
-(/ ?a ?b) ==> (/ ?a ?a) if (&& 1 (== ?a ?b))
-(/ (- 1 ?a) ?a) ==> (- (/ 1 ?a) 1) if (< ?a 0)
-(- (/ 1 ?a) 1) ==> (/ (- 1 ?a) ?a) if (< ?a 0)
-(/ 1 (- ?a 1)) ==> (- (/ ?a ?a) 1) if (<= ?a 0)
-(- (/ ?a ?a) 1) ==> (/ 1 (- ?a 1)) if (<= ?a 0)
-(+ 1 (/ 1 ?a)) ==> (/ (+ ?a 1) ?a) if (< 0 ?a)
-(/ (+ ?a 1) ?a) ==> (+ 1 (/ 1 ?a)) if (< 0 ?a)
-(- (/ 1 ?a)) ==> (* ?a (/ 1 ?a)) if (< ?a 0)
-(* ?a (/ 1 ?a)) ==> (- (/ 1 ?a)) if (< ?a 0)
-(/ (+ ?a 1) ?a) ==> 0 if (<= ?a 0)
-(/ ?a (- ?a 1)) ==> 0 if (<= ?a 0)
-(/ ?a (+ ?a 1)) ==> 0 if (<= 0 ?a)
-(/ (- 1 ?a) ?a) ==> 0 if (<= 0 ?a)
-(- (/ 1 ?a)) ==> (* ?a (/ 1 ?a)) if (&& 1 (<= ?a 0))
-(* ?a (/ 1 ?a)) ==> (- (/ 1 ?a)) if (&& 1 (<= ?a 0))
-(/ 1 ?a) ==> (* ?a (/ 1 ?a)) if (&& 1 (<= 0 ?a))
-(* ?a (/ 1 ?a)) ==> (/ 1 ?a) if (&& 1 (<= 0 ?a))
-(max ?c (min ?b ?a)) ==> (min ?a (max ?b ?c)) if (<= ?c ?a)
-(min ?a (max ?b ?c)) ==> (max ?c (min ?b ?a)) if (<= ?c ?a)
-(+ ?b ?a) ==> (max ?b (+ ?b ?a)) if (<= 0 ?a)
-(max ?b (+ ?b ?a)) ==> (+ ?b ?a) if (<= 0 ?a)
-(max ?a (+ ?a ?b)) ==> ?a if (<= ?b 0)
-(min ?b (+ ?b ?a)) ==> ?b if (<= 0 ?a)
-(min ?a (- ?a ?b)) ==> ?a if (<= ?b 0)
-(max ?b (- ?b ?a)) ==> ?b if (<= 0 ?a)
-(min ?b (* ?a ?a)) ==> ?b if (<= ?b 0)
-(min ?c (* ?b (max ?b ?a))) ==> (min ?c (* ?a (min ?b ?a))) if (<= ?c 0)
-(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?b (max ?b ?a))) if (<= ?c 0)
-(min ?a (* ?b (* ?a ?a))) ==> (min ?a (* ?b (max ?a ?b))) if (<= 0 ?b)
-(min ?a (* ?b (max ?a ?b))) ==> (min ?a (* ?b (* ?a ?a))) if (<= 0 ?b)
-(min ?b (max ?a (* ?b ?a))) ==> (min ?b (* ?b (* ?b ?a))) if (<= 0 ?a)
-(min ?b (* ?b (* ?b ?a))) ==> (min ?b (max ?a (* ?b ?a))) if (<= 0 ?a)
-(* ?c (min ?b ?a)) ==> (max (* ?c ?b) (* ?c ?a)) if (<= ?c 0)
-(max (* ?c ?b) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (<= ?c 0)
-(* ?b (min ?b ?a)) ==> (max (* ?b ?b) (* ?b ?a)) if (<= ?b 0)
-(max (* ?b ?b) (* ?b ?a)) ==> (* ?b (min ?b ?a)) if (<= ?b 0)
-(* ?b (max ?c ?a)) ==> (min (* ?c ?b) (* ?b ?a)) if (<= ?b 0)
-(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (max ?c ?a)) if (<= ?b 0)
-(min ?a (* ?b ?a)) ==> (min ?a (* ?b (min ?b ?a))) if (<= ?a 0)
-(min ?a (* ?b (min ?b ?a))) ==> (min ?a (* ?b ?a)) if (<= ?a 0)
-(min ?b (* ?b ?a)) ==> (min ?b (* ?b (min ?b ?a))) if (<= ?a 0)
-(min ?b (* ?b (min ?b ?a))) ==> (min ?b (* ?b ?a)) if (<= ?a 0)
-(min ?a (* ?b ?b)) ==> (min ?a (* ?b (min ?b ?a))) if (<= ?b 0)
-(min ?a (* ?b (min ?b ?a))) ==> (min ?a (* ?b ?b)) if (<= ?b 0)
-(min ?a (* ?b ?a)) ==> (min ?a (* ?a (max ?b ?a))) if (<= ?a 0)
-(min ?a (* ?a (max ?b ?a))) ==> (min ?a (* ?b ?a)) if (<= ?a 0)
-(min ?a (* ?b ?a)) ==> (min ?a (* ?a (max ?b ?a))) if (< 0 ?b)
-(min ?a (* ?a (max ?b ?a))) ==> (min ?a (* ?b ?a)) if (< 0 ?b)
-(* ?b (min ?c ?a)) ==> (min (* ?c ?b) (* ?b ?a)) if (<= 0 ?b)
-(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (min ?c ?a)) if (<= 0 ?b)
-(min ?b (* ?a ?a)) ==> (min ?b (* ?a (min ?a ?b))) if (<= 0 ?b)
-(min ?b (* ?a (min ?a ?b))) ==> (min ?b (* ?a ?a)) if (<= 0 ?b)
-(* ?a (max ?c ?b)) ==> (max (* ?c ?a) (* ?b ?a)) if (<= 0 ?a)
-(max (* ?c ?a) (* ?b ?a)) ==> (* ?a (max ?c ?b)) if (<= 0 ?a)
-(min ?a (* ?b ?a)) ==> (min ?a (* ?a (min ?b ?a))) if (<= 0 ?a)
-(min ?a (* ?a (min ?b ?a))) ==> (min ?a (* ?b ?a)) if (<= 0 ?a)
-(max ?a (* ?a (* ?a ?b))) ==> ?a if (< ?b 0)
-?a ==> (max ?a (* ?a (* ?a ?a))) if (<= ?a 0)
-(max ?a (* ?a (* ?a ?a))) ==> ?a if (<= ?a 0)
-(min ?a (* ?b (max ?b ?a))) ==> ?a if (<= ?a 0)
-(min ?b (* ?b (max ?b ?a))) ==> ?b if (<= ?a 0)
-(min ?a (max ?b (* ?b ?a))) ==> ?a if (<= ?a 0)
-(min ?a (* ?b (* ?a ?a))) ==> ?a if (< 0 ?b)
-(min ?b (max ?a (* ?b ?a))) ==> ?b if (< 0 ?a)
-(min ?a (* ?a (min ?a ?b))) ==> ?a if (< 0 ?b)
-(min ?a (* ?a (max ?b ?a))) ==> ?a if (<= 0 ?a)
-?a ==> (min ?a (* ?a (* ?a ?a))) if (<= 0 ?a)
-(min ?a (* ?a (* ?a ?a))) ==> ?a if (<= 0 ?a)
-(max ?b ?a) ==> ?b if (< ?a ?b)
-"#;
 
 const CAVIAR_RULES: &str = r#"
 (== ?x ?y) ==> (== ?y ?x)
@@ -404,6 +198,10 @@ fn caviar_rules() -> Ruleset<Pred> {
     ruleset
 }
 
+// The naive O(n^2) algorithm to build implications.
+// Good for what we'll expect to see in the Caviar
+// eval; bad for large sets of assumptions generated
+// bottom-up.
 fn pairwise_implication_building<L: SynthLanguage>(
     assumptions: &[Assumption<L>],
 ) -> ImplicationSet<L> {
@@ -498,11 +296,10 @@ pub mod halide_derive_tests {
         }
 
         // root directory: "out/derive.json"
-        let out_path: &Path =
-            Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set"));
-
-        let mut chompy_rules = og_recipe();
-
+        let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
+            + "/derive.json";
+        let out_path: &Path = Path::new(&binding);
+        let chompy_rules = og_recipe();
         let caviar_rules = caviar_rules();
 
         let all_conditions: Vec<_> = caviar_rules
@@ -522,18 +319,8 @@ pub mod halide_derive_tests {
             })
             .collect();
 
-        println!("all conditions:");
-        for c in all_conditions.iter() {
-            println!("  {}", c);
-        }
-
         let implication_rules: ImplicationSet<Pred> =
             pairwise_implication_building(&all_conditions);
-
-        println!("implications: ");
-        for i in implication_rules.iter() {
-            println!("  {}", i.name());
-        }
 
         // see how many caviar rules we can derive, given the same
         // total caviar rules.
@@ -572,17 +359,10 @@ pub mod halide_derive_tests {
         }
 
         let caviar_conditional_rules = caviar_rules().partition(|r| r.cond.is_some()).0;
-        let (can, cannot) = can_synthesize_all(caviar_conditional_rules);
-
-        println!("Chompy can synthesize:");
-        for rule in can.iter() {
-            println!("  {}", rule);
-        }
-
-        println!("Chompy cannot synthesize:");
-        for rule in cannot.iter() {
-            println!("  {}", rule);
-        }
+        let (_, cannot) = can_synthesize_all(caviar_conditional_rules.clone());
+        // This is a magic number for now, but later we'll document specific
+        // rules we can't derive along with why.
+        assert_eq!(cannot.len(), 7);
     }
 
     // A sanity test.
