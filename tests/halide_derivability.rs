@@ -362,11 +362,55 @@ pub mod halide_derive_tests {
         assert_eq!(cannot.len(), 7);
     }
 
+    #[test]
+    fn chompy_shouldnt_make_these() {
+        if std::env::var("SKIP_RECIPES").is_ok() {
+            return;
+        }
+
+        let cond_workload = Workload::new(&["(OP V V)"])
+            .plug("OP", &Workload::new(&["<", "<="]))
+            .plug("V", &Workload::new(&["a", "b", "c", "0"]));
+
+        let rules = run_workload(
+            cond_workload.clone(),
+            None,
+            Ruleset::default(),
+            ImplicationSet::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        let cond_workload = compress(&cond_workload, rules.clone());
+
+        let implications = run_implication_workload(
+            &cond_workload,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &Default::default(),
+            &rules,
+        );
+
+        let min_max_rules: Ruleset<Pred> = recursive_rules_cond(
+            Metric::Atoms,
+            3,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+            rules.clone(),
+            implications.clone(),
+            cond_workload.clone(),
+        );
+
+        println!("min_max_rules: {}", min_max_rules.len());
+        for r in min_max_rules.iter() {
+            println!("  {}", r);
+        }
+    }
+
     // A sanity test.
     // If we can't synthesize these rules, or synthesize rules that derive
     // them, something terrible has happened.
     #[test]
-    fn sanity() {
+    fn chompy_cant_forget_these() {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
         }
