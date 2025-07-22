@@ -313,7 +313,7 @@ mod test {
 
     use crate::enumo::{Rule, Ruleset};
 
-    use crate::language::{SynthAnalysis, SynthLanguage};
+    use crate::language::SynthAnalysis;
 
     use super::halide::Pred;
     use super::ImplicationSwitch;
