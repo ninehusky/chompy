@@ -48,15 +48,15 @@ jobs:
       - name: "Build"
         run: cargo build --release
 
-      - name: "Setup tests"
-        run: mkdir -p out/
-
       - name: "Unit tests"
         run: cargo test --release
 
   derivability:
     name: "Derivability Tests"
     runs-on: ubuntu-latest
+    env:
+      # the OUT_DIR should be the root of the project then out/
+      OUT_DIR: ${{ github.workspace }}/out
     steps:
       - uses: actions/checkout@main
       - uses: dtolnay/rust-toolchain@stable
@@ -83,8 +83,6 @@ jobs:
         run: cargo build --release
 
       - name: "Run Chompy"
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: cargo run -- --mode handwritten --old-recipe-type og_recipe --output-path rules.txt
 
       - name: "Upload rules"

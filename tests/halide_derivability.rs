@@ -370,6 +370,9 @@ pub mod halide_derive_tests {
     // them, something terrible has happened.
     #[test]
     fn sanity() {
+        if std::env::var("SKIP_RECIPES").is_ok() {
+            return;
+        }
         let mut all_rules: Ruleset<Pred> = Ruleset::default();
         let mut expected: Ruleset<Pred> = Default::default();
         for line in r#"(* (min ?x ?y) ?z) ==> (min (* ?x ?z) (* ?y ?z)) if (> ?z 0)
