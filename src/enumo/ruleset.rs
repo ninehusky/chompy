@@ -1,6 +1,4 @@
-use egg::{
-    Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
-};
+use egg::{Analysis, AstSize, EClass, Extractor, Language, RecExpr, Rewrite, Runner, Searcher};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
@@ -432,7 +430,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                             let pred: RecExpr<L> =
                                 predicate.chop_assumption().to_string().parse().unwrap();
-                            println!("true count for {} is {}", predicate, true_count);
+                            println!("true count for {predicate} is {true_count}");
                             // 4. If the candidate is a new conditional rule, add it.
                             candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
                         }
@@ -467,7 +465,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         r_expr: &RecExpr<L>,
         // TODO: let's figure out if we actually need `cond`; it seems
         // like we only pass it in for logging.
-        cond: &Assumption<L>,
+        _cond: &Assumption<L>,
         egraph: &EGraph<L, SynthAnalysis>,
     ) -> Option<(RecExpr<L>, RecExpr<L>)> {
         let l_id = egraph
@@ -821,8 +819,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
                 if egraph.find(l_id) == egraph.find(r_id) {
-                    println!("condition: {}", condition);
-                    println!("removing rule {}", rule);
+                    println!("condition: {condition}");
+                    println!("removing rule {rule}");
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());
@@ -892,7 +890,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             let selected = self.select(step_size, &mut invalid);
             println!("i have selected:");
             for s in selected.0.values() {
-                println!("{}", s);
+                println!("{s}");
             }
             if selected.is_empty() {
                 continue;
@@ -993,10 +991,6 @@ impl<L: SynthLanguage> Ruleset<L> {
             &format!("({} {})", L::assumption_label(), cond)
                 .parse()
                 .unwrap(),
-        );
-        println!(
-            "added this: {}",
-            format!("({} {})", L::assumption_label(), cond.to_string())
         );
         // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
         // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
@@ -1148,7 +1142,7 @@ where
                     children: node
                         .children()
                         .iter()
-                        .map(|id| NodeId::from(format!("{}.0", id)))
+                        .map(|id| NodeId::from(format!("{id}.0")))
                         .collect(),
                     eclass: ClassId::from(format!("{}", class.id)),
                     cost: Cost::new(1.0).unwrap(),

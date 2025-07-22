@@ -1,7 +1,6 @@
 use egg::{Pattern, Rewrite};
 
 use crate::conditions::implication::EqApplier;
-use crate::halide::Pred;
 use crate::{SynthAnalysis, SynthLanguage};
 
 pub mod assumption;

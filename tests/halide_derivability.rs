@@ -1,15 +1,12 @@
-use std::fmt::Display;
-
-use egg::{Analysis, Language};
+use egg::Language;
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
     },
     enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload},
     halide::Pred,
-    EGraph, Limits, SynthLanguage,
+    Limits, SynthLanguage,
 };
-use serde::Serialize;
 
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
@@ -170,7 +167,7 @@ fn run_derivability_tests<L: SynthLanguage>(
 
     let (can, cannot) = base.derive(
         ruler::DeriveType::LhsAndRhs,
-        &against,
+        against,
         Limits::deriving(),
         Some(&impl_rules),
     );
@@ -185,7 +182,7 @@ fn caviar_rules() -> Ruleset<Pred> {
         match Rule::from_string(rule) {
             Ok((rule, None)) => {
                 if !rule.is_valid() {
-                    println!("skipping {} because it is not valid", rule);
+                    println!("skipping {rule} because it is not valid");
                 } else {
                     ruleset.add(rule);
                 }
@@ -208,7 +205,7 @@ fn pairwise_implication_building<L: SynthLanguage>(
     let mut implications = ImplicationSet::default();
     for a1 in assumptions {
         for a2 in assumptions {
-            let name = format!("{} -> {}", a1, a2);
+            let name = format!("{a1} -> {a2}");
             let implication = Implication::new(name.into(), a1.clone(), a2.clone());
             if let Ok(implication) = implication {
                 if !implications.contains(&implication) && implication.is_valid() {
@@ -259,9 +256,9 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
             &ImplicationSet::default(),
         );
 
-        println!("candidates: (tried to synthesize {})", rule);
+        println!("candidates: (tried to synthesize {rule})");
         for candidate in candidates.iter() {
-            println!("  {}", candidate);
+            println!("  {candidate}");
         }
 
         if candidates.contains(desired_rule) {
@@ -412,7 +409,7 @@ pub mod halide_derive_tests {
 
         println!("compressed");
         for c in cond_wkld.clone().force() {
-            println!("c: {}", c);
+            println!("c: {c}");
         }
 
         let implications = run_implication_workload(
@@ -465,7 +462,7 @@ pub mod halide_derive_tests {
             assert!(
                 all_rules.can_derive_cond(
                     ruler::DeriveType::LhsAndRhs,
-                    &r,
+                    r,
                     Limits::deriving(),
                     &implications.to_egg_rewrites(),
                 ),
