@@ -430,7 +430,6 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                             let pred: RecExpr<L> =
                                 predicate.chop_assumption().to_string().parse().unwrap();
-                            println!("true count for {predicate} is {true_count}");
                             // 4. If the candidate is a new conditional rule, add it.
                             candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
                         }
@@ -766,23 +765,33 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         for (condition, _) in actual_by_cond.iter() {
+            println!("condition: {:?}", condition);
             let candidates = self
                 .0
                 .values()
                 .filter(|rule| {
                     if let Some(cond) = &rule.cond {
-                        cond.to_string() == *condition
+                        cond.chop_assumption().to_string() == *condition
                     } else {
                         false
                     }
                 })
                 .collect::<Vec<_>>();
 
+            println!("candidates:");
+            for c in &candidates {
+                println!("{}", c);
+            }
+
             // 1. Make a new e-graph.
             let mut egraph = EGraph::default();
 
-            // 2. Add the condition to the e-graph.
-            let assumption: Assumption<L> = Assumption::new(condition.to_string()).unwrap();
+            // 2. Add the condition of our candidates to the e-graph.
+            let assumption: Assumption<L> = {
+                let dummy: Assumption<L> = Assumption::new(condition.to_string()).unwrap();
+                Assumption::new(L::instantiate(&dummy.chop_assumption()).to_string()).unwrap()
+            };
+            println!("adding {} into the egraph", assumption);
             assumption.insert_into_egraph(&mut egraph);
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
@@ -794,13 +803,19 @@ impl<L: SynthLanguage> Ruleset<L> {
                 initial.push((lhs, rhs, rule.clone()));
             }
 
-            // 4. Run condition propagation rules.
+            // 4. Run condition propagation rules, and the rewrites.
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
                 .run(prop_rules)
                 .with_node_limit(1000);
 
             let egraph = runner.egraph.clone();
+            let egraph = Scheduler::Saturating(Limits {
+                iter: 1,
+                node: 100,
+                match_: 1000,
+            })
+            .run(&egraph, chosen);
 
             // TODO: make this an optimization flag
             if most_recent_condition
@@ -808,12 +823,13 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .search(&egraph)
                 .is_empty()
             {
+                println!("skipping {}", condition);
                 // if the most recent condition is not in the e-graph, then it's not relevant
                 continue;
             }
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Compress(Limits::deriving());
+            let scheduler = Scheduler::Saturating(Limits::deriving());
             let egraph = scheduler.run(&runner.egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
@@ -824,6 +840,8 @@ impl<L: SynthLanguage> Ruleset<L> {
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());
+                } else {
+                    println!("i'm keeping {}", rule);
                 }
             }
         }
@@ -887,6 +905,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         while !self.is_empty() {
+            println!("here are my rules:");
+            for (rule_name, rule) in &self.0 {
+                println!("rule: {}", rule);
+            }
             let selected = self.select(step_size, &mut invalid);
             println!("i have selected:");
             for s in selected.0.values() {
@@ -1152,6 +1174,43 @@ where
         }
     }
     out
+}
+
+#[cfg(test)]
+mod halide_tests {
+    use crate::{conditions::implication::Implication, halide::Pred};
+
+    use super::*;
+    #[test]
+    fn should_derive() {
+        let mut existing_rules: Ruleset<Pred> = Default::default();
+        existing_rules.add(Rule::from_string("(min ?a ?b) ==> (min ?b ?a)").unwrap().0);
+
+        let mut candidates: Ruleset<Pred> = Default::default();
+        candidates.add(
+            Rule::from_string("(min ?a ?b) ==> ?b if (< ?b ?a)")
+                .unwrap()
+                .0,
+        );
+        candidates.add(
+            Rule::from_string("(min ?a ?b) ==> ?a if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        let mut implications: ImplicationSet<Pred> = Default::default();
+        implications.add(
+            Implication::new(
+                "a < b -> a <= b".into(),
+                "(< ?a ?b)".parse().unwrap(),
+                "(<= ?a ?b)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let (chosen, _) = candidates.minimize_cond(existing_rules, &implications.to_egg_rewrites());
+        assert_eq!(chosen.len(), 1);
+    }
 }
 
 #[cfg(test)]

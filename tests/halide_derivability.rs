@@ -391,6 +391,11 @@ pub mod halide_derive_tests {
             &rules,
         );
 
+        println!("implications: {}", implications.len());
+        for i in implications.iter() {
+            println!("  {}", i.name());
+        }
+
         let min_max_rules: Ruleset<Pred> = recursive_rules_cond(
             Metric::Atoms,
             3,

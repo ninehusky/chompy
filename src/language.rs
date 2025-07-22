@@ -635,7 +635,7 @@ pub mod implication_switch_tests {
     use super::*;
     use crate::halide::Pred;
     use conditions::merge_eqs;
-    use egg::{EGraph, Runner};
+    use egg::{EGraph, Runner, SymbolLang};
 
     #[test]
     // in previous step, we have (IsTrue foo)
@@ -903,5 +903,45 @@ pub mod implication_switch_tests {
             egraph.lookup_expr(&"(/ x x)".parse().unwrap()),
             egraph.lookup_expr(&"1".parse().unwrap())
         );
+    }
+
+    #[test]
+    fn score_picks_higher_true_count() {
+        let score1 = Pred::score(
+            &"a".parse().unwrap(),
+            &"(min a b)".parse().unwrap(),
+            &Some(Assumption::new("(< a b)".to_string()).unwrap()),
+            Some(10),
+        );
+
+        let score2 = Pred::score(
+            &"a".parse().unwrap(),
+            &"(min a b)".parse().unwrap(),
+            &Some(Assumption::new("(<= a b)".to_string()).unwrap()),
+            Some(20),
+        );
+
+        assert!(score1.cmp(&score2) == std::cmp::Ordering::Less);
+
+        let mut rules: Ruleset<Pred> = Default::default();
+        rules.add_cond_from_recexprs(
+            &"a".parse().unwrap(),
+            &"(min a b)".parse().unwrap(),
+            &(&"(< a b)".parse().unwrap()),
+            10,
+        );
+
+        rules.add_cond_from_recexprs(
+            &"a".parse().unwrap(),
+            &"(min a b)".parse().unwrap(),
+            &(&"(<= a b)".parse().unwrap()),
+            20,
+        );
+
+        let selected = rules.select(1, &mut Default::default());
+
+        assert_eq!(selected.len(), 1);
+
+        println!("selected: {selected:?}");
     }
 }
