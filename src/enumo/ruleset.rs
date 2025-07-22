@@ -1,8 +1,10 @@
-use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner, Searcher};
+use egg::{
+    Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
+};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
-use std::{io::Write, sync::Arc};
+use std::{fmt::Display, io::Write, sync::Arc};
 
 use crate::{
     conditions::{assumption::Assumption, implication_set::ImplicationSet},
@@ -430,6 +432,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                             let pred: RecExpr<L> =
                                 predicate.chop_assumption().to_string().parse().unwrap();
+                            println!("true count for {} is {}", predicate, true_count);
                             // 4. If the candidate is a new conditional rule, add it.
                             candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
                         }
@@ -758,7 +761,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         for (_, rule) in self.0.iter() {
             if let Some(cond) = &rule.cond {
                 actual_by_cond
-                    .entry(cond.clone().to_string())
+                    .entry(cond.chop_assumption().to_string())
                     .or_default()
                     .add(rule.clone());
             }
@@ -781,10 +784,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             let mut egraph = EGraph::default();
 
             // 2. Add the condition to the e-graph.
-            let cond_pat: &Pattern<L> = &condition.parse().unwrap();
-
-            let cond_ast = &L::instantiate(cond_pat);
-            egraph.add_expr(&format!("(assume {cond_ast})").parse().unwrap());
+            let assumption: Assumption<L> = Assumption::new(condition.to_string()).unwrap();
+            assumption.insert_into_egraph(&mut egraph);
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
             let mut initial = vec![];
@@ -812,15 +813,16 @@ impl<L: SynthLanguage> Ruleset<L> {
                 // if the most recent condition is not in the e-graph, then it's not relevant
                 continue;
             }
-
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Saturating(Limits::deriving());
+            let scheduler = Scheduler::Compress(Limits::deriving());
             let egraph = scheduler.run(&runner.egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
                 if egraph.find(l_id) == egraph.find(r_id) {
+                    println!("condition: {}", condition);
+                    println!("removing rule {}", rule);
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());
@@ -888,6 +890,10 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
+            println!("i have selected:");
+            for s in selected.0.values() {
+                println!("{}", s);
+            }
             if selected.is_empty() {
                 continue;
             }
@@ -988,6 +994,29 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .parse()
                 .unwrap(),
         );
+        println!(
+            "added this: {}",
+            format!("({} {})", L::assumption_label(), cond.to_string())
+        );
+        // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
+        // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
+        // but maybe eventually we should just have a single Scheduler that can run both?
+
+        // run the rules on the condition itself, for the tiniest smidge.
+        let egraph = Scheduler::Saturating(Limits {
+            iter: 2,
+            node: 100,
+            match_: 10_000,
+        })
+        .run(&egraph, self);
+        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(condition_propagation_rules);
+
+        let mut egraph = runner.egraph;
+
+        let serialized = egg_to_serialized_egraph(&egraph);
+        serialized.to_json_file("dump.json").unwrap();
 
         match derive_type {
             DeriveType::Lhs => {
@@ -998,15 +1027,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 egraph.add_expr(rexpr);
             }
         }
-
-        // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
-        // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
-        // but maybe eventually we should just have a single Scheduler that can run both?
-        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-            .with_egraph(egraph.clone())
-            .run(condition_propagation_rules);
-
-        let egraph = runner.egraph;
 
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
 
@@ -1110,6 +1130,34 @@ impl<L: SynthLanguage> Ruleset<L> {
         };
         cannot.pretty_print();
     }
+}
+
+pub fn egg_to_serialized_egraph<L, A>(egraph: &EGraph<L, A>) -> egraph_serialize::EGraph
+where
+    L: Language + Display,
+    A: Analysis<L>,
+{
+    use egraph_serialize::*;
+    let mut out = EGraph::default();
+    for class in egraph.classes() {
+        for (i, node) in class.nodes.iter().enumerate() {
+            out.add_node(
+                format!("{}.{}", class.id, i),
+                Node {
+                    op: node.to_string(),
+                    children: node
+                        .children()
+                        .iter()
+                        .map(|id| NodeId::from(format!("{}.0", id)))
+                        .collect(),
+                    eclass: ClassId::from(format!("{}", class.id)),
+                    cost: Cost::new(1.0).unwrap(),
+                    subsumed: false,
+                },
+            )
+        }
+    }
+    out
 }
 
 #[cfg(test)]

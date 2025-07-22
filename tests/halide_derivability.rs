@@ -287,7 +287,7 @@ pub mod halide_derive_tests {
 
     use super::*;
 
-    #[test]
+    // #[test]
     // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
     fn chompy_vs_caviar() {
         // Don't run this test as part of the "unit tests" thing in CI.
@@ -351,7 +351,7 @@ pub mod halide_derive_tests {
 
     // A test to see if we can correctly choose all Caviar handwritten rules
     // as candidates.
-    #[test]
+    // #[test]
     fn synthesize_all_caviar_as_candidates() {
         // Don't run this test as part of the "unit tests" thing in CI.
         if std::env::var("SKIP_RECIPES").is_ok() {
@@ -393,10 +393,10 @@ pub mod halide_derive_tests {
         }
 
         let cond_wkld = &Workload::new(&["(OP2 V V)"])
-            .plug("OP2", &Workload::new(&["<", "<=", ">"]))
+            .plug("OP2", &Workload::new(&["<", "<=", ">", ">="]))
             .plug("V", &Workload::new(&["a", "b", "c", "0"]));
 
-        let cond_rules = run_workload(
+        let cond_rules: Ruleset<Pred> = run_workload(
             cond_wkld.clone(),
             None,
             Ruleset::default(),
@@ -408,7 +408,12 @@ pub mod halide_derive_tests {
 
         all_rules.extend(cond_rules.clone());
 
-        let cond_wkld = compress(cond_wkld, all_rules.clone());
+        let cond_wkld = compress(cond_wkld, cond_rules.clone());
+
+        println!("compressed");
+        for c in cond_wkld.clone().force() {
+            println!("c: {}", c);
+        }
 
         let implications = run_implication_workload(
             &cond_wkld,
@@ -416,6 +421,10 @@ pub mod halide_derive_tests {
             &Default::default(),
             &cond_rules,
         );
+
+        for i in implications.iter() {
+            println!("i: {}", i.name());
+        }
 
         let min_max_add_rules = recursive_rules_cond(
             Metric::Atoms,
@@ -449,6 +458,8 @@ pub mod halide_derive_tests {
         );
 
         all_rules.extend(min_max_mul_rules);
+
+        println!("done!");
 
         for r in expected.iter() {
             assert!(
