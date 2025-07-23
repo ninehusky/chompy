@@ -266,7 +266,13 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             base_lang(3)
         };
         let mut wkld = iter_metric(base_lang, "EXPR", metric, n)
-            .filter(Filter::Contains("VAR".parse().unwrap()))
+            // Filter out any term of size > 1 which does not
+            // have a "VAR" in it.
+            // !(size >= 2 && contains "VAR")
+            .filter(Filter::Invert(Box::new(Filter::And(vec![
+                Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))),
+                Filter::Invert(Box::new(Filter::Contains("VAR".parse().unwrap()))),
+            ]))))
             .plug("VAR", &Workload::new(lang.vars))
             .plug("VAL", &Workload::new(lang.vals));
         // let ops = vec![lang.uops, lang.bops, lang.tops];

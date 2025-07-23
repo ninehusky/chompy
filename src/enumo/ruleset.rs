@@ -370,6 +370,11 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut predicate_to_egraph: IndexMap<String, EGraph<L, SynthAnalysis>> =
             IndexMap::default();
 
+        let long_id = egraph
+            .lookup_expr(&"(< (- a b) a)".parse().unwrap())
+            .unwrap_or_default();
+        let one_id = egraph.lookup_expr(&"1".parse().unwrap()).unwrap();
+
         let mut i = 0;
         // 1. For each pair of unequal cvecs, find the conditions that imply their equality.
         for cvec1 in by_cvec.keys() {
@@ -420,6 +425,14 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 &predicate,
                                 mini_egraph,
                             );
+
+                            if egraph.find(one_id) == egraph.find(id2)
+                                && egraph.find(long_id) == egraph.find(id1)
+                            {
+                                println!("result: {:?}", result);
+                                let serialized = egg_to_serialized_egraph(egraph);
+                                panic!("found it!");
+                            }
 
                             if result.is_none() {
                                 skipped_rules += 1;

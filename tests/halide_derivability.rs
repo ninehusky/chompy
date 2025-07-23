@@ -275,10 +275,11 @@ pub mod halide_derive_tests {
     use std::path::Path;
 
     use ruler::{
-        conditions::{generate::compress, implication_set::run_implication_workload},
+        conditions::{self, generate::compress, implication_set::run_implication_workload},
         enumo::Metric,
         halide::og_recipe,
         recipe_utils::{recursive_rules_cond, run_workload, Lang},
+        DeriveType,
     };
 
     use super::*;
@@ -287,7 +288,65 @@ pub mod halide_derive_tests {
     // in certain workloads.
     #[test]
     fn should_get() {
-        todo!()
+        // from the og_recipe
+        let start_time = std::time::Instant::now();
+        let wkld = conditions::generate::get_condition_workload();
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+        let mut base_implications = ImplicationSet::default();
+        // and the "and" rules here.
+        let and_implies_left: Implication<Pred> = Implication::new(
+            "and_implies_left".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        let and_implies_right: Implication<Pred> = Implication::new(
+            "and_implies_right".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?b".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        base_implications.add(and_implies_left);
+        base_implications.add(and_implies_right);
+        // let base_egraph = Workload::new(&["(< (- a b) a)", "1", "c"]).to_egraph();
+
+        // let candidates = Ruleset::conditional_cvec_match(
+        //     &base_egraph,
+        //     &Ruleset::default(),
+        //     &build_pvec_to_patterns(wkld.clone()),
+        //     &base_implications,
+        // );
+
+        // for c in candidates {
+        //     println!("Candidate: {}", c.0);
+        // }
+
+        let simp_comps = recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&["1"], &["a", "b", "c"], &[&[], &["<", "-"]]),
+            Ruleset::default(),
+            base_implications.clone(),
+            wkld.clone(),
+        );
+
+        println!("done");
+        println!("rules:");
+        for r in simp_comps.iter() {
+            println!("  {}", r);
+        }
+
+        let should_get: Rule<Pred> = Rule::from_string("(< (- ?a ?b) ?a) ==> 1 if (> ?b 0)")
+            .unwrap()
+            .0;
+        assert!(simp_comps.can_derive_cond(
+            DeriveType::LhsAndRhs,
+            &should_get,
+            Limits::deriving(),
+            &base_implications.to_egg_rewrites()
+        ));
     }
 
     #[test]
