@@ -90,7 +90,7 @@ jobs:
         run: cargo build --release
 
       - name: "Run Chompy"
-        run: cargo run -- --mode handwritten --old-recipe-type og_recipe --output-path rules.txt
+        run: cargo run --release -- --mode handwritten --old-recipe-type og_recipe --output-path rules.txt
 
       - name: "Upload rules"
         uses: actions/upload-artifact@v4
