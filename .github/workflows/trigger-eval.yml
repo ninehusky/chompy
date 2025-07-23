@@ -1,18 +1,20 @@
-name: Trigger evaluation repo
+# NOTE: we're temporarily disabling this until we figure out exactly how we want
+#       the Caviar end-to-end eval to look.
+# name: Trigger evaluation repo
 
-on:
-  push:  # Fire on any branch push in Repo A
-    branches:
-      - '**'
+# on:
+#   push:  # Fire on any branch push in Repo A
+#     branches:
+#       - '**'
 
-jobs:
-  trigger-eval:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger CI in `chompy-evaluation`
-        run: |
-          curl -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.CHOMPY_EVAL_PAT }}" \
-            https://api.github.com/repos/ninehusky/chompy-evaluation/actions/workflows/main.yml/dispatches \
-            -d '{"ref":"main"}'
+# jobs:
+#   trigger-eval:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Trigger CI in `chompy-evaluation`
+#         run: |
+#           curl -X POST \
+#             -H "Accept: application/vnd.github+json" \
+#             -H "Authorization: Bearer ${{ secrets.CHOMPY_EVAL_PAT }}" \
+#             https://api.github.com/repos/ninehusky/chompy-evaluation/actions/workflows/main.yml/dispatches \
+#             -d '{"ref":"main"}'

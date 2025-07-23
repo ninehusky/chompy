@@ -68,7 +68,7 @@ pub fn get_condition_workload() -> Workload {
     branches_better
 }
 
-fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
+pub fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
     let start = std::time::Instant::now();
     println!("[compress] Starting compression of implication workload.");
     let egraph = workload.to_egraph();

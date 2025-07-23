@@ -1041,40 +1041,16 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
-    // let and_rules = recursive_rules(
-    //     Metric::Atoms,
-    //     5,
-    //     Lang::new(
-    //         &["0", "1"],
-    //         &["a", "b", "c"],
-    //         &[&[], &["&&", "||", "==", "!="]],
-    //     ),
-    //     Ruleset::default(),
-    // );
+    let simp_comps = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", ">", "+", "-"]]),
+        Ruleset::default(),
+        base_implications.clone(),
+        wkld.clone(),
+    );
 
-    // all_rules.extend(and_rules.clone());
-
-    // let comps = Workload::new(&["(OP V V)"])
-    //     .plug("OP", &Workload::new(&["=="]))
-    //     .plug("V", &Workload::new(&["a", "b", "c"]));
-
-    // let and_workload = Workload::new(&["0", "1", "(OP V V)"])
-    //     .plug("OP", &Workload::new(&["&&"]))
-    //     .plug("V", &comps);
-
-    // let comp_eq = run_workload(
-    //     and_workload.clone(),
-    //     Some(wkld.clone()),
-    //     all_rules.clone(),
-    //     base_implications.clone(),
-    //     Limits::synthesis(),
-    //     Limits::minimize(),
-    //     true,
-    // );
-
-    // all_rules.extend(comp_eq.clone());
-
-    // all_rules.pretty_print();
+    all_rules.extend(simp_comps.clone());
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
@@ -1100,6 +1076,17 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(min_max.clone());
+
+    let min_max_add = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+        all_rules.clone(),
+        base_implications.clone(),
+        wkld.clone(),
+    );
+
+    all_rules.extend(min_max_add.clone());
 
     for op in &["min", "max"] {
         let int_workload = Workload::new(&["0", "1", "(OP V V)"])
@@ -1148,50 +1135,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // );
 
     // all_rules.extend(min_max_div);
-
-    // // the special workloads, which mostly revolve around
-    // // composing int2boolop(int_term, int_term) or things like that
-    // // together.
-    // let int_lang = Lang::new(
-    //     &[],
-    //     &["a", "b", "c"],
-    //     &[&[], &["+", "-", "*", "min", "max"]],
-    // );
-    // let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
-    //     .filter(Filter::Contains("VAR".parse().unwrap()))
-    //     .plug("VAR", &Workload::new(int_lang.vars))
-    //     .plug("VAL", &Workload::new(int_lang.vals));
-
-    // // let ops = vec![lang.uops, lang.bops, lang.tops];
-    // for (i, ops) in int_lang.ops.iter().enumerate() {
-    //     int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    // }
-
-    // for op in &["min", "max"] {
-    //     let big_wkld = Workload::new(&["0", "1"]).append(
-    //         Workload::new(&["(OP V V)"])
-    //             // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-    //             // thing where we have to basically feed in these operators one at a time.
-    //             .plug("OP", &Workload::new(&[op]))
-    //             .plug("V", &int_wkld)
-    //             .filter(Filter::MetricLt(Metric::Atoms, 8)),
-    //     );
-
-    //     let wrapped_rules = run_workload(
-    //         big_wkld,
-    //         Some(wkld.clone()),
-    //         all_rules.clone(),
-    //         Limits::synthesis(),
-    //         Limits {
-    //             iter: 1,
-    //             node: 100_000,
-    //             match_: 100_000,
-    //         },
-    //         true,
-    //     );
-
-    //     all_rules.extend(wrapped_rules);
-    // }
 
     let end_time = std::time::Instant::now();
 

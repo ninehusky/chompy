@@ -468,4 +468,24 @@ mod tests {
         let assumption: Assumption<Pred> = Assumption::new("(== ?x ?y)".to_string()).unwrap();
         assert!(manager.add_assumption(assumption).is_err());
     }
+
+    #[test]
+    fn add_one_unsound_predicate_ok() {
+        let imp: Result<Implication<Pred>, _> = Implication::new(
+            "&&".into(),
+            "(&& ?a ?b)".parse().unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        );
+        assert!(imp.is_ok());
+    }
+
+    #[test]
+    fn add_two_unsound_predicates_fails() {
+        let imp: Result<Implication<Pred>, _> = Implication::new(
+            "bad".into(),
+            Assumption::new_unsafe("?b".to_string()).unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        );
+        assert!(imp.is_err());
+    }
 }

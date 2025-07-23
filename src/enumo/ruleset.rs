@@ -1,8 +1,8 @@
-use egg::{AstSize, EClass, Extractor, Pattern, RecExpr, Rewrite, Runner, Searcher};
+use egg::{Analysis, AstSize, EClass, Extractor, Language, RecExpr, Rewrite, Runner, Searcher};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
-use std::{io::Write, sync::Arc};
+use std::{fmt::Display, io::Write, sync::Arc};
 
 use crate::{
     conditions::{assumption::Assumption, implication_set::ImplicationSet},
@@ -151,7 +151,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         self.0.insert(rule.name.clone(), rule);
     }
 
-    fn add_cond_from_recexprs(
+    pub fn add_cond_from_recexprs(
         &mut self,
         e1: &RecExpr<L>,
         e2: &RecExpr<L>,
@@ -462,7 +462,9 @@ impl<L: SynthLanguage> Ruleset<L> {
     fn get_canonical_conditional_rule(
         l_expr: &RecExpr<L>,
         r_expr: &RecExpr<L>,
-        cond: &Assumption<L>,
+        // TODO: let's figure out if we actually need `cond`; it seems
+        // like we only pass it in for logging.
+        _cond: &Assumption<L>,
         egraph: &EGraph<L, SynthAnalysis>,
     ) -> Option<(RecExpr<L>, RecExpr<L>)> {
         let l_id = egraph
@@ -476,10 +478,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         // 2. check if the lhs and rhs are equivalent in the egraph
         if l_id == r_id {
             // e1 and e2 are equivalent in the condition egraph
-            println!(
-                "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
-                l_expr, r_expr, cond.pat
-            );
+            // println!(
+            //     "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
+            //     l_expr, r_expr, cond.pat
+            // );
             return None;
         }
 
@@ -756,33 +758,41 @@ impl<L: SynthLanguage> Ruleset<L> {
         for (_, rule) in self.0.iter() {
             if let Some(cond) = &rule.cond {
                 actual_by_cond
-                    .entry(cond.clone().to_string())
+                    .entry(cond.chop_assumption().to_string())
                     .or_default()
                     .add(rule.clone());
             }
         }
 
         for (condition, _) in actual_by_cond.iter() {
+            println!("condition: {condition:?}");
             let candidates = self
                 .0
                 .values()
                 .filter(|rule| {
                     if let Some(cond) = &rule.cond {
-                        cond.to_string() == *condition
+                        cond.chop_assumption().to_string() == *condition
                     } else {
                         false
                     }
                 })
                 .collect::<Vec<_>>();
 
+            println!("candidates:");
+            for c in &candidates {
+                println!("{c}");
+            }
+
             // 1. Make a new e-graph.
             let mut egraph = EGraph::default();
 
-            // 2. Add the condition to the e-graph.
-            let cond_pat: &Pattern<L> = &condition.parse().unwrap();
-
-            let cond_ast = &L::instantiate(cond_pat);
-            egraph.add_expr(&format!("(assume {cond_ast})").parse().unwrap());
+            // 2. Add the condition of our candidates to the e-graph.
+            let assumption: Assumption<L> = {
+                let dummy: Assumption<L> = Assumption::new(condition.to_string()).unwrap();
+                Assumption::new(L::instantiate(&dummy.chop_assumption()).to_string()).unwrap()
+            };
+            println!("adding {assumption} into the egraph");
+            assumption.insert_into_egraph(&mut egraph);
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
             let mut initial = vec![];
@@ -793,13 +803,19 @@ impl<L: SynthLanguage> Ruleset<L> {
                 initial.push((lhs, rhs, rule.clone()));
             }
 
-            // 4. Run condition propagation rules.
+            // 4. Run condition propagation rules, and the rewrites.
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
                 .run(prop_rules)
-                .with_node_limit(500);
+                .with_node_limit(1000);
 
             let egraph = runner.egraph.clone();
+            let egraph = Scheduler::Saturating(Limits {
+                iter: 1,
+                node: 100,
+                match_: 1000,
+            })
+            .run(&egraph, chosen);
 
             // TODO: make this an optimization flag
             if most_recent_condition
@@ -807,21 +823,25 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .search(&egraph)
                 .is_empty()
             {
+                println!("skipping {condition}");
                 // if the most recent condition is not in the e-graph, then it's not relevant
                 continue;
             }
-
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Compress(Limits::deriving());
+            let scheduler = Scheduler::Saturating(Limits::deriving());
             let egraph = scheduler.run(&runner.egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
                 if egraph.find(l_id) == egraph.find(r_id) {
+                    println!("condition: {condition}");
+                    println!("removing rule {rule}");
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());
+                } else {
+                    println!("i'm keeping {rule}");
                 }
             }
         }
@@ -986,6 +1006,25 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .parse()
                 .unwrap(),
         );
+        // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
+        // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
+        // but maybe eventually we should just have a single Scheduler that can run both?
+
+        // run the rules on the condition itself, for the tiniest smidge.
+        let egraph = Scheduler::Saturating(Limits {
+            iter: 2,
+            node: 100,
+            match_: 10_000,
+        })
+        .run(&egraph, self);
+        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(condition_propagation_rules);
+
+        let mut egraph = runner.egraph;
+
+        let serialized = egg_to_serialized_egraph(&egraph);
+        serialized.to_json_file("dump.json").unwrap();
 
         match derive_type {
             DeriveType::Lhs => {
@@ -996,15 +1035,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 egraph.add_expr(rexpr);
             }
         }
-
-        // TODO: @ninehusky -- we can't use the API for a Scheduler to run the propagation rules
-        // because they're not bundled in a Ruleset<L> anymore. I think this separation makes sense,
-        // but maybe eventually we should just have a single Scheduler that can run both?
-        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-            .with_egraph(egraph.clone())
-            .run(condition_propagation_rules);
-
-        let egraph = runner.egraph;
 
         let out_egraph = scheduler.run_derive(&egraph, self, rule);
 
@@ -1107,6 +1137,71 @@ impl<L: SynthLanguage> Ruleset<L> {
             // ));
         };
         cannot.pretty_print();
+    }
+}
+
+pub fn egg_to_serialized_egraph<L, A>(egraph: &EGraph<L, A>) -> egraph_serialize::EGraph
+where
+    L: Language + Display,
+    A: Analysis<L>,
+{
+    use egraph_serialize::*;
+    let mut out = EGraph::default();
+    for class in egraph.classes() {
+        for (i, node) in class.nodes.iter().enumerate() {
+            out.add_node(
+                format!("{}.{}", class.id, i),
+                Node {
+                    op: node.to_string(),
+                    children: node
+                        .children()
+                        .iter()
+                        .map(|id| NodeId::from(format!("{id}.0")))
+                        .collect(),
+                    eclass: ClassId::from(format!("{}", class.id)),
+                    cost: Cost::new(1.0).unwrap(),
+                    subsumed: false,
+                },
+            )
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod halide_tests {
+    use crate::{conditions::implication::Implication, halide::Pred};
+
+    use super::*;
+    #[test]
+    fn should_derive() {
+        let mut existing_rules: Ruleset<Pred> = Default::default();
+        existing_rules.add(Rule::from_string("(min ?a ?b) ==> (min ?b ?a)").unwrap().0);
+
+        let mut candidates: Ruleset<Pred> = Default::default();
+        candidates.add(
+            Rule::from_string("(min ?a ?b) ==> ?b if (< ?b ?a)")
+                .unwrap()
+                .0,
+        );
+        candidates.add(
+            Rule::from_string("(min ?a ?b) ==> ?a if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        let mut implications: ImplicationSet<Pred> = Default::default();
+        implications.add(
+            Implication::new(
+                "a < b -> a <= b".into(),
+                "(< ?a ?b)".parse().unwrap(),
+                "(<= ?a ?b)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let (chosen, _) = candidates.minimize_cond(existing_rules, &implications.to_egg_rewrites());
+        assert_eq!(chosen.len(), 1);
     }
 }
 
