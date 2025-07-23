@@ -70,6 +70,13 @@ jobs:
       - name: "Derivability tests"
         run: cargo test --release --package ruler --test halide_derivability -- halide_derive_tests --show-output --nocapture
 
+      - name: "Upload derivability results"
+        uses: actions/upload-artifact@v4
+        with:
+          name: derive.json
+          path: out/derive.json
+
+
 
   run_chompy:
     name: "Run Chompy"
