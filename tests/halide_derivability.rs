@@ -1,4 +1,3 @@
-use egg::Language;
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
@@ -362,11 +361,102 @@ pub mod halide_derive_tests {
         assert_eq!(cannot.len(), 7);
     }
 
+    #[test]
+    // This test makes sure that Chompy's derivability (minimization)
+    // algorithm is robust enough to not synthesize both of these rules
+    // (it needs to just pick one):
+    // // (min ?a ?b) ==> ?a if (<= ?a ?b)
+    // // (min ?a ?b) ==> ?b if (<= ?b ?a)
+    // // (min ?b ?a) ==> ?b if (<= ?b ?a)
+    // // (min ?b ?a) ==> ?a if (<= ?a ?b)
+    fn chompy_shouldnt_make_these() {
+        if std::env::var("SKIP_RECIPES").is_ok() {
+            return;
+        }
+
+        let cond_workload = Workload::new(&["(OP V V)"])
+            .plug("OP", &Workload::new(&["<", "<="]))
+            .plug("V", &Workload::new(&["a", "b", "c", "0"]));
+
+        let rules = run_workload(
+            cond_workload.clone(),
+            None,
+            Ruleset::default(),
+            ImplicationSet::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        let cond_workload = compress(&cond_workload, rules.clone());
+
+        let implications = run_implication_workload(
+            &cond_workload,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &Default::default(),
+            &rules,
+        );
+
+        let min_max_rules: Ruleset<Pred> = recursive_rules_cond(
+            Metric::Atoms,
+            3,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+            rules.clone(),
+            implications.clone(),
+            cond_workload.clone(),
+        );
+
+        println!("min_max_rules: {}", min_max_rules.len());
+        for r in min_max_rules.iter() {
+            println!("  {r}");
+        }
+
+        let mut against: Ruleset<Pred> = Ruleset::default();
+        against.add(
+            Rule::from_string("(min ?a ?b) ==> ?a if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?a ?b) ==> ?b if (<= ?b ?a)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?b ?a) ==> ?b if (<= ?b ?a)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?b ?a) ==> ?a if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        let mut matches = 0;
+        for r in against.iter() {
+            assert!(min_max_rules.can_derive_cond(
+                ruler::DeriveType::LhsAndRhs,
+                r,
+                Limits::deriving(),
+                &implications.to_egg_rewrites(),
+            ));
+            if min_max_rules.contains(r) {
+                matches += 1;
+            }
+        }
+
+        assert_eq!(matches, 1);
+    }
+
     // A sanity test.
     // If we can't synthesize these rules, or synthesize rules that derive
     // them, something terrible has happened.
     #[test]
-    fn sanity() {
+    fn chompy_cant_forget_these() {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
         }
@@ -455,8 +545,6 @@ pub mod halide_derive_tests {
         );
 
         all_rules.extend(min_max_mul_rules);
-
-        println!("done!");
 
         for r in expected.iter() {
             assert!(

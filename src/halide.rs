@@ -5,7 +5,6 @@ use crate::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
     },
-    recipe_utils::iter_metric,
     *,
 };
 
@@ -1136,51 +1135,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // );
 
     // all_rules.extend(min_max_div);
-
-    // the special workloads, which mostly revolve around
-    // composing int2boolop(int_term, int_term) or things like that
-    // together.
-    let int_lang = Lang::new(
-        &[],
-        &["a", "b", "c"],
-        &[&[], &["+", "-", "*", "min", "max"]],
-    );
-    let mut int_wkld = iter_metric(crate::recipe_utils::base_lang(2), "EXPR", Metric::Atoms, 3)
-        .filter(Filter::Contains("VAR".parse().unwrap()))
-        .plug("VAR", &Workload::new(int_lang.vars))
-        .plug("VAL", &Workload::new(int_lang.vals));
-
-    // let ops = vec![lang.uops, lang.bops, lang.tops];
-    for (i, ops) in int_lang.ops.iter().enumerate() {
-        int_wkld = int_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
-    }
-
-    for op in &["min", "max"] {
-        let big_wkld = Workload::new(&["0", "1"]).append(
-            Workload::new(&["(OP V V)"])
-                // okay: so we can't scale this up to multiple functions. we have to do the meta-recipe
-                // thing where we have to basically feed in these operators one at a time.
-                .plug("OP", &Workload::new(&[op]))
-                .plug("V", &int_wkld)
-                .filter(Filter::MetricLt(Metric::Atoms, 8)),
-        );
-
-        let wrapped_rules = run_workload(
-            big_wkld,
-            Some(wkld.clone()),
-            all_rules.clone(),
-            base_implications.clone(),
-            Limits::synthesis(),
-            Limits {
-                iter: 1,
-                node: 100_000,
-                match_: 100_000,
-            },
-            true,
-        );
-
-        all_rules.extend(wrapped_rules);
-    }
 
     let end_time = std::time::Instant::now();
 
