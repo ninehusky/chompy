@@ -283,6 +283,13 @@ pub mod halide_derive_tests {
 
     use super::*;
 
+    // Placeholder for figuring out why Chompy isn't synthesizing certain rules
+    // in certain workloads.
+    #[test]
+    fn should_get() {
+        todo!()
+    }
+
     #[test]
     // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
     fn chompy_vs_caviar() {
