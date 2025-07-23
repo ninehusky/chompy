@@ -635,7 +635,7 @@ pub mod implication_switch_tests {
     use super::*;
     use crate::halide::Pred;
     use conditions::merge_eqs;
-    use egg::{EGraph, Runner, SymbolLang};
+    use egg::{EGraph, Runner};
 
     #[test]
     // in previous step, we have (IsTrue foo)
@@ -927,14 +927,14 @@ pub mod implication_switch_tests {
         rules.add_cond_from_recexprs(
             &"a".parse().unwrap(),
             &"(min a b)".parse().unwrap(),
-            &(&"(< a b)".parse().unwrap()),
+            &"(< a b)".parse().unwrap(),
             10,
         );
 
         rules.add_cond_from_recexprs(
             &"a".parse().unwrap(),
             &"(min a b)".parse().unwrap(),
-            &(&"(<= a b)".parse().unwrap()),
+            &"(<= a b)".parse().unwrap(),
             20,
         );
 

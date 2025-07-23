@@ -765,7 +765,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         for (condition, _) in actual_by_cond.iter() {
-            println!("condition: {:?}", condition);
+            println!("condition: {condition:?}");
             let candidates = self
                 .0
                 .values()
@@ -780,7 +780,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             println!("candidates:");
             for c in &candidates {
-                println!("{}", c);
+                println!("{c}");
             }
 
             // 1. Make a new e-graph.
@@ -791,7 +791,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 let dummy: Assumption<L> = Assumption::new(condition.to_string()).unwrap();
                 Assumption::new(L::instantiate(&dummy.chop_assumption()).to_string()).unwrap()
             };
-            println!("adding {} into the egraph", assumption);
+            println!("adding {assumption} into the egraph");
             assumption.insert_into_egraph(&mut egraph);
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
@@ -823,7 +823,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .search(&egraph)
                 .is_empty()
             {
-                println!("skipping {}", condition);
+                println!("skipping {condition}");
                 // if the most recent condition is not in the e-graph, then it's not relevant
                 continue;
             }
@@ -841,7 +841,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());
                 } else {
-                    println!("i'm keeping {}", rule);
+                    println!("i'm keeping {rule}");
                 }
             }
         }
@@ -905,15 +905,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         while !self.is_empty() {
-            println!("here are my rules:");
-            for (rule_name, rule) in &self.0 {
-                println!("rule: {}", rule);
-            }
             let selected = self.select(step_size, &mut invalid);
-            println!("i have selected:");
-            for s in selected.0.values() {
-                println!("{s}");
-            }
             if selected.is_empty() {
                 continue;
             }

@@ -5,7 +5,6 @@ use crate::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
     },
-    recipe_utils::iter_metric,
     *,
 };
 

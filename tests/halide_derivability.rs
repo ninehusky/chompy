@@ -1,4 +1,3 @@
-use egg::Language;
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
@@ -407,7 +406,7 @@ pub mod halide_derive_tests {
 
         println!("min_max_rules: {}", min_max_rules.len());
         for r in min_max_rules.iter() {
-            println!("  {}", r);
+            println!("  {r}");
         }
     }
 
@@ -504,8 +503,6 @@ pub mod halide_derive_tests {
         );
 
         all_rules.extend(min_max_mul_rules);
-
-        println!("done!");
 
         for r in expected.iter() {
             assert!(
