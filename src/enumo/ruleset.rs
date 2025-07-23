@@ -370,9 +370,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut predicate_to_egraph: IndexMap<String, EGraph<L, SynthAnalysis>> =
             IndexMap::default();
 
-        let long_id = egraph
-            .lookup_expr(&"(< (- a b) a)".parse().unwrap())
-            .unwrap_or_default();
+        let long_id = egraph.lookup_expr(&"(< (- a b) a)".parse().unwrap());
         let one_id = egraph.lookup_expr(&"1".parse().unwrap()).unwrap();
 
         let mut i = 0;
@@ -426,12 +424,21 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 mini_egraph,
                             );
 
-                            if egraph.find(one_id) == egraph.find(id2)
-                                && egraph.find(long_id) == egraph.find(id1)
-                            {
-                                println!("result: {:?}", result);
-                                let serialized = egg_to_serialized_egraph(egraph);
-                                panic!("found it!");
+                            if let Some(long_id) = long_id {
+                                if egraph.find(one_id) == egraph.find(id2)
+                                    && egraph.find(long_id) == egraph.find(id1)
+                                {
+                                    let actual_thing = extract.find_best(long_id).1;
+                                    println!("rules I've chosen:");
+                                    for r in prior.iter() {
+                                        println!("{}", r.name);
+                                    }
+                                    println!("Found long id: {}", actual_thing);
+                                    println!("e1: {}", e1);
+                                    println!("e2: {}", e2);
+                                    println!("result: {:?}", result);
+                                    // panic!("hey.. i found it!");
+                                }
                             }
 
                             if result.is_none() {
@@ -491,10 +498,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         // 2. check if the lhs and rhs are equivalent in the egraph
         if l_id == r_id {
             // e1 and e2 are equivalent in the condition egraph
-            // println!(
-            //     "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
-            //     l_expr, r_expr, cond.pat
-            // );
+            println!(
+                "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
+                l_expr, r_expr, _cond.pat
+            );
             return None;
         }
 
@@ -526,6 +533,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             .with_egraph(colored_egraph.clone())
             .run(&rules)
             .with_node_limit(500);
+
+        let egraph = runner.egraph.clone();
 
         // 3. If we can compress the egraph further, do so.
         //    This might not be a bad place to use a `Scheduler::Saturating` instead.

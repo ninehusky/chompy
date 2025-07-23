@@ -68,7 +68,6 @@ fn run_workload_internal<L: SynthLanguage>(
     // 5. Find conditional rules.
     // To help Chompy scale to higher condition sizes, we'll need to limit the size of the conditions we consider.
     // As a heuristic, we'll go in ascending order of condition sizes.
-
     if cond_workload == Workload::empty() {
         // If there are no conditions, we can just return the chosen rules.
         return chosen;

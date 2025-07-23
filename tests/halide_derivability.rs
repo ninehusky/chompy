@@ -310,38 +310,27 @@ pub mod halide_derive_tests {
 
         base_implications.add(and_implies_left);
         base_implications.add(and_implies_right);
-        // let base_egraph = Workload::new(&["(< (- a b) a)", "1", "c"]).to_egraph();
-
-        // let candidates = Ruleset::conditional_cvec_match(
-        //     &base_egraph,
-        //     &Ruleset::default(),
-        //     &build_pvec_to_patterns(wkld.clone()),
-        //     &base_implications,
-        // );
-
-        // for c in candidates {
-        //     println!("Candidate: {}", c.0);
-        // }
 
         let simp_comps = recursive_rules_cond(
             Metric::Atoms,
             5,
-            Lang::new(&["1"], &["a", "b", "c"], &[&[], &["<", "-"]]),
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", ">", "-"]]),
             Ruleset::default(),
             base_implications.clone(),
             wkld.clone(),
         );
 
-        println!("done");
         println!("rules:");
         for r in simp_comps.iter() {
             println!("  {}", r);
         }
 
+        let mut simp_comps_with_more = simp_comps.clone();
+
         let should_get: Rule<Pred> = Rule::from_string("(< (- ?a ?b) ?a) ==> 1 if (> ?b 0)")
             .unwrap()
             .0;
-        assert!(simp_comps.can_derive_cond(
+        assert!(simp_comps_with_more.can_derive_cond(
             DeriveType::LhsAndRhs,
             &should_get,
             Limits::deriving(),
