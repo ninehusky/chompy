@@ -362,6 +362,13 @@ pub mod halide_derive_tests {
     }
 
     #[test]
+    // This test makes sure that Chompy's derivability (minimization)
+    // algorithm is robust enough to not synthesize both of these rules
+    // (it needs to just pick one):
+    // // (min ?a ?b) ==> ?a if (<= ?a ?b)
+    // // (min ?a ?b) ==> ?b if (<= ?b ?a)
+    // // (min ?b ?a) ==> ?b if (<= ?b ?a)
+    // // (min ?b ?a) ==> ?a if (<= ?a ?b)
     fn chompy_shouldnt_make_these() {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
@@ -390,11 +397,6 @@ pub mod halide_derive_tests {
             &rules,
         );
 
-        println!("implications: {}", implications.len());
-        for i in implications.iter() {
-            println!("  {}", i.name());
-        }
-
         let min_max_rules: Ruleset<Pred> = recursive_rules_cond(
             Metric::Atoms,
             3,
@@ -408,6 +410,46 @@ pub mod halide_derive_tests {
         for r in min_max_rules.iter() {
             println!("  {r}");
         }
+
+        let mut against: Ruleset<Pred> = Ruleset::default();
+        against.add(
+            Rule::from_string("(min ?a ?b) ==> ?a if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?a ?b) ==> ?b if (<= ?b ?a)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?b ?a) ==> ?b if (<= ?b ?a)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?b ?a) ==> ?a if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        let mut matches = 0;
+        for r in against.iter() {
+            assert!(min_max_rules.can_derive_cond(
+                ruler::DeriveType::LhsAndRhs,
+                r,
+                Limits::deriving(),
+                &implications.to_egg_rewrites(),
+            ));
+            if min_max_rules.contains(r) {
+                matches += 1;
+            }
+        }
+
+        assert_eq!(matches, 1);
     }
 
     // A sanity test.
