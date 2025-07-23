@@ -1,3 +1,5 @@
+# NOTE: we're temporarily disabling this until we figure out exactly how we want
+#       the Caviar end-to-end eval to look.
 # name: Trigger evaluation repo
 
 # on:
