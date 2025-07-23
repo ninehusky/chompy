@@ -311,31 +311,98 @@ pub mod halide_derive_tests {
         base_implications.add(and_implies_left);
         base_implications.add(and_implies_right);
 
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+
         let simp_comps = recursive_rules_cond(
             Metric::Atoms,
             5,
-            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", ">", "-"]]),
+            Lang::new(
+                &["0", "1"],
+                &["a", "b", "c"],
+                &[&[], &["<", ">", "-", "<=", ">="]],
+            ),
             Ruleset::default(),
             base_implications.clone(),
             wkld.clone(),
         );
 
+        all_rules.extend(simp_comps);
+
+        let min_max = recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max"]]),
+            Ruleset::default(),
+            base_implications.clone(),
+            wkld.clone(),
+        );
+
+        all_rules.extend(min_max);
+
         println!("rules:");
-        for r in simp_comps.iter() {
+        for r in all_rules.iter() {
             println!("  {}", r);
         }
 
-        let mut simp_comps_with_more = simp_comps.clone();
+        let mut expected_to_derive: Ruleset<Pred> = Default::default();
 
-        let should_get: Rule<Pred> = Rule::from_string("(< (- ?a ?b) ?a) ==> 1 if (> ?b 0)")
-            .unwrap()
-            .0;
-        assert!(simp_comps_with_more.can_derive_cond(
-            DeriveType::LhsAndRhs,
-            &should_get,
-            Limits::deriving(),
-            &base_implications.to_egg_rewrites()
-        ));
+        expected_to_derive.add(
+            Rule::from_string("(< (- ?a ?y) ?a) ==> 1 if (> ?y 0)")
+                .unwrap()
+                .0,
+        );
+        expected_to_derive.add(
+            Rule::from_string("(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)")
+                .unwrap()
+                .0,
+        );
+        // expected_to_derive.add(
+        //     Rule::from_string("(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)")
+        //         .unwrap()
+        //         .0,
+        // );
+        // expected_to_derive.add(
+        //     Rule::from_string("(== (max ?x ?c) 0) ==> 0 if (> ?c 0)")
+        //         .unwrap()
+        //         .0,
+        // );
+        // expected_to_derive.add(
+        //     Rule::from_string("( && ( <= ?c0 ?x ) ( <= ?x ?c1 ) ) ==> 0 if (< ?c1 ?c0)")
+        //         .unwrap()
+        //         .0,
+        // );
+        // expected_to_derive.add(
+        //     Rule::from_string(
+        //         "(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)",
+        //     )
+        //     .unwrap()
+        //     .0,
+        // );
+        // expected_to_derive.add(
+        //     Rule::from_string("(min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0)")
+        //         .unwrap()
+        //         .0,
+        // );
+        expected_to_derive.add(
+            Rule::from_string("(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)")
+                .unwrap()
+                .0,
+        );
+        expected_to_derive.add(
+            Rule::from_string("(max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)")
+                .unwrap()
+                .0,
+        );
+        //
+        for r in expected_to_derive.iter() {
+            println!("  expected: {}", r);
+            assert!(all_rules.can_derive_cond(
+                DeriveType::LhsAndRhs,
+                r,
+                Limits::deriving(),
+                &base_implications.to_egg_rewrites()
+            ));
+        }
     }
 
     #[test]
@@ -351,7 +418,7 @@ pub mod halide_derive_tests {
             + "/derive.json";
         let out_path: &Path = Path::new(&binding);
         let chompy_rules = og_recipe();
-        let caviar_rules = caviar_rules();
+        let mut caviar_rules = caviar_rules();
 
         let all_conditions: Vec<_> = caviar_rules
             .iter()
@@ -370,8 +437,26 @@ pub mod halide_derive_tests {
             })
             .collect();
 
+        let all_conds_workload = Workload::new(
+            all_conditions
+                .iter()
+                .map(|c| c.chop_assumption().to_string()),
+        );
+
         let implication_rules: ImplicationSet<Pred> =
             pairwise_implication_building(&all_conditions);
+
+        let cond_rewrites = run_workload(
+            all_conds_workload,
+            None,
+            Ruleset::default(),
+            implication_rules.clone(),
+            Limits::synthesis(),
+            Limits::deriving(),
+            true,
+        );
+
+        caviar_rules.extend(cond_rewrites);
 
         // see how many caviar rules we can derive, given the same
         // total caviar rules.

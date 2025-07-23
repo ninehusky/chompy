@@ -370,9 +370,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         let mut predicate_to_egraph: IndexMap<String, EGraph<L, SynthAnalysis>> =
             IndexMap::default();
 
-        let long_id = egraph.lookup_expr(&"(< (- a b) a)".parse().unwrap());
-        let one_id = egraph.lookup_expr(&"1".parse().unwrap()).unwrap();
-
         let mut i = 0;
         // 1. For each pair of unequal cvecs, find the conditions that imply their equality.
         for cvec1 in by_cvec.keys() {
@@ -424,20 +421,40 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 mini_egraph,
                             );
 
-                            if let Some(long_id) = long_id {
-                                if egraph.find(one_id) == egraph.find(id2)
-                                    && egraph.find(long_id) == egraph.find(id1)
-                                {
-                                    let actual_thing = extract.find_best(long_id).1;
-                                    println!("rules I've chosen:");
-                                    for r in prior.iter() {
-                                        println!("{}", r.name);
+                            let potential_l =
+                                egraph.lookup_expr(&"(min (max a b) c)".parse().unwrap());
+                            let potential_r = egraph.lookup_expr(&"c".parse().unwrap());
+                            if let Some(l) = potential_l {
+                                if let Some(r) = potential_r {
+                                    if egraph.find(l) == egraph.find(id1)
+                                        && egraph.find(r) == egraph.find(id2)
+                                        || egraph.find(l) == egraph.find(id2)
+                                            && egraph.find(r) == egraph.find(id1)
+                                    {
+                                        let extract = Extractor::new(mini_egraph, AstSize);
+                                        println!("what's (max a b)?");
+                                        let (_, e1) = extract.find_best(
+                                            mini_egraph
+                                                .lookup_expr(&"(max a b)".parse().unwrap())
+                                                .unwrap(),
+                                        );
+                                        println!("{}", e1);
+                                        // let max_a_b = println!("here's the node:");
+                                        // println!("{:?}", mini_egraph[l]);
+                                        println!("implications i've chosen:");
+                                        for i in implications.iter() {
+                                            println!("{}", i.name());
+                                        }
+
+                                        println!("rules I've chosen:");
+                                        for r in prior.iter() {
+                                            println!("{}", r.name);
+                                        }
+                                        println!("e1: {}", e1);
+                                        println!("e2: {}", e2);
+                                        println!("result: {:?}", result);
+                                        panic!("hey.. i found it!");
                                     }
-                                    println!("Found long id: {}", actual_thing);
-                                    println!("e1: {}", e1);
-                                    println!("e2: {}", e2);
-                                    println!("result: {:?}", result);
-                                    // panic!("hey.. i found it!");
                                 }
                             }
 
@@ -533,8 +550,6 @@ impl<L: SynthLanguage> Ruleset<L> {
             .with_egraph(colored_egraph.clone())
             .run(&rules)
             .with_node_limit(500);
-
-        let egraph = runner.egraph.clone();
 
         // 3. If we can compress the egraph further, do so.
         //    This might not be a bad place to use a `Scheduler::Saturating` instead.
@@ -1015,7 +1030,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             rule.cond.is_some(),
             "Rule must have a condition to derive conditionally"
         );
-        let scheduler = Scheduler::Saturating(limits);
+        let scheduler = Scheduler::Simple(limits);
         let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
         let lexpr = &L::instantiate(&rule.lhs);
         let rexpr = &L::instantiate(&rule.rhs);
@@ -1033,9 +1048,9 @@ impl<L: SynthLanguage> Ruleset<L> {
         // but maybe eventually we should just have a single Scheduler that can run both?
 
         // run the rules on the condition itself, for the tiniest smidge.
-        let egraph = Scheduler::Saturating(Limits {
+        let egraph = Scheduler::Simple(Limits {
             iter: 2,
-            node: 100,
+            node: 1000,
             match_: 10_000,
         })
         .run(&egraph, self);
