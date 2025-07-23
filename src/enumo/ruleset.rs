@@ -431,13 +431,11 @@ impl<L: SynthLanguage> Ruleset<L> {
                                         || egraph.find(l) == egraph.find(id2)
                                             && egraph.find(r) == egraph.find(id1)
                                     {
-                                        let extract = Extractor::new(mini_egraph, AstSize);
-                                        println!("what's (max a b)?");
-                                        let (_, e1) = extract.find_best(
-                                            mini_egraph
-                                                .lookup_expr(&"(max a b)".parse().unwrap())
-                                                .unwrap(),
+                                        let proof = mini_egraph.explain_equivalence(
+                                            &"(min (max a b) c)".parse().unwrap(),
+                                            &"c".parse().unwrap(),
                                         );
+                                        println!("proof of equivalence: {}", proof);
                                         println!("{}", e1);
                                         // let max_a_b = println!("here's the node:");
                                         // println!("{:?}", mini_egraph[l]);

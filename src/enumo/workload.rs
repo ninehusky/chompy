@@ -74,7 +74,7 @@ impl Workload {
     /// Materialize the workload into an e-graph
     /// Will crash if there are terms in the e-graph that are not parseable as terms in domain L
     pub fn to_egraph<L: SynthLanguage>(&self) -> EGraph<L, SynthAnalysis> {
-        let mut egraph = EGraph::default();
+        let mut egraph = EGraph::default().with_explanations_enabled();
         let sexps = self.force();
 
         // Have to find all the variables first so that we can initialize
