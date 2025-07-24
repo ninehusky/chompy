@@ -416,11 +416,46 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 continue;
                             }
 
+                            let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+                            predicate.insert_into_egraph(&mut mini_egraph);
+
+                            println!("e1: {}", e1);
+                            println!("e2: {}", e2);
+                            println!("cond: {}", predicate);
+
+                            mini_egraph.add_expr(&e1);
+                            mini_egraph.add_expr(&e2);
+
+                            if e1.to_string() == "(min (c (max a b))" && e2.to_string() == "c"
+                                || e1.to_string() == "c" && e2.to_string() == "(min (c (max a b))"
+                            {
+                                println!("this is the bad one");
+                            }
+
+                            let initial = egg_to_serialized_egraph(egraph);
+                            initial.to_json_file("dump.json").unwrap();
+
+                            // 1. run the implication rules
+                            // let runner: Runner<L, SynthAnalysis> =
+                            //     Runner::new(SynthAnalysis::default())
+                            //         .with_egraph(mini_egraph.clone())
+                            //         .run(&implications.to_egg_rewrites())
+                            //         .with_node_limit(100);
+
+                            // 2. run the rewrites
+                            mini_egraph = Scheduler::Saturating(Limits {
+                                iter: 1,
+                                node: 1,
+                                match_: 1,
+                            })
+                            // .run(&runner.egraph, prior);
+                            .run(&mini_egraph, prior);
+
                             let result = Self::get_canonical_conditional_rule(
                                 &e1,
                                 &e2,
                                 &predicate,
-                                mini_egraph,
+                                &mini_egraph,
                             );
 
                             let potential_l =
@@ -540,23 +575,25 @@ impl<L: SynthLanguage> Ruleset<L> {
     ) -> EGraph<L, SynthAnalysis> {
         let mut colored_egraph = black_egraph.clone();
 
-        let searcher: &Pattern<L> = &"(assume ?c)".parse().unwrap();
+        // let searcher: &Pattern<L> = &"(assume ?c)".parse().unwrap();
 
-        assert!(
-            searcher.search(black_egraph).is_empty(),
-            "Why did I find an assumption in the black e-graph?"
-        );
+        // assert!(
+        //     searcher.search(black_egraph).is_empty(),
+        //     "Why did I find an assumption in the black e-graph?"
+        // );
 
         // 1. Add the predicate to the egraph.
         predicate.insert_into_egraph(&mut colored_egraph);
 
         // 2. Run the implication rules on the egraph.
-        // let rules = impl_rules.to_egg_rewrites();
+        let rules = impl_rules.to_egg_rewrites();
 
-        // let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-        //     .with_egraph(colored_egraph.clone())
-        //     .run(&rules)
-        //     .with_node_limit(500);
+        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(colored_egraph.clone())
+            .run(&rules)
+            .with_node_limit(500);
+
+        let colored_egraph = &runner.egraph;
 
         // 3. If we can compress the egraph further, do so.
         //    This might not be a bad place to use a `Scheduler::Saturating` instead.
@@ -1400,6 +1437,58 @@ mod ruleset_tests {
         );
 
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn conditional_rule_doesnt_fire() {
+        let mut black_egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
+        black_egraph.add_expr(&"(/ x x)".parse().unwrap());
+        black_egraph.add_expr(&"(/ y y)".parse().unwrap());
+        black_egraph.add_expr(&"(< x 0)".parse().unwrap());
+        black_egraph.add_expr(&"1".parse().unwrap());
+
+        let predicate: Assumption<Pred> = "(< y 0)".into();
+        let mut prior: Ruleset<Pred> = Default::default();
+        prior.add(Rule::from_string("(/ ?x ?x) ==> 1 if (< ?x 0)").unwrap().0);
+        let mut implications: ImplicationSet<Pred> = Default::default();
+        implications.add(
+            Implication::new(
+                "x < 0 -> x != 0".into(),
+                "(< ?x 0)".parse().unwrap(),
+                "(!= ?x 0)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let mini_egraph =
+            Ruleset::construct_conditional_egraph(&black_egraph, &prior, &predicate, &implications);
+
+        assert_eq!(
+            mini_egraph.find(
+                mini_egraph
+                    .lookup_expr(&"(/ y y)".parse().unwrap())
+                    .unwrap()
+            ),
+            mini_egraph.find(mini_egraph.lookup_expr(&"1".parse().unwrap()).unwrap())
+        );
+
+        assert_ne!(
+            mini_egraph.find(
+                mini_egraph
+                    .lookup_expr(&"(/ x x)".parse().unwrap())
+                    .unwrap()
+            ),
+            mini_egraph.find(mini_egraph.lookup_expr(&"1".parse().unwrap()).unwrap())
+        );
+
+        let result = Ruleset::get_canonical_conditional_rule(
+            &"(/ x x)".parse().unwrap(),
+            &"1".parse().unwrap(),
+            &predicate,
+            &mini_egraph,
+        );
+
+        assert!(result.is_some());
     }
 
     #[test]

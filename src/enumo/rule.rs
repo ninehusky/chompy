@@ -7,6 +7,7 @@ use std::fmt::{Debug, Formatter};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::enumo::egg_to_serialized_egraph;
 use crate::*;
 
 /// A Rewrite rule
@@ -129,10 +130,7 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
         if !egraph[matched_id].data.is_defined() {
             return vec![];
         }
-
-        // (min ?c (min ?b ?a))
-        // (min (max b 0) (min c b))
-        let first_expr = "(min (max b 0) (min c b))";
+        let first_expr = "(min c (max a b))";
         let second_expr = "c";
 
         let first = egraph.lookup_expr(&first_expr.parse().unwrap());
@@ -143,9 +141,6 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
             _ => false,
         };
 
-        // let mut old = egraph.clone();
-
-        // We apply the pattern. What comes out?
         let id = apply_pat(self.rhs.ast.as_ref(), egraph, subst);
         if id == matched_id {
             return vec![];
@@ -153,22 +148,6 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
 
         if !egraph[id].data.is_defined() {
             return vec![];
-        }
-
-        if let (Some(first), Some(second)) = (first, second) {
-            if egraph.find(id) == egraph.find(first) {
-                println!("apply_pat returned the same id as id, which is {id:?}.");
-                let extract: Extractor<AstSize, L, SynthAnalysis> = Extractor::new(egraph, AstSize);
-                let best = extract.find_best(id).1;
-                println!("best: {best}");
-            }
-
-            if egraph.find(id) == egraph.find(second) {
-                println!("apply_pat returned the same id as matched_id, which is {matched_id:?}.");
-                let extract: Extractor<AstSize, L, SynthAnalysis> = Extractor::new(egraph, AstSize);
-                let best = extract.find_best(matched_id).1;
-                println!("best: {best}");
-            }
         }
 
         egraph.union(id, matched_id);
@@ -184,19 +163,19 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
                     let assumption_searcher: Pattern<L> =
                         format!("({} ?c)", L::assumption_label()).parse().unwrap();
 
-                    // maybe won't be dirty?
-                    let eg = egraph.clone();
+                    let mut eg = egraph.clone();
+                    let mut extract: Extractor<AstSize, L, SynthAnalysis> =
+                        Extractor::new(&eg, AstSize);
+                    let matched_term = extract.find_best(matched_id).1;
+
+                    println!("matched on {}", matched_term);
 
                     let matches = assumption_searcher.search_with_limit(&eg, 20);
 
-                    let extract: Extractor<AstSize, L, SynthAnalysis> =
-                        Extractor::new(&eg, AstSize);
                     for m in matches {
                         let best = extract.find_best(m.eclass).1;
                         println!("assumption: {best}");
                     }
-
-                    let new_id = apply_pat(self.rhs.ast.as_ref(), egraph, subst);
 
                     let first_thing = extract.find_best(id).1;
                     let second_thing = extract.find_best(matched_id).1;
@@ -210,12 +189,16 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
                     }
 
                     println!("my pattern: {}", self.rhs);
+                    println!("my size: {}", egraph.total_number_of_nodes());
+
+                    // let serialized = egg_to_serialized_egraph(egraph);
+                    // serialized
+                    //     .to_json_file("dump.json")
+                    //     .expect("Failed to write egraph to file");
                     println!("I unioned {} and {}.", first_thing, second_thing);
                     println!("the ast for the _ast: {_ast:?}");
                     println!("the subst: {subst:?}");
 
-                    // let best = extract.find_best(matched_id).1;
-                    // println!("i matched on {best}.");
                     println!("I applied {sym}.");
                     let proof = egraph.explain_equivalence(
                         &first_expr.parse().unwrap(),

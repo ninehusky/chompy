@@ -88,16 +88,20 @@ where
                 .parse()
                 .unwrap();
 
-        if lookup_pattern(&is_true_my_pattern, egraph, subst) {
-            // we already have the condition in the egraph, so no need to add it.
-            return vec![];
-        }
+        // if lookup_pattern(&is_true_my_pattern, egraph, subst) {
+        //     // we already have the condition in the egraph, so no need to add it.
+        //     return vec![];
+        // }
 
         let new_id = apply_pat(
             is_true_my_pattern.ast.as_ref().iter().as_slice(),
             egraph,
             subst,
         );
+
+        if new_id == _eclass {
+            return vec![];
+        }
 
         vec![new_id]
     }

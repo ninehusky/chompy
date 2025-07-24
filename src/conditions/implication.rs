@@ -173,18 +173,17 @@ where
         _searcher_ast: Option<&PatternAst<L>>,
         _rule_name: egg::Symbol,
     ) -> Vec<egg::Id> {
-        println!("don't apply me");
-        // let lhs: Pattern<L> = self.implication.lhs.clone().into();
-        // let rhs: Pattern<L> = self.implication.rhs.clone().into();
+        let lhs: Pattern<L> = self.implication.lhs.clone().into();
+        let rhs: Pattern<L> = self.implication.rhs.clone().into();
 
-        // // First, search for the left-hand side pattern in the egraph.
-        // // If it's not there, something terrible happened.
-        // assert!(
-        //     lookup_pattern(&lhs, egraph, subst),
-        //     "For implication {}, could not find {}",
-        //     self.implication.name,
-        //     lhs
-        // );
+        // First, search for the left-hand side pattern in the egraph.
+        // If it's not there, something terrible happened.
+        assert!(
+            lookup_pattern(&lhs, egraph, subst),
+            "For implication {}, could not find {}",
+            self.implication.name,
+            lhs
+        );
 
         // // TODO: if this is expensive, we might be able to comment this out?
         // if lookup_pattern(&rhs, egraph, subst) {
@@ -192,11 +191,9 @@ where
         //     return vec![];
         // }
 
-        // let new_id = apply_pat(rhs.ast.as_ref().iter().as_slice(), egraph, subst);
+        let new_id = apply_pat(rhs.ast.as_ref().iter().as_slice(), egraph, subst);
 
-        // vec![new_id]
-        println!("off for debuggin!");
-        vec![]
+        vec![new_id]
     }
 }
 

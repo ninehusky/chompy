@@ -313,20 +313,20 @@ pub mod halide_derive_tests {
 
         let mut all_rules: Ruleset<Pred> = Ruleset::default();
 
-        let simp_comps = recursive_rules_cond(
-            Metric::Atoms,
-            5,
-            Lang::new(
-                &["0", "1"],
-                &["a", "b", "c"],
-                &[&[], &["<", ">", "-", "<=", ">="]],
-            ),
-            Ruleset::default(),
-            base_implications.clone(),
-            wkld.clone(),
-        );
+        // let simp_comps = recursive_rules_cond(
+        //     Metric::Atoms,
+        //     5,
+        //     Lang::new(
+        //         &["0", "1"],
+        //         &["a", "b", "c"],
+        //         &[&[], &["<", ">", "-", "<=", ">="]],
+        //     ),
+        //     Ruleset::default(),
+        //     base_implications.clone(),
+        //     wkld.clone(),
+        // );
 
-        all_rules.extend(simp_comps);
+        // all_rules.extend(simp_comps);
 
         let min_max = recursive_rules_cond(
             Metric::Atoms,
