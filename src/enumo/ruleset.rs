@@ -837,6 +837,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 if egraph.find(l_id) == egraph.find(r_id) {
                     println!("condition: {condition}");
                     println!("removing rule {rule}");
+                    panic!("this shouldn't happen");
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());

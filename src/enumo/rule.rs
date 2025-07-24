@@ -56,15 +56,30 @@ impl<L: SynthLanguage> Rule<L> {
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
-                let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
+                let cond: Result<Assumption<L>, _> = Assumption::new(r.to_string());
                 (l, Some(cond))
             } else {
                 (s, None)
             }
         };
+
+        if cond.is_some() && cond.clone().unwrap().is_err() {
+            return Err(format!("Failed to parse condition in rule: {s}"));
+        }
+
+        let cond = match cond {
+            Some(c) => Some(c.clone().unwrap()),
+            _ => None,
+        };
+
         if let Some((l, r)) = s.split_once("=>") {
-            let l_pat: Pattern<L> = l.parse().unwrap();
-            let r_pat: Pattern<L> = r.parse().unwrap();
+            let l_pat: Result<Pattern<L>, _> = l.parse();
+            let r_pat: Result<Pattern<L>, _> = r.parse();
+            if l_pat.is_err() || r_pat.is_err() {
+                return Err(format!("Failed to parse {s}"));
+            }
+            let l_pat: Pattern<L> = l_pat.unwrap();
+            let r_pat: Pattern<L> = r_pat.unwrap();
 
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
