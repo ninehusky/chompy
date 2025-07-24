@@ -1,9 +1,10 @@
 use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, Condition, ConditionalApplier, ENodeOrVar, Language, PatternAst, Rewrite,
-    Subst,
+    Analysis, Applier, AstSize, Condition, ConditionalApplier, ENodeOrVar, Extractor, Language,
+    PatternAst, Rewrite, Searcher, Subst,
 };
 use std::fmt::{Debug, Formatter};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::*;
@@ -123,12 +124,28 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
         matched_id: Id,
         subst: &Subst,
         _ast: Option<&PatternAst<L>>,
-        _sym: Symbol,
+        sym: Symbol,
     ) -> Vec<Id> {
         if !egraph[matched_id].data.is_defined() {
             return vec![];
         }
 
+        // (min ?c (min ?b ?a))
+        // (min (max b 0) (min c b))
+        let first_expr = "(min (max b 0) (min c b))";
+        let second_expr = "c";
+
+        let first = egraph.lookup_expr(&first_expr.parse().unwrap());
+        let second = egraph.lookup_expr(&second_expr.parse().unwrap());
+
+        let was_equal = match (first, second) {
+            (Some(first), Some(second)) => egraph.find(first) == egraph.find(second),
+            _ => false,
+        };
+
+        // let mut old = egraph.clone();
+
+        // We apply the pattern. What comes out?
         let id = apply_pat(self.rhs.ast.as_ref(), egraph, subst);
         if id == matched_id {
             return vec![];
@@ -138,7 +155,78 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
             return vec![];
         }
 
+        if let (Some(first), Some(second)) = (first, second) {
+            if egraph.find(id) == egraph.find(first) {
+                println!("apply_pat returned the same id as id, which is {id:?}.");
+                let extract: Extractor<AstSize, L, SynthAnalysis> = Extractor::new(egraph, AstSize);
+                let best = extract.find_best(id).1;
+                println!("best: {best}");
+            }
+
+            if egraph.find(id) == egraph.find(second) {
+                println!("apply_pat returned the same id as matched_id, which is {matched_id:?}.");
+                let extract: Extractor<AstSize, L, SynthAnalysis> = Extractor::new(egraph, AstSize);
+                let best = extract.find_best(matched_id).1;
+                println!("best: {best}");
+            }
+        }
+
         egraph.union(id, matched_id);
+
+        let first = egraph.lookup_expr(&first_expr.parse().unwrap());
+        let second = egraph.lookup_expr(&second_expr.parse().unwrap());
+
+        match (first, second) {
+            (Some(first), Some(second)) => {
+                if !was_equal && egraph.find(first) == egraph.find(second) {
+                    egraph.rebuild();
+                    // what assumptions are true in the e-graph?
+                    let assumption_searcher: Pattern<L> =
+                        format!("({} ?c)", L::assumption_label()).parse().unwrap();
+
+                    // maybe won't be dirty?
+                    let eg = egraph.clone();
+
+                    let matches = assumption_searcher.search_with_limit(&eg, 20);
+
+                    let extract: Extractor<AstSize, L, SynthAnalysis> =
+                        Extractor::new(&eg, AstSize);
+                    for m in matches {
+                        let best = extract.find_best(m.eclass).1;
+                        println!("assumption: {best}");
+                    }
+
+                    let new_id = apply_pat(self.rhs.ast.as_ref(), egraph, subst);
+
+                    let first_thing = extract.find_best(id).1;
+                    let second_thing = extract.find_best(matched_id).1;
+
+                    for v in &["a", "b", "c"] {
+                        let var = Var::from_str(format!("?{v}").as_str()).unwrap();
+                        let arg_id = subst.get(var).unwrap();
+
+                        let arg = extract.find_best(*arg_id).1;
+                        println!("{v}: {arg}");
+                    }
+
+                    println!("my pattern: {}", self.rhs);
+                    println!("I unioned {} and {}.", first_thing, second_thing);
+                    println!("the ast for the _ast: {_ast:?}");
+                    println!("the subst: {subst:?}");
+
+                    // let best = extract.find_best(matched_id).1;
+                    // println!("i matched on {best}.");
+                    println!("I applied {sym}.");
+                    let proof = egraph.explain_equivalence(
+                        &first_expr.parse().unwrap(),
+                        &second_expr.parse().unwrap(),
+                    );
+                    println!("the proof: {proof}");
+                    panic!("found it.");
+                }
+            }
+            _ => {}
+        }
         vec![id]
     }
 }

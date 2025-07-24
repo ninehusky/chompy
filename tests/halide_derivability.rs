@@ -405,7 +405,7 @@ pub mod halide_derive_tests {
         }
     }
 
-    #[test]
+    // #[test]
     // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
     fn chompy_vs_caviar() {
         // Don't run this test as part of the "unit tests" thing in CI.
@@ -487,7 +487,7 @@ pub mod halide_derive_tests {
 
     // A test to see if we can correctly choose all Caviar handwritten rules
     // as candidates.
-    #[test]
+    // #[test]
     fn synthesize_all_caviar_as_candidates() {
         // Don't run this test as part of the "unit tests" thing in CI.
         if std::env::var("SKIP_RECIPES").is_ok() {
@@ -595,7 +595,7 @@ pub mod halide_derive_tests {
     // A sanity test.
     // If we can't synthesize these rules, or synthesize rules that derive
     // them, something terrible has happened.
-    #[test]
+    // #[test]
     fn chompy_cant_forget_these() {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;

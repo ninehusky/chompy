@@ -125,7 +125,7 @@ impl Scheduler {
                 let mut clone = egraph.clone();
                 let ids: Vec<Id> = egraph.classes().map(|c| c.id).collect();
 
-                let out = Self::Simple(*limits).run(egraph, ruleset);
+                let mut out = Self::Simple(*limits).run(egraph, ruleset);
 
                 // Build a map from id in out to all of the ids in egraph that are equivalent
                 let mut unions = HashMap::default();

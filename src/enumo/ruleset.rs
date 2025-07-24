@@ -1,4 +1,6 @@
-use egg::{Analysis, AstSize, EClass, Extractor, Language, RecExpr, Rewrite, Runner, Searcher};
+use egg::{
+    Analysis, AstSize, EClass, Extractor, Language, Pattern, RecExpr, Rewrite, Runner, Searcher,
+};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
 use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
@@ -538,20 +540,28 @@ impl<L: SynthLanguage> Ruleset<L> {
     ) -> EGraph<L, SynthAnalysis> {
         let mut colored_egraph = black_egraph.clone();
 
+        let searcher: &Pattern<L> = &"(assume ?c)".parse().unwrap();
+
+        assert!(
+            searcher.search(black_egraph).is_empty(),
+            "Why did I find an assumption in the black e-graph?"
+        );
+
         // 1. Add the predicate to the egraph.
         predicate.insert_into_egraph(&mut colored_egraph);
 
         // 2. Run the implication rules on the egraph.
-        let rules = impl_rules.to_egg_rewrites();
+        // let rules = impl_rules.to_egg_rewrites();
 
-        let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-            .with_egraph(colored_egraph.clone())
-            .run(&rules)
-            .with_node_limit(500);
+        // let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+        //     .with_egraph(colored_egraph.clone())
+        //     .run(&rules)
+        //     .with_node_limit(500);
 
         // 3. If we can compress the egraph further, do so.
         //    This might not be a bad place to use a `Scheduler::Saturating` instead.
-        Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior)
+        // Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior)
+        Scheduler::Compress(Limits::minimize()).run(&colored_egraph, prior)
     }
 
     // Given two cvecs and a mapping from pvecs to expressions, returns a list of predicates

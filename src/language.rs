@@ -69,7 +69,7 @@ where
         _eclass: egg::Id,
         subst: &egg::Subst,
         _searcher_ast: Option<&PatternAst<L>>,
-        _rule_name: egg::Symbol,
+        rule_name: egg::Symbol,
     ) -> Vec<egg::Id> {
         // it better be the case that the parent condition exists in the e-graph.
         let is_true_parent_pattern: Pattern<L> =
