@@ -313,25 +313,29 @@ pub mod halide_derive_tests {
 
         let mut all_rules: Ruleset<Pred> = Ruleset::default();
 
-        // let simp_comps = recursive_rules_cond(
-        //     Metric::Atoms,
-        //     5,
-        //     Lang::new(
-        //         &["0", "1"],
-        //         &["a", "b", "c"],
-        //         &[&[], &["<", ">", "-", "<=", ">="]],
-        //     ),
-        //     Ruleset::default(),
-        //     base_implications.clone(),
-        //     wkld.clone(),
-        // );
+        let simp_comps = recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(
+                &["0", "1"],
+                &["a", "b", "c"],
+                &[&[], &["<", ">", "-", "<=", ">="]],
+            ),
+            Ruleset::default(),
+            base_implications.clone(),
+            wkld.clone(),
+        );
 
-        // all_rules.extend(simp_comps);
+        all_rules.extend(simp_comps);
 
         let min_max = recursive_rules_cond(
             Metric::Atoms,
             5,
-            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max"]]),
+            Lang::new(
+                &["0", "1"],
+                &["a", "b", "c"],
+                &[&[], &["min", "max", "+", "-"]],
+            ),
             Ruleset::default(),
             base_implications.clone(),
             wkld.clone(),
@@ -356,11 +360,11 @@ pub mod halide_derive_tests {
                 .unwrap()
                 .0,
         );
-        // expected_to_derive.add(
-        //     Rule::from_string("(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)")
-        //         .unwrap()
-        //         .0,
-        // );
+        expected_to_derive.add(
+            Rule::from_string("(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)")
+                .unwrap()
+                .0,
+        );
         // expected_to_derive.add(
         //     Rule::from_string("(== (max ?x ?c) 0) ==> 0 if (> ?c 0)")
         //         .unwrap()
@@ -378,11 +382,11 @@ pub mod halide_derive_tests {
         //     .unwrap()
         //     .0,
         // );
-        // expected_to_derive.add(
-        //     Rule::from_string("(min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0)")
-        //         .unwrap()
-        //         .0,
-        // );
+        expected_to_derive.add(
+            Rule::from_string("(min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0)")
+                .unwrap()
+                .0,
+        );
         expected_to_derive.add(
             Rule::from_string("(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)")
                 .unwrap()
@@ -499,6 +503,177 @@ pub mod halide_derive_tests {
         // This is a magic number for now, but later we'll document specific
         // rules we can't derive along with why.
         assert_eq!(cannot.len(), 7);
+    }
+
+    #[test]
+    /// This test contains the minimal required code to get Chompy
+    /// to do a bad merge of two terms which shouldn't be merged.
+    fn my_test() {
+        use egg::EGraph;
+
+        use ruler::{
+            conditions::implication_set::ImplicationSet,
+            enumo::{build_pvec_to_patterns, PredicateMap, Rule, Ruleset, Workload},
+            halide::Pred,
+            SynthAnalysis,
+        };
+
+        let wkld = Workload::new(&["(min (max a b) c)", "c"]);
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = wkld.to_egraph();
+        let terms_to_add = r#"a
+(max b (min c 1))
+(max a (max c 1))
+(min a (min b c))
+(min a (max c 1))
+(min c 0)
+(max 1 (min a c))
+(min a (min b 0))
+(min 1 (max a b))
+(max a (min b 0))
+(min b (min c 1))
+(min b (max c 0))
+(min a (min b 1))
+(max a (max c 0))
+(max b (max c 0))
+(min a (min c 1))
+(max a (min c 0))
+(max b 0)
+(max a 0)
+(min 1 (max c 0))
+(max 0 (min a b))
+(max c (min a b))
+(min 0 (max b c))
+(max a (min c 1))
+(min a (max b 0))
+(min a (min c 0))
+(min b (min c 0))
+(min 0 (max a c))
+(max b (max c 1))
+(min a 1)
+(min a (max b c))
+(min c 1)
+(min c (max a 0))
+(min b (max a 1))
+(min 1 (max a 0))
+(max 1 (min a b))
+(min 1 (max b c))
+(min a (max c 0))
+(max b (min a 0))
+(max a (max b 0))
+(min c (max b 0))
+(min b c)
+(max 0 (min b c))
+(max c (max a b))
+(max b (min a c))
+(max b (min a 1))
+(min c (max a b))
+(min c (max b 1))
+(max a (max b 1))
+(min b (max a c))
+(max b c)
+(max c (min b 1))
+(min a (max b 1))
+(max c (min b 0))
+(min b 1)
+(min b (max a 0))
+(max a c)
+(min 1 (max b 0))
+(min a b)
+(min c (max a 1))
+(min b 0)
+1
+(max c (min a 0))
+(max a (min b 1))
+(min b (max c 1))
+b
+(max c 0)
+(max b (min c 0))
+(min 1 (max a c))
+(max 0 (min a c))
+(max a 1)
+(min a 0)
+(max a (min b c))
+(max 1 (min b c))
+(min 0 (max a b))
+(min a c)
+(max a b)
+(max c (min a 1))
+c
+(max b 1)
+(max c 1)
+0"#;
+
+        for line in terms_to_add.lines() {
+            let term = line.trim();
+            if !term.is_empty() {
+                egraph.add_expr(&term.parse().unwrap());
+            }
+        }
+
+        let mut implications: ImplicationSet<Pred> = Default::default();
+        implications.add(
+            Implication::new(
+                "(< ?a ?b) -> (?a < ?b)".into(),
+                "(< ?a ?b)".parse().unwrap(),
+                "(<= ?a ?b)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let mut prior: Ruleset<Pred> = Ruleset::default();
+
+        let rules = r#"?a ==> 0 if (== ?a 0)
+(min ?b ?a) ==> (min ?a ?b)
+(max ?a ?a) ==> ?a
+?a ==> (max ?a ?a)
+(min ?a ?a) ==> ?a
+?a ==> (min ?a ?a)
+(max ?a ?b) ==> (max ?b ?a)
+(max ?b ?a) ==> (max ?a ?b)
+(min ?a ?b) ==> (min ?b ?a)
+(max ?a 1) ==> 1 if (<= ?a 0)
+(min ?a 1) ==> 1 if (< 0 ?a)
+?a ==> (min ?a 1) if (<= ?a 0)
+(min ?a 1) ==> ?a if (<= ?a 0)
+?a ==> (max ?a 1) if (< 0 ?a)
+(max ?a 1) ==> ?a if (< 0 ?a)
+(max ?b ?a) ==> ?a if (<= ?b ?a)
+(min ?b ?a) ==> ?b if (<= ?b ?a)
+(max ?b ?a) ==> ?a if (&& (<= ?b ?a) 1)
+(min ?b ?a) ==> ?b if (&& 1 (<= ?b ?a))
+(min 1 (max ?a 0)) ==> (max 0 (min ?a 1))
+(max 0 (min ?a 1)) ==> (min 1 (max ?a 0))
+(min ?c (min ?b ?a)) ==> (min ?b (min ?c ?a))
+(min ?b (min ?c ?a)) ==> (min ?c (min ?b ?a))
+(max ?c (max ?b ?a)) ==> (max ?a (max ?b ?c))
+(max ?a (max ?b ?c)) ==> (max ?c (max ?b ?a))
+(max 1 (min ?a 0)) ==> 1
+(min 0 (max ?a 1)) ==> 0
+(min ?b ?a) ==> (min ?b (min ?b ?a))
+(min ?b (min ?b ?a)) ==> (min ?b ?a)
+0 ==> (min 0 1)
+(min 0 1) ==> 0
+(min ?b (max ?b ?a)) ==> ?b
+(max ?a (min ?b ?a)) ==> ?a"#;
+
+        for line in rules.lines() {
+            let rule = Rule::from_string(line).unwrap().0;
+            prior.add(rule);
+        }
+
+        let conditions = Workload::new(&["(<= V V)"]).plug("V", &Workload::new(&["a", "b", "c"]));
+
+        let predicate_map = build_pvec_to_patterns(conditions);
+
+        let candidates =
+            Ruleset::conditional_cvec_match(&egraph, &prior, &predicate_map, &implications);
+
+        assert!(candidates.contains(
+            &Rule::from_string("(min (max a b) c) ==> c if (<= c b)")
+                .unwrap()
+                .0
+        ));
     }
 
     #[test]

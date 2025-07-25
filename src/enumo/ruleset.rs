@@ -356,6 +356,27 @@ impl<L: SynthLanguage> Ruleset<L> {
         conditions: &PredicateMap<L>,
         implications: &ImplicationSet<L>,
     ) -> Self {
+        let first_expr = "(min c (max a b))";
+        let second_expr = "c";
+        let first_id = egraph.lookup_expr(&first_expr.parse().unwrap());
+        let second_id = egraph.lookup_expr(&second_expr.parse().unwrap());
+
+        match (first_id, second_id) {
+            (Some(id1), Some(id2)) => {
+                let (c1, e1) = Extractor::new(egraph, AstSize).find_best(id1);
+                let (c2, e2) = Extractor::new(egraph, AstSize).find_best(id2);
+                if e1.to_string() == e2.to_string() {
+                    panic!("UNSOUND!");
+                } else {
+                    println!("ITS OK");
+                }
+            }
+            _ => (),
+        };
+
+        for rule in prior {
+            println!("rule: {}", rule.0);
+        }
         let start_time = std::time::Instant::now();
 
         let by_cvec = Self::group_classes_by_cvec(egraph);
@@ -368,6 +389,13 @@ impl<L: SynthLanguage> Ruleset<L> {
             conditions.len()
         );
         let mut skipped_rules = 0;
+
+        for classes in by_cvec.values() {
+            for id in classes {
+                let (_, best_term) = extract.find_best(*id);
+                println!("Best term for id {}: {}", id, best_term);
+            }
+        }
 
         let mut predicate_to_egraph: IndexMap<String, EGraph<L, SynthAnalysis>> =
             IndexMap::default();
@@ -395,16 +423,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                         .count();
 
                     let pred_string = predicate.to_string();
-                    let mini_egraph = predicate_to_egraph
-                        .entry(pred_string.clone())
-                        .or_insert_with(|| {
-                            Self::construct_conditional_egraph(
-                                egraph,
-                                prior,
-                                &predicate,
-                                implications,
-                            )
-                        });
 
                     for id1 in by_cvec[cvec1].clone() {
                         for id2 in by_cvec[cvec2].clone() {
@@ -432,8 +450,8 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 println!("this is the bad one");
                             }
 
-                            let initial = egg_to_serialized_egraph(egraph);
-                            initial.to_json_file("dump.json").unwrap();
+                            let initial = egg_to_serialized_egraph(&mini_egraph);
+                            initial.to_json_file("initial.json").unwrap();
 
                             // 1. run the implication rules
                             // let runner: Runner<L, SynthAnalysis> =
@@ -463,19 +481,16 @@ impl<L: SynthLanguage> Ruleset<L> {
                             let potential_r = egraph.lookup_expr(&"c".parse().unwrap());
                             if let Some(l) = potential_l {
                                 if let Some(r) = potential_r {
-                                    if egraph.find(l) == egraph.find(id1)
-                                        && egraph.find(r) == egraph.find(id2)
-                                        || egraph.find(l) == egraph.find(id2)
-                                            && egraph.find(r) == egraph.find(id1)
+                                    if (egraph.find(l) == egraph.find(id1)
+                                        && egraph.find(r) == egraph.find(id2))
+                                        || (egraph.find(l) == egraph.find(id2)
+                                            && egraph.find(r) == egraph.find(id1))
                                     {
-                                        let proof = mini_egraph.explain_equivalence(
-                                            &"(min (max a b) c)".parse().unwrap(),
-                                            &"c".parse().unwrap(),
-                                        );
-                                        println!("proof of equivalence: {}", proof);
+                                        let dump = egg_to_serialized_egraph(&egraph);
+                                        dump.to_json_file("dump.json").unwrap();
+
+                                        println!("my condition: {}", predicate);
                                         println!("{}", e1);
-                                        // let max_a_b = println!("here's the node:");
-                                        // println!("{:?}", mini_egraph[l]);
                                         println!("implications i've chosen:");
                                         for i in implications.iter() {
                                             println!("{}", i.name());
@@ -485,10 +500,14 @@ impl<L: SynthLanguage> Ruleset<L> {
                                         for r in prior.iter() {
                                             println!("{}", r.name);
                                         }
+                                        println!("l: {}", l);
+                                        println!("r: {}", r);
                                         println!("e1: {}", e1);
                                         println!("e2: {}", e2);
                                         println!("result: {:?}", result);
-                                        panic!("hey.. i found it!");
+                                        if result.is_none() {
+                                            panic!("SHIT!");
+                                        }
                                     }
                                 }
                             }

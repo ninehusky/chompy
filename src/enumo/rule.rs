@@ -155,61 +155,63 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
         let first = egraph.lookup_expr(&first_expr.parse().unwrap());
         let second = egraph.lookup_expr(&second_expr.parse().unwrap());
 
-        match (first, second) {
-            (Some(first), Some(second)) => {
-                if !was_equal && egraph.find(first) == egraph.find(second) {
-                    egraph.rebuild();
-                    // what assumptions are true in the e-graph?
-                    let assumption_searcher: Pattern<L> =
-                        format!("({} ?c)", L::assumption_label()).parse().unwrap();
+        // match (first, second) {
+        //     (Some(first), Some(second)) => {
+        //         if !was_equal && egraph.find(first) == egraph.find(second) {
+        //             egraph.rebuild();
+        //             // what assumptions are true in the e-graph?
+        //             let assumption_searcher: Pattern<L> =
+        //                 format!("({} ?c)", L::assumption_label()).parse().unwrap();
 
-                    let mut eg = egraph.clone();
-                    let mut extract: Extractor<AstSize, L, SynthAnalysis> =
-                        Extractor::new(&eg, AstSize);
-                    let matched_term = extract.find_best(matched_id).1;
+        //             let mut eg = egraph.clone();
+        //             let mut extract: Extractor<AstSize, L, SynthAnalysis> =
+        //                 Extractor::new(&eg, AstSize);
+        //             let matched_term = extract.find_best(matched_id).1;
 
-                    println!("matched on {}", matched_term);
+        //             println!("matched on {}", matched_term);
 
-                    let matches = assumption_searcher.search_with_limit(&eg, 20);
+        //             let matches = assumption_searcher.search_with_limit(&eg, 20);
 
-                    for m in matches {
-                        let best = extract.find_best(m.eclass).1;
-                        println!("assumption: {best}");
-                    }
+        //             for m in matches {
+        //                 let best = extract.find_best(m.eclass).1;
+        //                 println!("assumption: {best}");
+        //             }
 
-                    let first_thing = extract.find_best(id).1;
-                    let second_thing = extract.find_best(matched_id).1;
+        //             let first_thing = extract.find_best(id).1;
+        //             let second_thing = extract.find_best(matched_id).1;
 
-                    for v in &["a", "b", "c"] {
-                        let var = Var::from_str(format!("?{v}").as_str()).unwrap();
-                        let arg_id = subst.get(var).unwrap();
+        //             for v in &["a", "b", "c"] {
+        //                 let var = Var::from_str(format!("?{v}").as_str()).unwrap();
+        //                 if let Some(arg_id) = subst.get(var) {
+        //                     let arg = extract.find_best(*arg_id).1;
+        //                     println!("{v}: {arg}");
+        //                 }
+        //             }
 
-                        let arg = extract.find_best(*arg_id).1;
-                        println!("{v}: {arg}");
-                    }
+        //             println!("my pattern: {}", self.rhs);
+        //             println!("my size: {}", egraph.total_number_of_nodes());
 
-                    println!("my pattern: {}", self.rhs);
-                    println!("my size: {}", egraph.total_number_of_nodes());
+        //             println!("the rules i've gotten so far:");
 
-                    // let serialized = egg_to_serialized_egraph(egraph);
-                    // serialized
-                    //     .to_json_file("dump.json")
-                    //     .expect("Failed to write egraph to file");
-                    println!("I unioned {} and {}.", first_thing, second_thing);
-                    println!("the ast for the _ast: {_ast:?}");
-                    println!("the subst: {subst:?}");
+        //             // let serialized = egg_to_serialized_egraph(egraph);
+        //             // serialized
+        //             //     .to_json_file("dump.json")
+        //             //     .expect("Failed to write egraph to file");
+        //             println!("I unioned {} and {}.", first_thing, second_thing);
+        //             println!("the ast for the _ast: {_ast:?}");
+        //             println!("the subst: {subst:?}");
 
-                    println!("I applied {sym}.");
-                    let proof = egraph.explain_equivalence(
-                        &first_expr.parse().unwrap(),
-                        &second_expr.parse().unwrap(),
-                    );
-                    println!("the proof: {proof}");
-                    panic!("found it.");
-                }
-            }
-            _ => {}
-        }
+        //             println!("I applied {sym}.");
+        //             // let proof = egraph.explain_equivalence(
+        //             //     &first_expr.parse().unwrap(),
+        //             //     &second_expr.parse().unwrap(),
+        //             // );
+        //             // println!("the proof: {proof}");
+        //             panic!("found it.");
+        //         }
+        //     }
+        //     _ => {}
+        // }
         vec![id]
     }
 }
