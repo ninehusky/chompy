@@ -45,6 +45,7 @@ fn run_workload_internal<L: SynthLanguage>(
     // 1. Create an e-graph from the workload, and compress
     //    it using the prior rules.
     let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
+
     let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
 
     // 2. Discover total candidates using cvec matching.
@@ -68,7 +69,6 @@ fn run_workload_internal<L: SynthLanguage>(
     // 5. Find conditional rules.
     // To help Chompy scale to higher condition sizes, we'll need to limit the size of the conditions we consider.
     // As a heuristic, we'll go in ascending order of condition sizes.
-
     if cond_workload == Workload::empty() {
         // If there are no conditions, we can just return the chosen rules.
         return chosen;
@@ -266,7 +266,13 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             base_lang(3)
         };
         let mut wkld = iter_metric(base_lang, "EXPR", metric, n)
-            .filter(Filter::Contains("VAR".parse().unwrap()))
+            // Filter out any term of size > 1 which does not
+            // have a "VAR" in it.
+            // !(size >= 2 && contains "VAR")
+            .filter(Filter::Invert(Box::new(Filter::And(vec![
+                Filter::Invert(Box::new(Filter::MetricLt(Metric::Atoms, 2))),
+                Filter::Invert(Box::new(Filter::Contains("VAR".parse().unwrap()))),
+            ]))))
             .plug("VAR", &Workload::new(lang.vars))
             .plug("VAL", &Workload::new(lang.vals));
         // let ops = vec![lang.uops, lang.bops, lang.tops];

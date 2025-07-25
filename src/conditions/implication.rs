@@ -185,11 +185,11 @@ where
             lhs
         );
 
-        // TODO: if this is expensive, we might be able to comment this out?
-        if lookup_pattern(&rhs, egraph, subst) {
-            // we already have the condition in the egraph, so no need to add it.
-            return vec![];
-        }
+        // // TODO: if this is expensive, we might be able to comment this out?
+        // if lookup_pattern(&rhs, egraph, subst) {
+        //     // we already have the condition in the egraph, so no need to add it.
+        //     return vec![];
+        // }
 
         let new_id = apply_pat(rhs.ast.as_ref().iter().as_slice(), egraph, subst);
 
