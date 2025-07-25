@@ -1088,13 +1088,24 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(min_max_add.clone());
 
+    let min_max_sub = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+        all_rules.clone(),
+        base_implications.clone(),
+        wkld.clone(),
+    );
+
+    all_rules.extend(min_max_sub.clone());
+
     for op in &["min", "max"] {
         let int_workload = Workload::new(&["0", "1", "(OP V V)"])
             .plug("OP", &Workload::new(&[op]))
             .plug("V", &Workload::new(&["a", "b", "c"]));
 
         let eq_workload = Workload::new(&["0", "1", "(OP V V)"])
-            .plug("OP", &Workload::new(&["=="]))
+            .plug("OP", &Workload::new(&["==", "!=", "<=", "<"]))
             .plug("V", &int_workload)
             .filter(Filter::Canon(vec![
                 "a".to_string(),
@@ -1125,16 +1136,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(min_max_mul);
-
-    // let min_max_div = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     7,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
-    //     all_rules.clone(),
-    //     wkld.clone(),
-    // );
-
-    // all_rules.extend(min_max_div);
 
     let end_time = std::time::Instant::now();
 
