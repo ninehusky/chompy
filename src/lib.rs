@@ -117,6 +117,15 @@ impl Limits {
             match_: 1000,
         }
     }
+
+    // Andrew's custom creation.
+    pub fn super_deriving() -> Self {
+        Self {
+            iter: 6,
+            node: 500_000,
+            match_: 2000,
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
