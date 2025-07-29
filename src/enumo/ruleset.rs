@@ -723,7 +723,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     invalid.add(rule.clone());
                 }
 
-                // If reverse direction is also in candidates, add it at the same time
+                // If reverse direction is also in candidates, remove it.
                 let reverse = if rule.cond.is_some() {
                     Rule::new_cond(&rule.rhs, &rule.lhs, &rule.cond.unwrap(), rule.true_count)
                 } else {
@@ -731,10 +731,14 @@ impl<L: SynthLanguage> Ruleset<L> {
                 };
 
                 if let Some(reverse) = reverse {
-                    if self.contains(&reverse) && reverse.is_valid() {
-                        selected.add(reverse);
-                    } else {
-                        invalid.add(reverse);
+                    if self.contains(&reverse) {
+                        if reverse.is_valid() {
+                            let mut dummy: Ruleset<L> = Ruleset::default();
+                            dummy.add(reverse.clone());
+                            selected.remove_all(dummy);
+                        } else {
+                            invalid.add(reverse);
+                        }
                     }
                 }
             } else {
@@ -1449,5 +1453,18 @@ mod ruleset_tests {
         );
 
         assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn my_ruleset_print_test() {
+        let mut rules: Ruleset<Pred> = Default::default();
+        rules.add(Rule::from_string("(min ?a ?b) <=> (min ?b ?a)").unwrap().0);
+        rules.add(
+            Rule::from_string("(min ?a ?b) <=> (min ?b ?a)")
+                .unwrap()
+                .1
+                .unwrap(),
+        );
+        rules.pretty_print();
     }
 }
