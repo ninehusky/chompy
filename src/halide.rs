@@ -5,6 +5,7 @@ use crate::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
     },
+    enumo::Rule,
     *,
 };
 
@@ -1044,13 +1045,82 @@ pub fn og_recipe() -> Ruleset<Pred> {
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
         5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", ">", "+", "-"]]),
+        Lang::new(
+            &["0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["<", ">", "-", "<=", ">="]],
+        ),
         Ruleset::default(),
         base_implications.clone(),
         wkld.clone(),
     );
 
-    all_rules.extend(simp_comps.clone());
+    all_rules.extend(simp_comps);
+
+    let min_max = recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(
+            &["0", "1"],
+            &["a", "b", "c"],
+            &[&[], &["min", "max", "+", "-", "=="]],
+        ),
+        Ruleset::default(),
+        base_implications.clone(),
+        wkld.clone(),
+    );
+
+    all_rules.extend(min_max.clone());
+
+    let mut expected_to_derive: Ruleset<Pred> = Default::default();
+
+    expected_to_derive.add(
+        Rule::from_string("(< (- ?a ?y) ?a) ==> 1 if (> ?y 0)")
+            .unwrap()
+            .0,
+    );
+    expected_to_derive.add(
+        Rule::from_string("(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)")
+            .unwrap()
+            .0,
+    );
+    expected_to_derive.add(
+        Rule::from_string("(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)")
+            .unwrap()
+            .0,
+    );
+    expected_to_derive.add(
+        Rule::from_string("(== (max ?x ?c) 0) ==> 0 if (> ?c 0)")
+            .unwrap()
+            .0,
+    );
+    // expected_to_derive.add(
+    //     Rule::from_string("( && ( <= ?c0 ?x ) ( <= ?x ?c1 ) ) ==> 0 if (< ?c1 ?c0)")
+    //         .unwrap()
+    //         .0,
+    // );
+    // expected_to_derive.add(
+    //     Rule::from_string(
+    //         "(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)",
+    //     )
+    //     .unwrap()
+    //     .0,
+    // );
+    expected_to_derive.add(
+        Rule::from_string("(min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0)")
+            .unwrap()
+            .0,
+    );
+    expected_to_derive.add(
+        Rule::from_string("(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)")
+            .unwrap()
+            .0,
+    );
+    expected_to_derive.add(
+        Rule::from_string("(max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)")
+            .unwrap()
+            .0,
+    );
 
     let arith_basic = recursive_rules_cond(
         Metric::Atoms,
@@ -1087,6 +1157,33 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(min_max_add.clone());
+
+    for comp_bundles in &[vec!["<="], vec!["<"], vec!["==", "!="]] {
+        let int_workload = Workload::new(&["0", "1", "(OP V V)"])
+            .plug("OP", &Workload::new(comp_bundles))
+            .plug("V", &Workload::new(&["a", "b", "c"]));
+
+        let eq_workload = Workload::new(&["0", "1", "(OP V V)"])
+            .plug("OP", &Workload::new(&["&&"]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+            ]));
+
+        let and_comp = run_workload(
+            eq_workload,
+            Some(wkld.clone()),
+            min_max.clone(),
+            base_implications.clone(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        all_rules.extend(and_comp);
+    }
 
     for op in &["min", "max"] {
         let int_workload = Workload::new(&["0", "1", "(OP V V)"])
@@ -1129,8 +1226,9 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // let min_max_div = recursive_rules_cond(
     //     Metric::Atoms,
     //     7,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+    //     Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
     //     all_rules.clone(),
+    //     base_implications.clone(),
     //     wkld.clone(),
     // );
 

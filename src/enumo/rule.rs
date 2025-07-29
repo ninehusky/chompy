@@ -58,15 +58,26 @@ impl<L: SynthLanguage> Rule<L> {
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
-                let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
+                let cond: Result<Assumption<L>, _> = Assumption::new(r.to_string());
+                if cond.is_err() {
+                    return Err(format!("Failed to parse condition in {s}"));
+                }
+                let cond = cond.unwrap();
                 (l, Some(cond))
             } else {
                 (s, None)
             }
         };
         if let Some((l, r)) = s.split_once("=>") {
-            let l_pat: Pattern<L> = l.parse().unwrap();
-            let r_pat: Pattern<L> = r.parse().unwrap();
+            let l_pat: Result<Pattern<L>, _> = l.parse();
+            let r_pat: Result<Pattern<L>, _> = r.parse();
+
+            if l_pat.is_err() || r_pat.is_err() {
+                return Err(format!("Failed to parse {s}"));
+            }
+
+            let l_pat: Pattern<L> = l_pat.unwrap();
+            let r_pat: Pattern<L> = r_pat.unwrap();
 
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
@@ -86,10 +97,10 @@ impl<L: SynthLanguage> Rule<L> {
 
             if s.contains("<=>") {
                 let backwards_name = make_name(&r_pat, &l_pat, cond.clone());
-                assert!(
-                    cond.is_none(),
-                    "Conditional bidirectional rules not supported."
-                );
+                // assert!(
+                //     cond.is_none(),
+                //     "Conditional bidirectional rules not supported."
+                // );
                 let backwards = Self {
                     name: backwards_name.clone().into(),
                     lhs: r_pat.clone(),
@@ -384,9 +395,10 @@ fn apply_pat<L: Language, A: Analysis<L>>(
 mod test {
     use egg::{EGraph, Runner};
 
-    use crate::enumo::{Rule, Ruleset};
+    use crate::enumo::{Rule, Ruleset, Scheduler};
 
     use crate::language::SynthAnalysis;
+    use crate::Limits;
 
     use super::halide::Pred;
     use super::ImplicationSwitch;
@@ -445,11 +457,7 @@ mod test {
 
         egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
 
-        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-            .with_egraph(egraph)
-            .run(&[rule.rewrite]);
-
-        let result = runner.egraph;
+        let result = Scheduler::Saturating(Limits::deriving()).run(&egraph, &ruleset);
 
         assert_eq!(
             result.lookup_expr(&"1".parse().unwrap()),
@@ -469,11 +477,7 @@ mod test {
 
         egraph.add_expr(&"(assume (== x 0))".parse().unwrap());
 
-        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
-            .with_egraph(egraph)
-            .run(&[rule.rewrite]);
-
-        let result = runner.egraph;
+        let result = Scheduler::Saturating(Limits::deriving()).run(&egraph, &ruleset);
 
         assert_ne!(
             result.lookup_expr(&"1".parse().unwrap()),

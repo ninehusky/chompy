@@ -12,6 +12,272 @@ struct DerivabilityResult<L: SynthLanguage> {
     cannot: Ruleset<L>,
 }
 
+const CHOMPY_RULES: &str = r#"?a ==> 0 if (== ?a 0)
+(>= ?a 1) <=> (< 0 ?a)
+(> ?a ?a) ==> 0
+(- ?a ?a) ==> 0
+(< ?a ?a) ==> 0
+(<= ?a ?a) ==> 1
+(>= ?a ?a) ==> 1
+(- ?a 0) <=> ?a
+(> ?a ?b) <=> (< ?b ?a)
+(<= ?a ?b) <=> (>= ?b ?a)
+(>= 0 ?a) <=> (> 1 ?a)
+(<= ?a 1) ==> 1 if (<= ?a 0)
+(< 1 ?a) ==> 0 if (<= ?a 0)
+(< ?b ?a) <=> (<= ?b ?a) if  (!= ?a ?b)
+(< ?b ?a) <=> (<= ?b ?a) if  (!= ?b ?a)
+(<= ?b ?a) ==> 0 if (< ?a ?b)
+(< ?b ?a) ==> 1 if (< ?b ?a)
+(<= ?b ?a) ==> 1 if (<= ?b ?a)
+(< ?b ?a) ==> 0 if (<= ?a ?b)
+(< ?b ?a) ==> 0 if (&& (<= ?a ?b) 1)
+(<= ?b ?a) ==> 1 if (< ?b ?a)
+(<= ?b ?a) ==> 1 if (&& 1 (<= ?b ?a))
+(< (- 0 ?b) ?a) <=> (<= (- 1 ?a) ?b)
+(<= (- ?a ?b) ?a) ==> (<= (- 0 ?b) ?b)
+(< ?b (<= 0 ?a)) <=> (< ?b (<= ?b ?a))
+(< (< ?b 1) ?a) <=> (< (< ?b ?a) ?a)
+(< (- ?a ?b) ?a) ==> (<= (- 1 ?b) ?b)
+(< (- ?a ?b) ?a) ==> (< (- 1 ?b) ?b)
+(< ?a (<= ?b ?a)) <=> (< ?a (< ?b 1))
+(< ?a (< ?b ?a)) <=> (< ?a (< ?b 0))
+(<= ?b (< ?a 1)) <=> (<= ?b (< ?a ?b))
+(<= (<= 1 ?b) ?a) <=> (<= (< ?a ?b) ?a)
+(< (<= ?b ?a) ?a) <=> (< (<= ?b 1) ?a)
+(< (<= 1 ?b) ?a) <=> (< (<= ?a ?b) ?a)
+(- (- ?c ?b) ?a) <=> (- (- ?c ?a) ?b)
+(< (- ?c ?b) ?a) <=> (< (- ?c ?a) ?b)
+(<= ?a 1) <=> (<= ?a (<= 0 ?a))
+(<= 0 ?a) <=> (<= (< 1 ?a) ?a)
+(- ?b (- ?b ?a)) ==> ?a
+(<= 0 1) <=> 1
+(< 1 0) <=> 0
+(< (- ?a 1) ?a) ==> 1
+(<= (- ?a 1) ?a) ==> 1
+(<= (< ?b ?a) 1) ==> 1
+(<= (<= ?b ?a) 1) ==> 1
+(<= 0 (< ?b ?a)) ==> 1
+(<= 0 (<= ?b ?a)) ==> 1
+(< ?a (- ?a 1)) ==> 0
+(<= ?a (- ?a 1)) ==> 0
+(< (<= ?b ?a) 0) ==> 0
+(< 1 (< ?b ?a)) ==> 0
+(< 1 (<= ?b ?a)) ==> 0
+(< (< ?b ?a) 0) ==> 0
+(- 0 (- ?a ?b)) <=> (- ?b ?a)
+(< (- ?b ?a) ?b) ==> (< 0 ?a)
+(- 1 (< ?a ?b)) <=> (<= ?b ?a)
+(<= 0 (- ?a ?b)) <=> (<= ?b ?a)
+(<= ?b (- ?a 1)) <=> (< ?b ?a)
+(< 0 (< ?b ?a)) <=> (< ?b ?a)
+(< ?b (- ?b ?a)) ==> (< ?a 0)
+(< (<= 1 ?a) ?a) <=> (< 1 ?a)
+(<= (<= 1 ?a) ?a) <=> (<= 0 ?a)
+(<= (<= ?a 1) ?a) <=> (<= 1 ?a)
+(< (- 0 ?a) ?a) <=> (<= 1 ?a)
+(<= (<= 0 ?a) ?a) <=> (<= 1 ?a)
+(< (< ?a 0) ?a) <=> (<= 1 ?a)
+(<= (< ?a 1) ?a) <=> (<= 1 ?a)
+(< (< ?a 1) ?a) <=> (<= 1 ?a)
+(<= (< ?a 0) ?a) <=> (<= 0 ?a)
+(< ?b (<= ?b ?a)) ==> (< ?b 1) if (!= ?b 0)
+(< ?b ?a) ==> 0 if (< ?a ?b)
+(<= ?b ?a) ==> 1 if (&& (<= ?b ?a) 1)
+(+ ?b ?a) <=> (+ ?a ?b)
+(max ?a ?a) <=> ?a
+(min ?a ?a) <=> ?a
+(== ?a ?a) ==> 1
+(+ ?a 0) <=> ?a
+(+ 0 ?a) <=> ?a
+(min ?a ?b) <=> (min ?b ?a)
+(== ?a ?b) <=> (== ?b ?a)
+(max ?a ?b) <=> (max ?b ?a)
+(== ?a 1) ==> 0 if (<= ?a 0)
+(max ?a 1) ==> 1 if (<= ?a 0)
+(min ?a 1) ==> 1 if (< 0 ?a)
+?a <=> (min ?a 1) if  (<= ?a 0)
+?a <=> (max ?a 1) if  (< 0 ?a)
+(== ?b ?a) ==> 0 if (!= ?b ?a)
+(min ?a ?b) ==> ?a if (<= ?a ?b)
+(max ?b ?a) ==> ?a if (<= ?b ?a)
+(max ?b ?a) ==> ?a if (&& (<= ?b ?a) 1)
+(min ?a ?b) ==> ?a if (&& 1 (<= ?a ?b))
+(- 1 (max ?a 0)) <=> (min 1 (- 1 ?a))
+(- 1 (min ?a 0)) <=> (max 1 (- 1 ?a))
+(min ?a (- ?a 1)) <=> (- 0 (- 1 ?a))
+(== ?a (max ?a 1)) <=> (max 0 (min ?a 1))
+(== ?a (max ?a 1)) <=> (min 1 (max ?a 0))
+(min 0 (- 0 ?a)) <=> (- (min ?a 0) ?a)
+(== ?a (+ ?b ?a)) ==> (min 1 (== ?b 0))
+(max 1 (== ?b ?a)) ==> (- ?b (- ?b 1))
+(== 0 (== ?b ?a)) <=> (- 1 (== ?b ?a))
+(+ ?b (min ?a 0)) <=> (min ?b (+ ?a ?b))
+(max 0 (- ?b ?a)) <=> (- ?b (min ?a ?b))
+(max ?a (+ ?b ?a)) <=> (+ ?a (max ?b 0))
+(== ?a 0) <=> (== 0 (min ?a 1))
+(== ?a 1) <=> (== 1 (max ?a 0))
+(max ?c (max ?b ?a)) <=> (max ?b (max ?c ?a))
+(min ?c (min ?b ?a)) <=> (min ?b (min ?c ?a))
+(- (max ?a ?b) ?a) <=> (- ?b (min ?a ?b))
+(+ ?c (- ?b ?a)) <=> (- (+ ?b ?c) ?a)
+(max ?b (min ?b ?a)) ==> ?b
+(min ?b (max ?b ?a)) ==> ?b
+(- (+ ?b ?a) ?a) ==> ?b
+(+ ?a (- ?b ?a)) ==> ?b
+(== 0 1) <=> 0
+(min 0 1) <=> 0
+(max ?a (- ?a 1)) <=> ?a
+(== ?a (- 1 ?a)) ==> 0
+(== ?a (- ?a 1)) ==> 0
+(== ?a (+ ?a 1)) ==> 0
+(== ?a (== ?a 0)) ==> 0
+(min 0 (== ?b ?a)) ==> 0
+(== 1 (+ ?a ?a)) ==> 0
+(max 1 (== ?b ?a)) ==> 1
+(- ?a (- 0 ?b)) <=> (+ ?b ?a)
+(== 0 (- ?a ?b)) <=> (== ?b ?a)
+(== 1 (== ?b ?a)) <=> (== ?b ?a)
+(== 0 (max ?a 1)) ==> 0
+(== 1 (min ?a 0)) ==> 0
+(min 0 (max ?a 1)) ==> 0
+(max 1 (min ?a 0)) ==> 1
+(== ?b (- ?b ?a)) ==> (== ?a 0)
+(- ?a (min ?a 0)) <=> (max ?a 0)
+(max ?a (== ?a 1)) <=> (max ?a 0)
+(min ?a (== ?a 0)) <=> (min ?a 0)
+(- ?a (max ?a 0)) <=> (min ?a 0)
+(== 0 (+ ?a ?a)) <=> (== ?a 0)
+(min 1 (max ?b ?a)) <=> (max ?b (min ?a 1)) if  (<= ?b 0)
+(max 1 (min ?b ?a)) <=> (min ?b (max ?a 1)) if  (< 0 ?b)
+(== ?a (min ?a 1)) <=> (== ?a (== ?a 1)) if  (<= 0 ?a)
+(== ?a (max ?a 0)) <=> (== ?a (max ?a 1)) if  (!= ?a 0)
+(== ?b (== ?a ?b)) <=> (== ?b (== 0 ?a)) if  (<= ?b 0)
+(max ?b (== 0 ?a)) <=> (max ?b (== ?a ?b)) if  (<= 0 ?b)
+(== ?b (== ?b ?a)) <=> (== ?b (== ?a 1)) if  (!= ?b 0)
+(min ?b (- ?a 1)) <=> (- ?b (== ?b ?a)) if  (<= ?b ?a)
+(max ?c (min ?b ?a)) ==> (max ?c (min ?a 0)) if (<= ?a ?c)
+(max ?b (+ ?a 1)) <=> (+ ?b (== ?a ?b)) if  (<= ?a ?b)
+(== ?a 1) <=> (== ?a (== ?a 1)) if  (!= ?a 0)
+(== ?a (== ?b ?a)) ==> (== 0 ?a) if (< ?b 0)
+(== ?a (== ?b 0)) ==> (== ?a 0) if (< ?a ?b)
+(== ?b ?a) <=> (== ?a (min ?b 1)) if  (<= ?a 0)
+(min ?a (== ?b 1)) ==> (min ?a 0) if (< ?a ?b)
+(min ?b (== ?b ?a)) ==> (min ?b 0) if (<= ?a 0)
+(min ?b (max ?c ?a)) <=> (max ?c (min ?b ?a)) if  (<= ?c ?b)
+(max ?a (== ?b ?a)) ==> (max ?a 0) if (< 0 ?b)
+(== ?a (== ?c ?b)) ==> (== ?a 0) if (!= ?c ?b)
+(== ?c (min ?b ?a)) ==> (== ?c ?a) if (< ?c ?b)
+(== ?c (max ?b ?a)) ==> (== ?a ?c) if (< ?b ?c)
+(== ?c (min ?b ?a)) ==> 0 if (< ?b ?c)
+(== ?c (max ?b ?a)) ==> 0 if (< ?c ?b)
+(max ?b (+ ?a 1)) ==> ?b if (< ?a ?b)
+(max ?a (== ?c ?b)) ==> ?a if (< 0 ?a)
+(min ?a (max ?c ?b)) ==> ?a if (<= ?a ?c)
+(min ?b ?a) ==> ?b if (<= ?b ?a)
+(min ?b ?a) ==> ?b if (&& 1 (<= ?b ?a))
+(* ?b ?a) <=> (* ?a ?b)
+(- (- ?a)) <=> ?a
+(/ ?a 1) <=> ?a
+(* ?a 1) <=> ?a
+(* 1 ?a) <=> ?a
+(- 0 ?a) <=> (- ?a)
+(* 0 ?a) ==> 0
+(/ ?a 0) ==> 0
+(/ 0 ?a) ==> 0
+(* ?a 0) ==> 0
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(- ?b ?a) ==> 0 if (== ?a ?b)
+(/ ?b (- ?a)) <=> (- (/ ?b ?a))
+(/ (- ?b) ?a) <=> (- (/ ?b ?a))
+(- (/ ?a ?a)) <=> (/ (- ?a) ?a)
+(/ ?a (- ?a)) <=> (/ (- ?a) ?a)
+(- (* ?b ?a)) <=> (* ?a (- ?b))
+(- ?a) <=> (* ?a (- 1))
+(- ?a) <=> (/ ?a (- 1))
+(- ?b ?a) <=> (+ ?b (- ?a))
+(- ?b ?a) <=> (- (- ?a ?b))
+(+ ?a (- ?a)) ==> 0
+(/ ?a (- ?a)) ==> (- 1) if (!= ?a 0)
+(/ ?a ?a) ==> 1 if (< ?a 0)
+(/ ?a ?a) ==> 1 if (< 0 ?a)
+(- ?b ?a) ==> 0 if (== ?b ?a)
+(* ?b (/ 1 ?a)) <=> (/ ?b (/ 1 ?a))
+(/ 1 (* ?a ?a)) <=> (/ ?a (/ 1 ?a))
+(* ?a (/ 1 ?a)) <=> (/ ?a (/ 1 ?a))
+(+ ?b (* ?b ?a)) <=> (* ?b (+ ?a 1))
+(- (* ?b ?a) ?a) <=> (* ?a (- ?b 1))
+(/ 1 ?a) <=> (/ 1 (/ 1 ?a))
+(/ ?c (* ?b ?a)) <=> (/ (/ ?c ?a) ?b)
+(* ?c (* ?b ?a)) <=> (* ?b (* ?c ?a))
+(- (- ?c ?b) ?a) <=> (- ?c (+ ?a ?b))
+(/ (* ?a ?b) ?a) <=> (* ?b (/ ?a ?a))
+(/ (* ?a ?b) ?a) <=> (/ ?b (/ ?a ?a))
+(/ ?b (* ?b ?a)) <=> (/ (/ ?b ?a) ?b)
+(+ ?c (+ ?b ?a)) <=> (+ ?a (+ ?c ?b))
+(/ ?a (* ?b ?a)) <=> (/ (/ ?a ?a) ?b)
+(+ ?b (+ ?a ?a)) <=> (+ ?a (+ ?a ?b))
+(* ?b (* ?a ?a)) <=> (* ?a (* ?a ?b))
+(+ ?a ?a) <=> (* ?a (+ 1 1))
+(/ 1 ?a) <=> (/ ?a (* ?a ?a))
+(/ 1 ?a) <=> (/ (/ ?a ?a) ?a)
+(/ ?a ?a) <=> (/ 1 (/ ?a ?a))
+(/ 1 (+ ?a ?a)) ==> 0
+(/ ?a (+ ?a ?a)) ==> 0
+?a <=> (/ ?a (/ ?a ?a))
+?a <=> (/ (* ?a ?a) ?a)
+?a <=> (* ?a (/ ?a ?a))
+(/ (- 1 ?a) ?a) <=> (- (/ 1 ?a) 1) if  (< ?a 0)
+(+ 1 (/ 1 ?a)) <=> (/ (+ ?a 1) ?a) if  (< 0 ?a)
+(/ ?b (* ?b ?a)) ==> (/ 1 ?a) if (!= ?b 0)
+(/ ?a (- ?a 1)) ==> 0 if (<= ?a 0)
+(/ (+ ?a 1) ?a) ==> 0 if (<= ?a 0)
+(/ ?a (+ ?a 1)) ==> 0 if (<= 0 ?a)
+(/ (- 1 ?a) ?a) ==> 0 if (<= 0 ?a)
+(- (/ ?a ?a) 1) <=> (/ 1 (- ?a 1)) if  (&& 1 (<= ?a 0))
+(/ ?a (- 1 ?a)) ==> 0 if (&& 1 (<= ?a 0))
+(/ (- 1 ?a) ?a) ==> 0 if (&& 1 (<= 0 ?a))
+(max ?a (min ?c ?b)) ==> ?a if (<= ?c ?a)
+(max ?a ?b) ==> ?a if (<= ?b ?a)
+(min ?c (max ?b ?a)) <=> (max (min ?a ?c) (min ?b ?c))
+(max ?b (min ?a ?c)) <=> (min (max ?b ?c) (max ?b ?a))
+(max ?b (min ?a ?c)) <=> (max ?b (min ?c (max ?b ?a)))
+(== (min ?a ?c) (min ?b ?a)) ==> (== ?a (min ?a ?c)) if (< ?c ?b)
+(min ?a ?b) ==> ?a if (&& (<= ?a ?b) 1)
+(max ?b ?a) ==> ?a if (< ?b ?a)
+?a <=> (min ?a (* ?a ?a))
+(min ?b (* ?a ?a)) ==> ?b if (<= ?b 0)
+(min ?b (* ?a (max ?b ?a))) <=> (min ?b (* ?b (min ?b ?a)))
+(* ?b ?a) <=> (* (min ?b ?a) (max ?b ?a))
+(min ?c (* ?b (min ?b ?a))) <=> (min ?c (* ?a (max ?a ?b))) if  (<= ?c 0)
+(min ?a (* ?a (min ?b ?a))) <=> (min ?a (* ?a (* ?b ?a))) if  (<= 0 ?b)
+(min ?b (max ?a (* ?b ?a))) <=> (min ?b (* ?b (* ?b ?a))) if  (<= 0 ?a)
+(* (max ?c ?a) (min ?b ?a)) <=> (* ?a (max ?c (min ?b ?a))) if  (< ?c ?b)
+(min ?a (* ?b ?a)) <=> (min ?a (* ?b (max ?b ?a))) if  (<= ?b 0)
+(min ?b (* ?b ?a)) <=> (min ?b (* ?a (min ?b ?a))) if  (<= ?b 0)
+(* ?a (max ?c ?b)) <=> (min (* ?a ?c) (* ?b ?a)) if  (<= ?a 0)
+(* ?c (min ?b ?a)) <=> (max (* ?c ?b) (* ?c ?a)) if  (<= ?c 0)
+(* ?a (min ?a ?b)) <=> (max (* ?a ?a) (* ?b ?a)) if  (<= ?a 0)
+(min ?a (* ?b ?b)) <=> (min ?a (* ?b (min ?b ?a))) if  (<= ?b 0)
+(min ?a (* ?b ?a)) <=> (min ?a (* ?a (max ?b ?a))) if  (< 0 ?b)
+(* ?a (min ?b ?c)) <=> (min (* ?a ?c) (* ?b ?a)) if  (<= 0 ?a)
+(* ?a (max ?b ?c)) <=> (max (* ?a ?c) (* ?b ?a)) if  (<= 0 ?a)
+(* ?a (max ?a ?b)) <=> (max (* ?b ?a) (* ?a ?a)) if  (<= 0 ?a)
+(min ?b (* ?a ?a)) <=> (min ?b (* ?a (min ?b ?a))) if  (<= 0 ?b)
+(* ?a (min ?a ?b)) <=> (min (* ?b ?a) (* ?a ?a)) if  (<= 0 ?a)
+(max ?a (* ?a (* ?b ?a))) ==> ?a if (< ?b 0)
+?a <=> (max ?a (* ?a (* ?a ?a))) if  (<= ?a 0)
+(min ?a (* ?a (max ?b ?a))) ==> ?a if (<= ?b 0)
+(min ?a (* ?a (min ?b ?a))) ==> ?a if (<= ?a 0)
+(min ?b (max ?a (* ?b ?a))) ==> ?b if (<= ?b 0)
+(min ?a (max ?b (* ?b ?a))) ==> ?a if (< 0 ?b)
+(min ?a (* ?a (* ?b ?a))) ==> ?a if (< 0 ?b)
+(min ?a (* ?b (max ?b ?a))) ==> ?a if (< 0 ?b)
+(min ?a (* ?a (max ?a ?b))) ==> ?a if (<= 0 ?a)
+(min ?b ?a) ==> ?a if (<= ?a ?b)
+(* (min ?c ?a) (max ?b ?a)) <=> (* ?a (min ?c (max ?b ?a))) if  (&& (<= ?b ?c) 1)
+?a ==> 0 if (== ?a 0)"#;
+
 const CAVIAR_RULES: &str = r#"
 (== ?x ?y) ==> (== ?y ?x)
 (== ?x ?y) ==> (== (- ?x ?y) 0)
@@ -146,16 +412,6 @@ const CAVIAR_RULES: &str = r#"
 ( % ( + ( * ?x ?c0 ) ?y ) ?c1 ) ==> ( % ?y ?c1 ) if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
 (% (* ?c0 ?x) ?c1) ==> 0 if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
 "#;
-
-fn override_total_rules<L: SynthLanguage>(
-    keep_total: &Ruleset<L>,
-    keep_cond: &Ruleset<L>,
-) -> Ruleset<L> {
-    let mut result = Ruleset::default();
-    result.extend(keep_total.partition(|r| r.cond.is_none()).0);
-    result.extend(keep_cond.partition(|r| r.cond.is_some()).0);
-    result
-}
 
 fn run_derivability_tests<L: SynthLanguage>(
     base: &Ruleset<L>,
@@ -311,8 +567,6 @@ pub mod halide_derive_tests {
         base_implications.add(and_implies_left);
         base_implications.add(and_implies_right);
 
-        let mut all_rules: Ruleset<Pred> = Ruleset::default();
-
         let simp_comps = recursive_rules_cond(
             Metric::Atoms,
             5,
@@ -334,7 +588,7 @@ pub mod halide_derive_tests {
             Lang::new(
                 &["0", "1"],
                 &["a", "b", "c"],
-                &[&[], &["min", "max", "+", "-"]],
+                &[&[], &["min", "max", "+", "-", "=="]],
             ),
             Ruleset::default(),
             base_implications.clone(),
@@ -365,11 +619,11 @@ pub mod halide_derive_tests {
                 .unwrap()
                 .0,
         );
-        // expected_to_derive.add(
-        //     Rule::from_string("(== (max ?x ?c) 0) ==> 0 if (> ?c 0)")
-        //         .unwrap()
-        //         .0,
-        // );
+        expected_to_derive.add(
+            Rule::from_string("(== (max ?x ?c) 0) ==> 0 if (> ?c 0)")
+                .unwrap()
+                .0,
+        );
         // expected_to_derive.add(
         //     Rule::from_string("( && ( <= ?c0 ?x ) ( <= ?x ?c1 ) ) ==> 0 if (< ?c1 ?c0)")
         //         .unwrap()
@@ -409,7 +663,85 @@ pub mod halide_derive_tests {
         }
     }
 
-    // #[test]
+    #[test]
+    fn chompy_vs_halide() {
+        if std::env::var("SKIP_RECIPES").is_ok() {
+            return;
+        }
+        let mut chompy_rules: Ruleset<Pred> = Ruleset::default();
+        for r in CHOMPY_RULES.lines() {
+            let rule = Rule::from_string(r).unwrap().0;
+            chompy_rules.add(rule);
+        }
+        let halide_rules_str = include_str!("../halide_compiler_rules.rules");
+        let mut halide_rules: Ruleset<Pred> = Ruleset::default();
+
+        for r in halide_rules_str.lines() {
+            let rule = Rule::from_string(r);
+            if let Ok((r, _)) = rule {
+                if !r.is_valid() {
+                    println!("Skipping invalid rule: {}", r);
+                    continue;
+                }
+                halide_rules.add(r);
+            }
+        }
+        let mut all_conditions: Vec<_> = halide_rules
+            .iter()
+            .chain(chompy_rules.iter())
+            .filter_map(|r| {
+                r.cond.as_ref().and_then(|c| {
+                    Assumption::new(
+                        Pred::generalize(
+                            &Pred::instantiate(&c.chop_assumption()),
+                            &mut Default::default(),
+                        )
+                        .to_string(),
+                    )
+                    .ok()
+                })
+            })
+            .collect();
+
+        all_conditions.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+        all_conditions.dedup();
+
+        let implication_rules: ImplicationSet<Pred> =
+            pairwise_implication_building(&all_conditions);
+
+        // let cond_rewrites = run_workload(
+        //     all_conds_workload,
+        //     None,
+        //     Ruleset::default(),
+        //     implication_rules.clone(),
+        //     Limits::synthesis(),
+        //     Limits::deriving(),
+        //     true,
+        // );
+
+        let forward_result =
+            run_derivability_tests(&chompy_rules, &halide_rules, &implication_rules);
+        let backward_result =
+            run_derivability_tests(&halide_rules, &chompy_rules, &implication_rules);
+
+        let to_json = |result: DerivabilityResult<Pred>| {
+            serde_json::json!({
+                "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+                "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+            })
+        };
+
+        let to_write = serde_json::json!({
+            "forwards": to_json(forward_result),
+            "backwards": to_json(backward_result),
+        });
+        let out_path = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
+            + "/chompy_vs_halide.json";
+        std::fs::write(out_path, to_write.to_string())
+            .expect("Failed to write derivability results to file");
+    }
+
+    #[test]
     // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
     fn chompy_vs_caviar() {
         // Don't run this test as part of the "unit tests" thing in CI.
@@ -421,7 +753,12 @@ pub mod halide_derive_tests {
         let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
             + "/derive.json";
         let out_path: &Path = Path::new(&binding);
-        let chompy_rules = og_recipe();
+        // let chompy_rules = og_recipe();
+        let mut chompy_rules: Ruleset<Pred> = Ruleset::default();
+        for r in CHOMPY_RULES.lines() {
+            let rule = Rule::from_string(r).unwrap().0;
+            chompy_rules.add(rule);
+        }
         let mut caviar_rules = caviar_rules();
 
         let all_conditions: Vec<_> = caviar_rules
@@ -464,15 +801,10 @@ pub mod halide_derive_tests {
 
         // see how many caviar rules we can derive, given the same
         // total caviar rules.
-        let chompy_edited = override_total_rules(&caviar_rules, &chompy_rules);
-        let chompy_only_conditional_rules = chompy_edited.partition(|r| r.cond.is_some()).0;
         let forward_result =
-            run_derivability_tests(&chompy_edited, &caviar_rules, &implication_rules);
-        let backward_result = run_derivability_tests(
-            &caviar_rules,
-            &chompy_only_conditional_rules,
-            &implication_rules,
-        );
+            run_derivability_tests(&chompy_rules, &caviar_rules, &implication_rules);
+        let backward_result =
+            run_derivability_tests(&caviar_rules, &chompy_rules, &implication_rules);
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({

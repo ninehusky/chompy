@@ -476,41 +476,41 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 &mini_egraph,
                             );
 
-                            let potential_l =
-                                egraph.lookup_expr(&"(min (max a b) c)".parse().unwrap());
-                            let potential_r = egraph.lookup_expr(&"c".parse().unwrap());
-                            if let Some(l) = potential_l {
-                                if let Some(r) = potential_r {
-                                    if (egraph.find(l) == egraph.find(id1)
-                                        && egraph.find(r) == egraph.find(id2))
-                                        || (egraph.find(l) == egraph.find(id2)
-                                            && egraph.find(r) == egraph.find(id1))
-                                    {
-                                        let dump = egg_to_serialized_egraph(&egraph);
-                                        dump.to_json_file("dump.json").unwrap();
+                            // let potential_l =
+                            //     egraph.lookup_expr(&"(min (max a b) c)".parse().unwrap());
+                            // let potential_r = egraph.lookup_expr(&"c".parse().unwrap());
+                            // if let Some(l) = potential_l {
+                            //     if let Some(r) = potential_r {
+                            //         if (egraph.find(l) == egraph.find(id1)
+                            //             && egraph.find(r) == egraph.find(id2))
+                            //             || (egraph.find(l) == egraph.find(id2)
+                            //                 && egraph.find(r) == egraph.find(id1))
+                            //         {
+                            //             let dump = egg_to_serialized_egraph(&egraph);
+                            //             dump.to_json_file("dump.json").unwrap();
 
-                                        println!("my condition: {}", predicate);
-                                        println!("{}", e1);
-                                        println!("implications i've chosen:");
-                                        for i in implications.iter() {
-                                            println!("{}", i.name());
-                                        }
+                            //             println!("my condition: {}", predicate);
+                            //             println!("{}", e1);
+                            //             println!("implications i've chosen:");
+                            //             for i in implications.iter() {
+                            //                 println!("{}", i.name());
+                            //             }
 
-                                        println!("rules I've chosen:");
-                                        for r in prior.iter() {
-                                            println!("{}", r.name);
-                                        }
-                                        println!("l: {}", l);
-                                        println!("r: {}", r);
-                                        println!("e1: {}", e1);
-                                        println!("e2: {}", e2);
-                                        println!("result: {:?}", result);
-                                        if result.is_none() {
-                                            panic!("SHIT!");
-                                        }
-                                    }
-                                }
-                            }
+                            //             println!("rules I've chosen:");
+                            //             for r in prior.iter() {
+                            //                 println!("{}", r.name);
+                            //             }
+                            //             println!("l: {}", l);
+                            //             println!("r: {}", r);
+                            //             println!("e1: {}", e1);
+                            //             println!("e2: {}", e2);
+                            //             println!("result: {:?}", result);
+                            //             if result.is_none() {
+                            //                 panic!("SHIT!");
+                            //             }
+                            //         }
+                            //     }
+                            // }
 
                             if result.is_none() {
                                 skipped_rules += 1;
