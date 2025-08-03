@@ -320,15 +320,10 @@ pub mod halide_derive_tests {
 
         // see how many caviar rules we can derive, given the same
         // total caviar rules.
-        let chompy_edited = override_total_rules(&caviar_rules, &chompy_rules);
-        let chompy_only_conditional_rules = chompy_edited.partition(|r| r.cond.is_some()).0;
         let forward_result =
-            run_derivability_tests(&chompy_edited, &caviar_rules, &implication_rules);
-        let backward_result = run_derivability_tests(
-            &caviar_rules,
-            &chompy_only_conditional_rules,
-            &implication_rules,
-        );
+            run_derivability_tests(&chompy_rules, &caviar_rules, &implication_rules);
+        let backward_result =
+            run_derivability_tests(&caviar_rules, &chompy_rules, &implication_rules);
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({
