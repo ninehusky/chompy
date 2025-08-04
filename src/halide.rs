@@ -1123,8 +1123,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
         ));
     }
 
-    panic!("done!");
-
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
         5,
