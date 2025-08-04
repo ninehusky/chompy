@@ -1060,11 +1060,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
             .0,
     );
 
-    dummy_ruleset.add(
-        Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
-            .unwrap()
-            .0,
-    );
+    // dummy_ruleset.add(
+    //     Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
+    //         .unwrap()
+    //         .0,
+    // );
 
     dummy_ruleset.add(
         Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
@@ -1114,6 +1114,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
     all_rules.extend(and_comps_rules.clone());
 
     for r in dummy_ruleset.iter() {
+        println!("deriving {}?", r.name);
         assert!(all_rules.can_derive_cond(
             DeriveType::LhsAndRhs,
             r,
@@ -1122,9 +1123,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         ));
     }
 
-    let dummy = Workload::new(&["0", "1", "(OP V V)"])
-        .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
-        .plug("V", &Workload::new(&["a", "b", "c"]));
+    panic!("done!");
 
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
