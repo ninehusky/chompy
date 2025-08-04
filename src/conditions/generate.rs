@@ -14,9 +14,24 @@ pub fn get_condition_workload() -> Workload {
     let start = std::time::Instant::now();
     println!("Beginning condition workload generation");
 
-    let the_atoms = Workload::new(&["a", "b", "c"]).append(Workload::new(&["0"]));
+    let the_atoms = Workload::new(&["a", "b", "c"]).append(Workload::new(&["0", "1"]));
 
-    let the_ints = the_atoms.clone();
+    let the_ints = Workload::new(&["(OP V V)", "V"])
+        .plug("V", &the_atoms)
+        .plug("OP", &Workload::new(&["+"]));
+
+    let arith_rules: Ruleset<Pred> = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+        Default::default(),
+    );
+
+    let the_ints = compress(&the_ints, arith_rules.clone());
+
+    for i in the_ints.clone().force() {
+        println!("i: {}", i);
+    }
 
     let leaves = Workload::new(&["0", "1", "(OP2 V V)"])
         .plug("V", &the_ints)
@@ -62,6 +77,10 @@ pub fn get_condition_workload() -> Workload {
     );
 
     let branches_better = compress(&branches, rules.clone());
+
+    for i in branches_better.clone().force() {
+        println!("branch: {}", i);
+    }
 
     println!("Condition workload generation took: {:?}", start.elapsed());
 
