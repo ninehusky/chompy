@@ -5,6 +5,7 @@ use crate::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
     },
+    enumo::Rule,
     *,
 };
 
@@ -1040,6 +1041,90 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
+
+    let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
+
+    dummy_ruleset.add(
+        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
+            .unwrap()
+            .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
+            .unwrap()
+            .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string("(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)")
+            .unwrap()
+            .0,
+    );
+
+    dummy_ruleset.add(
+        Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
+            .unwrap()
+            .0,
+    );
+
+    dummy_ruleset.add(
+        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
+            .unwrap()
+            .0,
+    );
+
+    dummy_ruleset.add(
+        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
+            .unwrap()
+            .0,
+    );
+
+    for r in dummy_ruleset.iter() {
+        assert!(r.is_valid());
+    }
+
+    // Find rules matching terms of the shape (&& (comp x y) (comp y z))
+    let comps = Workload::new(&["0", "1", "(OP V V)"])
+        .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
+        .plug("V", &Workload::new(&["a", "b", "c"]));
+
+    let base_comps = run_workload(
+        comps.clone(),
+        Some(wkld.clone()),
+        all_rules.clone(),
+        base_implications.clone(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+    );
+
+    all_rules.extend(base_comps.clone());
+
+    let and_comps = Workload::new(&["V", "(&& V V)"]).plug("V", &comps);
+
+    let and_comps_rules = run_workload(
+        and_comps,
+        Some(wkld.clone()),
+        all_rules.clone(),
+        base_implications.clone(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+    );
+
+    all_rules.extend(and_comps_rules.clone());
+
+    for r in dummy_ruleset.iter() {
+        assert!(all_rules.can_derive_cond(
+            DeriveType::LhsAndRhs,
+            r,
+            Limits::deriving(),
+            &base_implications.to_egg_rewrites()
+        ));
+    }
+
+    let dummy = Workload::new(&["0", "1", "(OP V V)"])
+        .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
+        .plug("V", &Workload::new(&["a", "b", "c"]));
 
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
