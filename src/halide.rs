@@ -4,6 +4,7 @@ use crate::{
     conditions::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
+        implication_set::run_implication_workload,
     },
     enumo::Rule,
     *,
@@ -1039,8 +1040,20 @@ pub fn og_recipe() -> Ruleset<Pred> {
     base_implications.add(and_implies_left);
     base_implications.add(and_implies_right);
 
+    // oh my god
+    let imps = run_implication_workload(
+        &wkld,
+        &["a".to_string(), "b".to_string(), "c".to_string()],
+        &base_implications.clone(),
+        &Default::default(),
+    );
+
+    base_implications.add_all(imps.clone());
+
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
+
+    println!("done generating conditions");
 
     let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
 
