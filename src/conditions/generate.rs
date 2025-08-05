@@ -13,8 +13,9 @@ pub fn get_condition_workload() -> Workload {
     // variables and 0.
     let start = std::time::Instant::now();
     println!("Beginning condition workload generation");
+    println!("Byeah");
 
-    let the_atoms = Workload::new(&["a", "b", "c"]).append(Workload::new(&["0"]));
+    let the_atoms = Workload::new(&["a", "b", "c"]).append(Workload::new(&["0", "1"]));
 
     let the_ints = the_atoms.clone();
 
@@ -38,6 +39,7 @@ pub fn get_condition_workload() -> Workload {
             .0,
     );
 
+    println!("hi");
     let new_rules = recursive_rules(
         Metric::Atoms,
         5,
@@ -54,7 +56,7 @@ pub fn get_condition_workload() -> Workload {
     let rules = run_workload(
         branches.clone(),
         None,
-        eq_rules,
+        eq_rules.clone(),
         ImplicationSet::default(),
         Limits::synthesis(),
         Limits::minimize(),
@@ -63,9 +65,46 @@ pub fn get_condition_workload() -> Workload {
 
     let branches_better = compress(&branches, rules.clone());
 
-    println!("Condition workload generation took: {:?}", start.elapsed());
+    let the_ints = Workload::new(&["(OP V V)", "V"])
+        .plug("V", &the_atoms)
+        .plug("OP", &Workload::new(&["+"]));
 
-    branches_better
+    let arith_rules: Ruleset<Pred> = recursive_rules(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+        Default::default(),
+    );
+
+    eq_rules.extend(arith_rules);
+
+    let the_ints = compress(&the_ints, eq_rules.clone());
+
+    let comparisons = Workload::new(&["(OP2 V V)"])
+        .plug("V", &the_ints)
+        .plug("OP2", &Workload::new(&["<", "<="]));
+
+    let comparison_rules = run_workload(
+        comparisons.clone(),
+        None,
+        eq_rules.clone(),
+        ImplicationSet::default(),
+        Limits::synthesis(),
+        Limits::minimize(),
+        true,
+    );
+
+    eq_rules.extend(comparison_rules);
+
+    let comparisons = compress(&comparisons, eq_rules.clone());
+
+    println!("comparisons:");
+    for i in comparisons.clone().force() {
+        println!("comparison: {}", i);
+    }
+
+    println!("Condition workload generation took: {:?}", start.elapsed());
+    branches_better.append(comparisons.clone())
 }
 
 pub fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
