@@ -1450,4 +1450,47 @@ mod ruleset_tests {
 
         assert!(candidates.is_empty());
     }
+
+    // The above tests ensure that `conditional_cvec_match` correctly filters out candidates
+    // that are already present in the ruleset.
+    //
+    // This test checks that it picks the weakest candidate when multiple candidates are available.
+    #[test]
+    fn conditional_cvec_match_picks_weakest() {
+        let mut imps = ImplicationSet::default();
+        imps.add(
+            Implication::new(
+                "x < 0 -> x != 0".into(),
+                "(< x 0)".parse().unwrap(),
+                "(!= x 0)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        imps.add(
+            Implication::new(
+                "x > 0 -> x != 0".into(),
+                "(> x 0)".parse().unwrap(),
+                "(!= x 0)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let state = ChompyState::new(
+            Workload::new(&["(/ x x)", "1"]),
+            Ruleset::default(),
+            Workload::new(&["(OP x 0)", "x"]).plug("OP", &Workload::new(&["<", "!=", ">"])),
+            imps,
+        );
+
+        let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
+            &state.terms().to_egraph(),
+            &Ruleset::default(),
+            &state.pvec_to_patterns(),
+            state.implications(),
+        );
+
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates.contains(&Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0));
+    }
 }
