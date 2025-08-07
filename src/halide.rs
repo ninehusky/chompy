@@ -1130,7 +1130,14 @@ pub fn og_recipe() -> Ruleset<Pred> {
             .plug("OP2", &Workload::new(&[op, "+"]))
             .plug("VAR", &Workload::new(&["a", "b", "c"]));
 
-        let lt_workload = Workload::new(&["(< V V)"]).plug("V", &int_workload);
+        let lt_workload =
+            Workload::new(&["(< V V)"])
+                .plug("V", &int_workload)
+                .filter(Filter::Canon(vec![
+                    "a".to_string(),
+                    "b".to_string(),
+                    "c".to_string(),
+                ]));
 
         let lt_rules = time_fn_call!(
             format!("lt_rules_{}", op),
