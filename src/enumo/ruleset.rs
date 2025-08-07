@@ -381,6 +381,9 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                 // 2. For each predicate, construct a "colored" egraph that
                 //    models the implications of the predicate.
+                let mut conditional_candidates: Vec<(RecExpr<L>, RecExpr<L>, RecExpr<L>, usize)> =
+                    vec![];
+
                 for predicate in predicates {
                     // the true count is how many times the condition is true.
                     let true_count = conditions
@@ -402,7 +405,8 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 &predicate,
                                 implications,
                             )
-                        });
+                        })
+                        .clone();
 
                     for id1 in by_cvec[cvec1].clone() {
                         for id2 in by_cvec[cvec2].clone() {
@@ -414,11 +418,13 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 continue;
                             }
 
+                            // 4. If the terms are equivalent under that condition with respect
+                            //    to the prior rules, discard it.
                             let result = Self::get_canonical_conditional_rule(
                                 &e1,
                                 &e2,
                                 &predicate,
-                                mini_egraph,
+                                &mini_egraph.clone(),
                             );
 
                             if result.is_none() {
@@ -428,10 +434,75 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                             let (e1, e2) = result.unwrap();
 
+                            // 5. For the candidates we've added linking `e1`, `e2`,
+                            //    check if any of the candidates imply our current candidate.
+                            let mut dummy: Ruleset<L> = Ruleset::default();
                             let pred: RecExpr<L> =
                                 predicate.chop_assumption().to_string().parse().unwrap();
-                            // 4. If the candidate is a new conditional rule, add it.
-                            candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                            dummy.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+
+                            let dummy_rule = dummy.0.values().next().unwrap();
+                            if !dummy_rule.is_valid() {
+                                // If the rule is not valid, skip it.
+                                skipped_rules += 1;
+                                continue;
+                            }
+
+                            // 4. If the current candidates do not already imply
+                            //    this candidate, add it to the set of conditional candidates.
+                            let mut should_add = true;
+                            let mut should_remove = vec![];
+
+                            for (added_lhs, added_rhs, added_cond, added_true_count) in
+                                conditional_candidates.iter()
+                            {
+                                if added_lhs == &e1 && added_rhs == &e2 {
+                                    let condition_egraph = predicate_to_egraph
+                                        .get(added_cond.to_string().as_str())
+                                        .unwrap();
+
+                                    // If their condition is an assumption in our egraph, then
+                                    // our condition implies theirs (our condition is stronger),
+                                    // so we should remove ours and keep theirs.
+                                    if mini_egraph
+                                        .lookup_expr(
+                                            &format!("({} {added_cond})", L::assumption_label())
+                                                .parse()
+                                                .unwrap(),
+                                        )
+                                        .is_some()
+                                    {
+                                        skipped_rules += 1;
+                                        should_add = false;
+                                        break;
+                                    }
+
+                                    // If our condition is an assumption in their egraph, then
+                                    // their condition implies ours (our condition is weaker),
+                                    // so we should remove theirs and keep ours.
+                                    if condition_egraph.lookup_expr(&predicate.into()).is_some() {
+                                        should_remove.push((
+                                            added_lhs.clone(),
+                                            added_rhs.clone(),
+                                            added_cond.clone(),
+                                            added_true_count,
+                                        ));
+                                    }
+                                }
+                            }
+
+                            if !should_remove.is_empty() && !should_add {
+                                // an invariant is violated. i don't know what that is.
+                                panic!("this should never happen");
+                            }
+
+                            for (l, r, c, tc) in should_remove.iter() {
+                                conditional_candidates.remove((l, r, c, tc.clone()));
+                            }
+
+                            if should_add {
+                                candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                            }
                         }
                     }
                 }
@@ -1460,18 +1531,18 @@ mod ruleset_tests {
         let mut imps = ImplicationSet::default();
         imps.add(
             Implication::new(
-                "x < 0 -> x != 0".into(),
-                "(< x 0)".parse().unwrap(),
-                "(!= x 0)".parse().unwrap(),
+                "?x < 0 -> ?x != 0".into(),
+                "(< ?x 0)".parse().unwrap(),
+                "(!= ?x 0)".parse().unwrap(),
             )
             .unwrap(),
         );
 
         imps.add(
             Implication::new(
-                "x > 0 -> x != 0".into(),
-                "(> x 0)".parse().unwrap(),
-                "(!= x 0)".parse().unwrap(),
+                "?x > 0 -> ?x != 0".into(),
+                "(> ?x 0)".parse().unwrap(),
+                "(!= ?x 0)".parse().unwrap(),
             )
             .unwrap(),
         );
@@ -1492,5 +1563,56 @@ mod ruleset_tests {
 
         assert_eq!(candidates.len(), 1);
         assert!(candidates.contains(&Rule::from_string("(/ ?a ?a) ==> 1 if (!= ?a 0)").unwrap().0));
+    }
+
+    #[test]
+    fn conditional_cvec_match_picks_weakest_renaming() {
+        let mut imps = ImplicationSet::default();
+        imps.add(
+            Implication::new(
+                "?x < 0 -> ?x != 0".into(),
+                "(< ?x 0)".parse().unwrap(),
+                "(!= ?x 0)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        imps.add(
+            Implication::new(
+                "?x > 0 -> ?x != 0".into(),
+                "(> ?x 0)".parse().unwrap(),
+                "(!= ?x 0)".parse().unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let state = ChompyState::new(
+            Workload::new(&["(/ a (* a b))", "0"]),
+            Ruleset::default(),
+            Workload::new(&["(OP V 0)", "V"]).plug(
+                "OP",
+                &Workload::new(&["=="]).plug("V", &Workload::new(&["a, b"])),
+            ),
+            imps,
+        );
+
+        let candidates: Ruleset<Pred> = Ruleset::conditional_cvec_match(
+            &state.terms().to_egraph(),
+            &Ruleset::default(),
+            &state.pvec_to_patterns(),
+            state.implications(),
+        );
+
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.contains(
+            &Rule::from_string("(/ ?a (* ?a ?b)) ==> 0 if (== ?a 0)")
+                .unwrap()
+                .0
+        ));
+        assert!(candidates.contains(
+            &Rule::from_string("(/ ?a (* ?a ?b)) ==> 0 if (== ?b 0)")
+                .unwrap()
+                .0
+        ));
     }
 }
