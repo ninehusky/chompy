@@ -443,7 +443,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                             dummy.add_cond_from_recexprs(
                                 &e1,
                                 &e2,
-                                &predicate.clone().into(),
+                                &predicate.chop_assumption().to_string().parse().unwrap(),
                                 true_count,
                             );
 
@@ -517,7 +517,12 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 conditional_candidates.push((
                                     e1.clone(),
                                     e2.clone(),
-                                    predicate.clone().into(),
+                                    predicate
+                                        .clone()
+                                        .chop_assumption()
+                                        .to_string()
+                                        .parse()
+                                        .unwrap(),
                                     true_count,
                                 ));
                             }
