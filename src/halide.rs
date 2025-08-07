@@ -6,6 +6,8 @@ use crate::{
         implication::{Implication, ImplicationValidationResult},
         implication_set::run_implication_workload,
     },
+    enumo::Rule,
+    recipe_utils::{base_lang, iter_metric},
     time_fn_call, *,
 };
 
@@ -1117,6 +1119,83 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(min_max_add.clone());
+
+    for op in &["min", "max"] {
+        let int_workload =
+            // i only want OP2s and EXPRs
+            iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5).filter(Filter::And(vec![
+                Filter::Excludes("VAL".parse().unwrap()),
+                Filter::Excludes("OP1".parse().unwrap()),
+            ]))
+            .plug("OP2", &Workload::new(&[op, "+"]))
+            .plug("VAR", &Workload::new(&["a", "b", "c"]));
+
+        let lt_workload = Workload::new(&["(< V V)"]).plug("V", &int_workload);
+
+        let lt_rules = time_fn_call!(
+            format!("lt_rules_{}", op),
+            run_workload(
+                lt_workload,
+                Some(wkld.clone()),
+                all_rules.clone(),
+                base_implications.clone(),
+                Limits::synthesis(),
+                Limits::minimize(),
+                true,
+            )
+        );
+        all_rules.extend(lt_rules);
+    }
+
+    let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
+    dummy_ruleset.add(
+        Rule::from_string(
+            "(< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0)",
+        )
+        .unwrap()
+        .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string(
+            "(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)",
+        )
+        .unwrap()
+        .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string(
+            "(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)",
+        )
+        .unwrap()
+        .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string(
+            "(< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0)",
+        )
+        .unwrap()
+        .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string("(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0)")
+            .unwrap()
+            .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string("(< (max ?a ?c) (min ?a ?b)) ==> 0")
+            .unwrap()
+            .0,
+    );
+
+    for r in dummy_ruleset.iter() {
+        assert!(r.is_valid());
+        assert!(all_rules.can_derive_cond(
+            DeriveType::LhsAndRhs,
+            r,
+            Limits::deriving(),
+            &base_implications.to_egg_rewrites()
+        ));
+    }
 
     for op in &["min", "max"] {
         let int_workload = Workload::new(&["0", "1", "(OP V V)"])
