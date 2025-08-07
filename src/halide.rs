@@ -4,6 +4,7 @@ use crate::{
     conditions::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
+        implication_set::run_implication_workload,
     },
     time_fn_call, *,
 };
@@ -1037,6 +1038,18 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     base_implications.add(and_implies_left);
     base_implications.add(and_implies_right);
+
+    let other_implications = time_fn_call!(
+        "find_base_implications",
+        run_implication_workload(
+            &wkld,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &base_implications,
+            &Default::default()
+        )
+    );
+
+    base_implications.add_all(other_implications);
 
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
