@@ -166,9 +166,9 @@ impl SynthLanguage for Pred {
                         Sexp::Atom(format!("(Lit {num})"))
                     } else if a.starts_with("?") {
                         // a is a meta-variable, leave it alone.
-                        return Sexp::Atom(a.into());
+                        Sexp::Atom(a.into())
                     } else {
-                        return Sexp::Atom(format!("(Var \"{a}\")"));
+                        Sexp::Atom(format!("(Var \"{a}\")"))
                     }
                 }
                 Sexp::List(l) => {
