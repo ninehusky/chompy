@@ -8,6 +8,23 @@ use crate::{
     Limits, SynthAnalysis, SynthLanguage,
 };
 
+// A cute lil' macro to time function calls.
+#[macro_export]
+macro_rules! time_fn_call {
+    ($label:expr, $fn_call:expr) => {{
+        use std::time::Instant;
+        let start = Instant::now();
+        let result = $fn_call;
+        let duration = start.elapsed();
+        println!(
+            "LOG: Chomp! I finished {} in {} ms.",
+            $label,
+            duration.as_millis()
+        );
+        result
+    }};
+}
+
 /// Iterate a grammar (represented as a workload) up to a certain size metric
 pub fn iter_metric(wkld: Workload, atom: &str, met: Metric, n: usize) -> Workload {
     let mut pegs = wkld.clone();
