@@ -1051,6 +1051,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     base_implications.add_all(other_implications);
 
+    println!("# base implications: {}", base_implications.len());
+
+    for i in base_implications.iter() {
+        println!("implication: {}", i.name());
+    }
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
