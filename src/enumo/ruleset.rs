@@ -371,59 +371,65 @@ impl<L: SynthLanguage> Ruleset<L> {
             IndexMap::default();
 
         let mut i = 0;
-        // 1. For each pair of unequal cvecs, find the conditions that imply their equality.
         for cvec1 in by_cvec.keys() {
             assert_eq!(cvec1.len(), conditions.keys().next().unwrap().len());
             i += 1;
             for cvec2 in by_cvec.keys().skip(i) {
+                // 1. For each pair of unequal cvecs, find the conditions that imply their equality.
                 let predicates =
                     Self::find_matching_conditions(cvec1.clone(), cvec2.clone(), conditions);
 
-                // 2. For each predicate, construct a "colored" egraph that
-                //    models the implications of the predicate.
                 let mut conditional_candidates: Vec<(RecExpr<L>, RecExpr<L>, RecExpr<L>, usize)> =
                     vec![];
 
-                for predicate in predicates {
-                    // the true count is how many times the condition is true.
-                    let true_count = conditions
-                        .iter()
-                        .find(|(_, patterns)| patterns.contains(&predicate))
-                        .unwrap()
-                        .0
-                        .iter()
-                        .filter(|&&x| x)
-                        .count();
+                for id1 in by_cvec[cvec1].clone() {
+                    for id2 in by_cvec[cvec2].clone() {
+                        // 2. Go through each pair of terms with the corresponding cvecs.
+                        let (c1, e1) = extract.find_best(id1);
+                        let (c2, e2) = extract.find_best(id2);
 
-                    let pred_string = predicate.to_string();
-                    let mini_egraph = predicate_to_egraph
-                        .entry(pred_string.clone())
-                        .or_insert_with(|| {
-                            Self::construct_conditional_egraph(
-                                egraph,
-                                prior,
-                                &predicate,
-                                implications,
-                            )
-                        })
-                        .clone();
+                        if c1 == usize::MAX || c2 == usize::MAX {
+                            continue;
+                        }
 
-                    for id1 in by_cvec[cvec1].clone() {
-                        for id2 in by_cvec[cvec2].clone() {
-                            // 3. Go through each pair of terms with the corresponding cvecs.
-                            let (c1, e1) = extract.find_best(id1);
-                            let (c2, e2) = extract.find_best(id2);
+                        // These aren't actually the rules. They're the RecExprs that the rules
+                        // are built from. You'll see.
+                        let mut conditional_candidates: Vec<(
+                            RecExpr<L>,
+                            RecExpr<L>,
+                            RecExpr<L>,
+                            usize,
+                        )> = vec![];
 
-                            if c1 == usize::MAX || c2 == usize::MAX {
-                                continue;
-                            }
+                        for predicate in &predicates {
+                            let true_count = conditions
+                                .iter()
+                                .find(|(_, patterns)| patterns.contains(predicate))
+                                .unwrap()
+                                .0
+                                .iter()
+                                .filter(|&&x| x)
+                                .count();
 
-                            // 4. If the terms are equivalent under that condition with respect
+                            let pred_string = predicate.to_string();
+                            let mini_egraph = predicate_to_egraph
+                                .entry(pred_string.clone())
+                                .or_insert_with(|| {
+                                    Self::construct_conditional_egraph(
+                                        egraph,
+                                        prior,
+                                        &predicate.clone(),
+                                        implications,
+                                    )
+                                })
+                                .clone();
+
+                            // 3. If the terms are equivalent under that condition with respect
                             //    to the prior rules, discard it.
                             let result = Self::get_canonical_conditional_rule(
                                 &e1,
                                 &e2,
-                                &predicate,
+                                &predicate.clone(),
                                 &mini_egraph.clone(),
                             );
 
@@ -432,43 +438,44 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 continue;
                             }
 
-                            let (e1, e2) = result.unwrap();
+                            // 4. Validate the rule. If it's invalid, chuck it.
+                            let mut dummy: Ruleset<L> = Default::default();
+                            dummy.add_cond_from_recexprs(
+                                &e1,
+                                &e2,
+                                &predicate.clone().into(),
+                                true_count,
+                            );
 
-                            // 5. For the candidates we've added linking `e1`, `e2`,
-                            //    check if any of the candidates imply our current candidate.
-                            let mut dummy: Ruleset<L> = Ruleset::default();
-                            let pred: RecExpr<L> =
-                                predicate.chop_assumption().to_string().parse().unwrap();
-                            dummy.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
-
-                            let dummy_rule = dummy.0.values().next().unwrap();
-                            if !dummy_rule.is_valid() {
-                                // If the rule is not valid, skip it.
-                                skipped_rules += 1;
+                            let candidate = dummy.iter().next().unwrap();
+                            if !candidate.is_valid() {
                                 continue;
                             }
 
-                            // 4. If the current candidates do not already imply
-                            //    this candidate, add it to the set of conditional candidates.
+                            // 5. See if there exists a valid rule in `conditional_candidates`
+                            // that subsumes this one, or if our rule subsumes any of theirs.
                             let mut should_add = true;
-                            let mut should_remove = vec![];
-
-                            for (added_lhs, added_rhs, added_cond, added_true_count) in
-                                conditional_candidates.iter()
-                            {
-                                if added_lhs == &e1 && added_rhs == &e2 {
-                                    let condition_egraph = predicate_to_egraph
-                                        .get(added_cond.to_string().as_str())
-                                        .unwrap();
-
-                                    // If their condition is an assumption in our egraph, then
+                            let mut should_remove: Vec<(
+                                RecExpr<L>,
+                                RecExpr<L>,
+                                RecExpr<L>,
+                                usize,
+                            )> = vec![];
+                            for (l, r, c, tc) in conditional_candidates.iter() {
+                                if l == &e1 && r == &e2 {
+                                    // 5a:
+                                    // If the condition is an assumption in our egraph, then
                                     // our condition implies theirs (our condition is stronger),
                                     // so we should remove ours and keep theirs.
                                     if mini_egraph
                                         .lookup_expr(
-                                            &format!("({} {added_cond})", L::assumption_label())
-                                                .parse()
-                                                .unwrap(),
+                                            &format!(
+                                                "({} {})",
+                                                L::assumption_label(),
+                                                c.to_string()
+                                            )
+                                            .parse()
+                                            .unwrap(),
                                         )
                                         .is_some()
                                     {
@@ -477,32 +484,48 @@ impl<L: SynthLanguage> Ruleset<L> {
                                         break;
                                     }
 
-                                    // If our condition is an assumption in their egraph, then
+                                    // If their condition is an assumption in our egraph, then
                                     // their condition implies ours (our condition is weaker),
                                     // so we should remove theirs and keep ours.
-                                    if condition_egraph.lookup_expr(&predicate.into()).is_some() {
-                                        should_remove.push((
-                                            added_lhs.clone(),
-                                            added_rhs.clone(),
-                                            added_cond.clone(),
-                                            added_true_count,
-                                        ));
+                                    if mini_egraph.lookup_expr(&predicate.clone().into()).is_some()
+                                    {
+                                        should_remove.push((l.clone(), r.clone(), c.clone(), *tc));
                                     }
                                 }
                             }
 
                             if !should_remove.is_empty() && !should_add {
-                                // an invariant is violated. i don't know what that is.
+                                // an invariant is violated. i don't know what that invariant is yet.
                                 panic!("this should never happen");
                             }
 
-                            for (l, r, c, tc) in should_remove.iter() {
-                                conditional_candidates.remove((l, r, c, tc.clone()));
+                            for grouping in should_remove.iter() {
+                                let idx = conditional_candidates
+                                    .iter()
+                                    .position(|x| {
+                                        x.0 == grouping.0
+                                            && x.1 == grouping.1
+                                            && x.2 == grouping.2
+                                            && x.3 == grouping.3
+                                    })
+                                    .unwrap();
+                                conditional_candidates.swap_remove(idx);
                             }
-
                             if should_add {
-                                candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                                // 6. If the current candidates do not already imply
+                                //    this candidate, add it to the set of conditional candidates.
+                                conditional_candidates.push((
+                                    e1.clone(),
+                                    e2.clone(),
+                                    predicate.clone().into(),
+                                    true_count,
+                                ));
                             }
+                        }
+
+                        // 7. Add the conditional candidates to the candidates set.
+                        for (l, r, c, tc) in conditional_candidates {
+                            candidates.add_cond_from_recexprs(&l, &r, &c, tc);
                         }
                     }
                 }
@@ -518,6 +541,135 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         candidates
     }
+
+    // for predicate in predicates {
+    //     // the true count is how many times the condition is true.
+    //     let true_count = conditions
+    //         .iter()
+    //         .find(|(_, patterns)| patterns.contains(&predicate))
+    //         .unwrap()
+    //         .0
+    //         .iter()
+    //         .filter(|&&x| x)
+    //         .count();
+
+    //     for id1 in by_cvec[cvec1].clone() {
+    //         for id2 in by_cvec[cvec2].clone() {
+    //             // 3. Go through each pair of terms with the corresponding cvecs.
+    //             let (c1, e1) = extract.find_best(id1);
+    //             let (c2, e2) = extract.find_best(id2);
+
+    //             if c1 == usize::MAX || c2 == usize::MAX {
+    //                 continue;
+    //             }
+
+    //             // 4. If the terms are equivalent under that condition with respect
+    //             //    to the prior rules, discard it.
+    //             let result = Self::get_canonical_conditional_rule(
+    //                 &e1,
+    //                 &e2,
+    //                 &predicate.clone(),
+    //                 &mini_egraph.clone(),
+    //             );
+
+    //             if result.is_none() {
+    //                 skipped_rules += 1;
+    //                 continue;
+    //             }
+
+    //             let (e1, e2) = result.unwrap();
+
+    //             // 5. For the candidates we've added linking `e1`, `e2`,
+    //             //    check if any of the candidates imply our current candidate.
+    //             let mut dummy: Ruleset<L> = Ruleset::default();
+    //             let pred: RecExpr<L> =
+    //                 predicate.chop_assumption().to_string().parse().unwrap();
+    //             dummy.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+
+    //             let dummy_rule = dummy.0.values().next().unwrap();
+    //             if !dummy_rule.is_valid() {
+    //                 // If the rule is not valid, skip it.
+    //                 skipped_rules += 1;
+    //                 continue;
+    //             }
+
+    //             // 4. If the current candidates do not already imply
+    //             //    this candidate, add it to the set of conditional candidates.
+    //             let mut should_add = true;
+    //             let mut should_remove = vec![];
+
+    //             {
+    //                 for (added_lhs, added_rhs, added_cond, added_true_count) in
+    //                     conditional_candidates.iter()
+    //                 {
+    //                     if added_lhs == &e1 && added_rhs == &e2 {
+    //                         let condition_egraph = predicate_to_egraph
+    //                             .get(added_cond.to_string().as_str())
+    //                             .unwrap();
+
+    //                         // If their condition is an assumption in our egraph, then
+    //                         // our condition implies theirs (our condition is stronger),
+    //                         // so we should remove ours and keep theirs.
+    //                         if mini_egraph
+    //                             .lookup_expr(
+    //                                 &format!(
+    //                                     "({} {added_cond})",
+    //                                     L::assumption_label()
+    //                                 )
+    //                                 .parse()
+    //                                 .unwrap(),
+    //                             )
+    //                             .is_some()
+    //                         {
+    //                             skipped_rules += 1;
+    //                             should_add = false;
+    //                             break;
+    //                         }
+
+    //                         // If our condition is an assumption in their egraph, then
+    //                         // their condition implies ours (our condition is weaker),
+    //                         // so we should remove theirs and keep ours.
+    //                         if condition_egraph
+    //                             .lookup_expr(&predicate.clone().into())
+    //                             .is_some()
+    //                         {
+    //                             should_remove.push((
+    //                                 added_lhs.clone(),
+    //                                 added_rhs.clone(),
+    //                                 added_cond.clone(),
+    //                                 added_true_count,
+    //                             ));
+    //                         }
+    //                     }
+    //                 } // for loop ends here
+    //             } // block ends here
+    //             if !should_remove.is_empty() && !should_add {
+    //                 // an invariant is violated. i don't know what that is.
+    //                 panic!("this should never happen");
+    //             }
+    //             for grouping in should_remove.iter() {
+    //                 let idx = {
+    //                     conditional_candidates
+    //                         .clone()
+    //                         .iter()
+    //                         .position(|x| {
+    //                             x.0 == grouping.0
+    //                                 && x.1 == grouping.1
+    //                                 && x.2 == grouping.2
+    //                                 && x.3 == *grouping.3
+    //                         })
+    //                         .unwrap()
+    //                 }; // <-- Immutable borrow ends here
+
+    //                 conditional_candidates.swap_remove(idx); // ✅ now it's safe to mutably borrow
+    //             }
+
+    //             if should_add {
+    //                 candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+    //             }
+    //         }
+    //     }
+    // }
 
     // Given a candidate conditional rule an an e-graph modeling the world under
     // the assumption of `candidate`, returns if the candidate models a new
