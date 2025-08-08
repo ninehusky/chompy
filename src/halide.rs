@@ -1019,7 +1019,9 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
 pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let start_time = std::time::Instant::now();
-    let wkld = conditions::generate::get_condition_workload();
+    // cut down on the number of atoms
+    let wkld =
+        conditions::generate::get_condition_workload().filter(Filter::MetricLt(Metric::Atoms, 5));
     let mut all_rules = Ruleset::default();
     let mut base_implications = ImplicationSet::default();
     // and the "and" rules here.
@@ -1073,11 +1075,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
             .0,
     );
 
-    dummy_ruleset.add(
-        Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
-            .unwrap()
-            .0,
-    );
+    // dummy_ruleset.add(
+    //     Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
+    //         .unwrap()
+    //         .0,
+    // );
 
     dummy_ruleset.add(
         Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")

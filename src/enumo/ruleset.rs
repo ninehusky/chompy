@@ -398,7 +398,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                         )> = vec![];
 
                         for predicate in &predicates {
-                            println!("considering predicate: {}", predicate);
                             let true_count = conditions
                                 .iter()
                                 .find(|(_, patterns)| patterns.contains(predicate))
@@ -432,7 +431,6 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                             if result.is_none() {
                                 skipped_rules += 1;
-                                println!("I'm skippin this one: {e1} ==> {e2} under {predicate}");
                                 continue;
                             }
 
@@ -482,7 +480,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                                         .is_some()
                                     {
                                         skipped_rules += 1;
-                                        println!("Here, we should not add: {e1} ==> {e2} under {predicate}");
                                         should_add = false;
                                         break;
                                     }
@@ -490,7 +487,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     // If our condition is an assumption in their egraph, then
                                     // their condition implies ours (our condition is stronger),
                                     // so we should remove theirs and keep ours.
-                                    println!("predicate: {c}");
                                     match predicate_to_egraph.get(&c.to_string()) {
                                         Some(egraph) => {
                                             if egraph
@@ -499,10 +495,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                                                 )
                                                 .is_some()
                                             {
-                                                println!(
-                                                    "[conditional_cvec_match] We have a stronger condition than {l} ==> {r} if {c}"
-                                                );
-                                                println!("We're removing {e1} ==> {e2} under {predicate}");
                                                 should_remove.push((
                                                     l.clone(),
                                                     r.clone(),
@@ -511,11 +503,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                                                 ));
                                             }
                                         }
-                                        _ => {
-                                            println!(
-                                                "[conditional_cvec_match] No egraph for predicate {c}"
-                                            );
-                                        }
+                                        _ => {}
                                     }
                                 }
                             }
