@@ -246,9 +246,13 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
         // which means their set of variables must match.
         let cond_workload = Workload::new(&[cond.to_string()]).append(workload.clone());
 
+        for c in cond_workload.force() {
+            println!("cond_workload: {c}");
+        }
+
         let predicate_map = build_pvec_to_patterns(cond_workload);
 
-        let candidates = Ruleset::conditional_cvec_match(
+        let mut candidates = Ruleset::conditional_cvec_match(
             &workload.to_egraph(),
             &Ruleset::default(),
             &predicate_map,
@@ -260,9 +264,25 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
             println!("  {candidate}");
         }
 
-        if candidates.contains(desired_rule) {
+        candidates.add(Rule::from_string("(> ?a ?b) ==> (< ?b ?a)").unwrap().0);
+        candidates.add(Rule::from_string("(< ?a ?b) ==> (> ?b ?a)").unwrap().0);
+        candidates.add(Rule::from_string("(== ?a ?b) ==> (== ?b ?a)").unwrap().0);
+
+        if candidates.can_derive_cond(
+            ruler::DeriveType::LhsAndRhs,
+            &desired_rule,
+            Limits::deriving(),
+            &ImplicationSet::default().to_egg_rewrites(),
+        ) {
+            println!("can synthesize {rule}");
             can.add(rule.clone());
         } else {
+            println!("candidates:");
+            for c in candidates.iter() {
+                println!("  {c}");
+            }
+            println!("cannot synthesize {rule}");
+            println!("That's pretty bad.");
             cannot.add(rule.clone());
         }
     }
@@ -351,9 +371,11 @@ pub mod halide_derive_tests {
 
         let caviar_conditional_rules = caviar_rules().partition(|r| r.cond.is_some()).0;
         let (_, cannot) = can_synthesize_all(caviar_conditional_rules.clone());
-        // This is a magic number for now, but later we'll document specific
-        // rules we can't derive along with why.
-        assert_eq!(cannot.len(), 7);
+
+        for c in cannot.clone() {
+            println!("Cannot synthesize: {0}", c.0);
+        }
+        assert!(cannot.is_empty());
     }
 
     #[test]
