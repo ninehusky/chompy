@@ -444,6 +444,10 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 true_count,
                             );
 
+                            if dummy.is_empty() {
+                                continue;
+                            }
+
                             let candidate = dummy.iter().next().unwrap();
                             if !candidate.is_valid() {
                                 continue;
