@@ -1198,7 +1198,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         let eq_simp = run_workload(
             eq_workload,
             Some(wkld.clone()),
-            min_max.clone(),
+            all_rules.clone(),
             base_implications.clone(),
             Limits::synthesis(),
             Limits::minimize(),

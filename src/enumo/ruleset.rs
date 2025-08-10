@@ -447,11 +447,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                                 continue;
                             }
 
-                            let candidate = dummy.iter().next().unwrap();
-                            if !candidate.is_valid() {
-                                continue;
-                            }
-
                             // 5. See if there exists a valid rule in `conditional_candidates`
                             // that subsumes this one, or if our rule subsumes any of theirs.
                             let mut should_add = true;
@@ -506,6 +501,11 @@ impl<L: SynthLanguage> Ruleset<L> {
                                         _ => {}
                                     }
                                 }
+                            }
+
+                            let candidate = dummy.iter().next().unwrap();
+                            if !candidate.is_valid() {
+                                continue;
                             }
 
                             if !should_remove.is_empty() && !should_add {
