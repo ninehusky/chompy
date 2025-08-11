@@ -820,7 +820,19 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .run(prop_rules)
                 .with_node_limit(1000);
 
+            // TODO: make this an optimization flag
+            if most_recent_condition
+                .chop_assumption()
+                .search(&runner.egraph)
+                .is_empty()
+            {
+                println!("skipping {condition}");
+                // if the most recent condition is not in the e-graph, then it's not relevant
+                continue;
+            }
+
             let egraph = runner.egraph.clone();
+
             let egraph = Scheduler::Saturating(Limits {
                 iter: 1,
                 node: 100,
@@ -828,20 +840,10 @@ impl<L: SynthLanguage> Ruleset<L> {
             })
             .run(&egraph, chosen);
 
-            // TODO: make this an optimization flag
-            if most_recent_condition
-                .chop_assumption()
-                .search(&egraph)
-                .is_empty()
-            {
-                println!("skipping {condition}");
-                // if the most recent condition is not in the e-graph, then it's not relevant
-                continue;
-            }
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
             let scheduler = Scheduler::Saturating(Limits::deriving());
-            let egraph = scheduler.run(&runner.egraph, chosen);
+            let egraph = scheduler.run(&egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
