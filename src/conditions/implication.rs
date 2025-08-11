@@ -232,7 +232,6 @@ impl<L: SynthLanguage, N: Analysis<L>> Applier<L, N> for EqApplier {
     ) -> Vec<egg::Id> {
         let a = subst.get(self.a).unwrap();
         let b = subst.get(self.b).unwrap();
-        // let extractor = Extractor::new(egraph, AstSize);
         if egraph.union(*a, *b) {
             vec![*a, *b]
         } else {
@@ -443,7 +442,6 @@ mod eq_tests {
 
         let mut egraph = EGraph::<Pred, SynthAnalysis>::default();
 
-        // egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
         let assumption: Assumption<Pred> = Assumption::new("(!= x 0)".to_string()).unwrap();
         assumption.insert_into_egraph(&mut egraph);
 
@@ -457,12 +455,9 @@ mod eq_tests {
             .lookup_expr(&"(assume (== (/ x x) 1))".parse().unwrap())
             .is_some());
 
-        let serialized = egg_to_serialized_egraph(&egraph);
-        serialized.to_json_file("merge_eqs_basic.json").unwrap();
-
-        // assert_eq!(
-        //     egraph.find(egraph.lookup_expr(&"(/ x x)".parse().unwrap()).unwrap()),
-        //     egraph.find(egraph.lookup_expr(&"1".parse().unwrap()).unwrap())
-        // );
+        assert_eq!(
+            egraph.find(egraph.lookup_expr(&"(/ x x)".parse().unwrap()).unwrap()),
+            egraph.find(egraph.lookup_expr(&"1".parse().unwrap()).unwrap()),
+        )
     }
 }
