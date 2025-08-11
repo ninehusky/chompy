@@ -6,7 +6,6 @@ use crate::{
         implication::{Implication, ImplicationValidationResult},
         implication_set::run_implication_workload,
     },
-    enumo::Rule,
     time_fn_call, *,
 };
 

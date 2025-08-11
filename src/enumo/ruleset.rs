@@ -445,7 +445,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         );
 
         for c in candidates.iter() {
-            println!("[conditional_cvec_match] Candidate: {}", c);
+            println!("[conditional_cvec_match] Candidate: {c}");
         }
 
         candidates
@@ -521,7 +521,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         // 3. If we can compress the egraph further, do so.
         //    This might not be a bad place to use a `Scheduler::Saturating` instead.
-        let eg = Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior);
+        
         // egg_to_serialized_egraph(&runner.egraph)
         //     .to_json_file("dump-color-egraph.json")
         //     .unwrap();
@@ -529,7 +529,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         //     println!("predicate: {}", predicate);
         //     panic!("done");
         // }
-        eg
+        Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior)
     }
 
     // Given two cvecs and a mapping from pvecs to expressions, returns a list of predicates

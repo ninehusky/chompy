@@ -1,10 +1,10 @@
 use std::{str::FromStr, sync::Arc};
 
-use egg::{Analysis, Applier, AstSize, Extractor, Language, Pattern, PatternAst, Rewrite, Var};
+use egg::{Analysis, Applier, Pattern, PatternAst, Rewrite, Var};
 
 use crate::{
     apply_pat,
-    enumo::{egg_to_serialized_egraph, lookup_pattern, Sexp},
+    enumo::{lookup_pattern, Sexp},
     SynthAnalysis, SynthLanguage,
 };
 

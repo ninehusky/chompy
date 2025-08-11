@@ -3,7 +3,7 @@ use std::time::Instant;
 use egg::EGraph;
 
 use crate::{
-    conditions::{implication_set::ImplicationSet, merge_eqs},
+    conditions::implication_set::ImplicationSet,
     enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
     Limits, SynthAnalysis, SynthLanguage,
 };
