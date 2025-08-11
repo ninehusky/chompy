@@ -506,8 +506,6 @@ impl<L: SynthLanguage> Ruleset<L> {
     ) -> EGraph<L, SynthAnalysis> {
         let mut colored_egraph = black_egraph.clone();
 
-        colored_egraph.add_expr(&"0".parse().unwrap());
-
         // 1. Add the predicate to the egraph.
         predicate.insert_into_egraph(&mut colored_egraph);
 
