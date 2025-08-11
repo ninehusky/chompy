@@ -164,7 +164,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         let cond = Assumption::new(L::generalize(cond, map).to_string()).unwrap();
         let forward = Rule::new_cond(&l_pat, &r_pat, &cond, Some(true_count));
         let backward = Rule::new_cond(&r_pat, &l_pat, &cond, Some(true_count));
-        println!("[add_cond_from_recexprs] Adding rule candidate: {l_pat} ==> {r_pat} if {cond}");
         if let Some(forward) = forward {
             self.add(forward);
         }
@@ -445,6 +444,10 @@ impl<L: SynthLanguage> Ruleset<L> {
             skipped_rules
         );
 
+        for c in candidates.iter() {
+            println!("[conditional_cvec_match] Candidate: {}", c);
+        }
+
         candidates
     }
 
@@ -476,7 +479,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             .unwrap_or_else(|| panic!("Did not find {}", r_expr));
 
         // 2. check if the lhs and rhs are equivalent in the egraph
-        if l_id == r_id {
+        if egraph.find(l_id) == egraph.find(r_id) {
             // e1 and e2 are equivalent in the condition egraph
             // println!(
             //     "[conditional_cvec_match] Skipping {} and {} because they are equivalent in the egraph representing {}",
@@ -503,6 +506,8 @@ impl<L: SynthLanguage> Ruleset<L> {
     ) -> EGraph<L, SynthAnalysis> {
         let mut colored_egraph = black_egraph.clone();
 
+        colored_egraph.add_expr(&"0".parse().unwrap());
+
         // 1. Add the predicate to the egraph.
         predicate.insert_into_egraph(&mut colored_egraph);
 
@@ -511,12 +516,20 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(colored_egraph.clone())
-            .run(&rules)
-            .with_node_limit(500);
+            .with_node_limit(50000)
+            .run(&rules);
 
         // 3. If we can compress the egraph further, do so.
         //    This might not be a bad place to use a `Scheduler::Saturating` instead.
-        Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior)
+        let eg = Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior);
+        // egg_to_serialized_egraph(&runner.egraph)
+        //     .to_json_file("dump-color-egraph.json")
+        //     .unwrap();
+        // if predicate.to_string().contains("==") {
+        //     println!("predicate: {}", predicate);
+        //     panic!("done");
+        // }
+        eg
     }
 
     // Given two cvecs and a mapping from pvecs to expressions, returns a list of predicates

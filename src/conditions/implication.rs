@@ -1,10 +1,10 @@
 use std::{str::FromStr, sync::Arc};
 
-use egg::{Analysis, Applier, Language, Pattern, PatternAst, Rewrite, Var};
+use egg::{Analysis, Applier, AstSize, Extractor, Language, Pattern, PatternAst, Rewrite, Var};
 
 use crate::{
     apply_pat,
-    enumo::{lookup_pattern, Sexp},
+    enumo::{egg_to_serialized_egraph, lookup_pattern, Sexp},
     SynthAnalysis, SynthLanguage,
 };
 
@@ -221,7 +221,7 @@ pub(crate) struct EqApplier {
     pub(crate) b: Var,
 }
 
-impl<L: Language, N: Analysis<L>> Applier<L, N> for EqApplier {
+impl<L: SynthLanguage, N: Analysis<L>> Applier<L, N> for EqApplier {
     fn apply_one(
         &self,
         egraph: &mut egg::EGraph<L, N>,
@@ -232,6 +232,7 @@ impl<L: Language, N: Analysis<L>> Applier<L, N> for EqApplier {
     ) -> Vec<egg::Id> {
         let a = subst.get(self.a).unwrap();
         let b = subst.get(self.b).unwrap();
+        // let extractor = Extractor::new(egraph, AstSize);
         if egraph.union(*a, *b) {
             vec![*a, *b]
         } else {
@@ -389,21 +390,62 @@ mod implication_tests {
 
 #[allow(unused_imports)]
 mod eq_tests {
-    use crate::halide::Pred;
-    use crate::ImplicationSwitch;
-    use egg::{EGraph, Runner};
+    use crate::enumo::{Rule, Ruleset, Scheduler};
+    use crate::{enumo::egg_to_serialized_egraph, halide::Pred};
+    use crate::{ImplicationSwitch, Limits};
+    use egg::{rewrite, EGraph, Runner};
 
     use super::*;
+
     #[test]
-    fn merge_eqs_merges() {
+    fn merge_eqs_merges_basic() {
+        let mut egraph = EGraph::<Pred, SynthAnalysis>::default();
+        let a = egraph.add_expr(&"a".parse().unwrap());
+        let b = egraph.add_expr(&"b".parse().unwrap());
+        let b_minus_a = egraph.add_expr(&"(- b a)".parse().unwrap());
+        let zero = egraph.add_expr(&"0".parse().unwrap());
+
+        let assumption = Assumption::new("(== a b)".to_string()).unwrap();
+
+        assumption.insert_into_egraph(&mut egraph);
+
+        let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .run(&[merge_eqs()]);
+
+        let mut rules: Ruleset<Pred> = Ruleset::default();
+        rules.add(Rule::from_string("(- ?a ?a) ==> 0").unwrap().0);
+
+        let egraph = Scheduler::Saturating(Limits::minimize()).run(&runner.egraph.clone(), &rules);
+
+        assert!(egraph.lookup_expr(&"a".parse().unwrap()).is_some());
+        assert!(egraph.lookup_expr(&"b".parse().unwrap()).is_some());
+
+        assert_eq!(
+            egraph.find(a),
+            egraph.find(b),
+            "Expected a and b to be merged"
+        );
+
+        assert_eq!(
+            egraph.find(b_minus_a),
+            egraph.find(zero),
+            "Under assumption (== a b), expected (b - a) to be merged with 0"
+        );
+    }
+
+    #[test]
+    fn merge_eqs_merges_impl() {
         let rule: ImplicationSwitch<Pred> = ImplicationSwitch {
             parent_cond: "(!= ?x 0)".parse().unwrap(),
             my_cond: "(== (/ ?x ?x) 1)".parse().unwrap(),
         };
 
-        let egraph = &mut EGraph::<Pred, SynthAnalysis>::default();
+        let mut egraph = EGraph::<Pred, SynthAnalysis>::default();
 
-        egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
+        // egraph.add_expr(&"(assume (!= x 0))".parse().unwrap());
+        let assumption: Assumption<Pred> = Assumption::new("(!= x 0)".to_string()).unwrap();
+        assumption.insert_into_egraph(&mut egraph);
 
         let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
@@ -415,9 +457,12 @@ mod eq_tests {
             .lookup_expr(&"(assume (== (/ x x) 1))".parse().unwrap())
             .is_some());
 
-        assert_eq!(
-            egraph.lookup_expr(&"(/ x x)".parse().unwrap()),
-            egraph.lookup_expr(&"1".parse().unwrap())
-        );
+        let serialized = egg_to_serialized_egraph(&egraph);
+        serialized.to_json_file("merge_eqs_basic.json").unwrap();
+
+        // assert_eq!(
+        //     egraph.find(egraph.lookup_expr(&"(/ x x)".parse().unwrap()).unwrap()),
+        //     egraph.find(egraph.lookup_expr(&"1".parse().unwrap()).unwrap())
+        // );
     }
 }

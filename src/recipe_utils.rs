@@ -124,8 +124,7 @@ fn run_workload_internal<L: SynthLanguage>(
             state.implications(),
         );
 
-        let mut rws = impl_prop_rules.to_egg_rewrites();
-        rws.push(merge_eqs());
+        let rws = impl_prop_rules.to_egg_rewrites();
 
         let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
         chosen_cond.pretty_print();
