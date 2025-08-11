@@ -1162,15 +1162,19 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(min_max_mul);
 
-    // let min_max_div = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     7,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
-    //     all_rules.clone(),
-    //     wkld.clone(),
-    // );
+    let min_max_div = time_fn_call!(
+        "min_max_div",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+        )
+    );
 
-    // all_rules.extend(min_max_div);
+    all_rules.extend(min_max_div);
 
     let end_time = std::time::Instant::now();
 
