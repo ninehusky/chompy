@@ -1020,8 +1020,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let start_time = std::time::Instant::now();
     // cut down on the number of atoms
-    let wkld =
-        conditions::generate::get_condition_workload().filter(Filter::MetricLt(Metric::Atoms, 5));
+    let wkld = conditions::generate::get_condition_workload();
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
     let mut all_rules = Ruleset::default();
@@ -1103,19 +1102,37 @@ pub fn og_recipe() -> Ruleset<Pred> {
         .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
         .plug("V", &Workload::new(&["a", "b", "c"]));
 
-    let base_comps = run_workload(
-        comps.clone(),
-        Some(wkld.clone()),
-        all_rules.clone(),
-        base_implications.clone(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true,
+    let base_comps = time_fn_call!(
+        "base_comps",
+        run_workload(
+            comps.clone(),
+            Some(wkld.clone()),
+            all_rules.clone(),
+            base_implications.clone(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        )
     );
 
     all_rules.extend(base_comps.clone());
 
     let and_comps = Workload::new(&["V", "(&& V V)"]).plug("V", &comps);
+
+    let and_comps_total = time_fn_call!(
+        "and_comps_total",
+        run_workload(
+            and_comps.clone(),
+            None,
+            all_rules.clone(),
+            base_implications.clone(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true
+        )
+    );
+
+    all_rules.extend(and_comps_total);
 
     let and_comps_rules = time_fn_call!(
         "and_comps_rules",
@@ -1127,7 +1144,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             Limits::synthesis(),
             Limits::minimize(),
             true
-        ),
+        )
     );
 
     all_rules.extend(and_comps_rules.clone());
