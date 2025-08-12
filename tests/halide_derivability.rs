@@ -147,6 +147,7 @@ const CAVIAR_RULES: &str = r#"
 (% (* ?c0 ?x) ?c1) ==> 0 if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
 "#;
 
+#[allow(dead_code)]
 fn override_total_rules<L: SynthLanguage>(
     keep_total: &Ruleset<L>,
     keep_cond: &Ruleset<L>,
@@ -270,7 +271,7 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
 
         if candidates.can_derive_cond(
             ruler::DeriveType::LhsAndRhs,
-            &desired_rule,
+            desired_rule,
             Limits::deriving(),
             &ImplicationSet::default().to_egg_rewrites(),
         ) {

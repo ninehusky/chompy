@@ -15,6 +15,9 @@ use super::{Rule, Scheduler};
 /// A mapping from pvecs to their corresponding predicates.
 pub type PredicateMap<L> = IndexMap<PVec, Vec<Assumption<L>>>;
 
+// lhs, rhs, condition, true_count
+type RuleAsRecExpr<L> = (RecExpr<L>, RecExpr<L>, RecExpr<L>, usize);
+
 /// A set of rewrite rules
 #[derive(Clone, Debug)]
 pub struct Ruleset<L: SynthLanguage>(pub IndexMap<Arc<str>, Rule<L>>);
@@ -390,12 +393,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                         // These aren't actually the rules. They're the RecExprs that the rules
                         // are built from. You'll see.
-                        let mut conditional_candidates: Vec<(
-                            RecExpr<L>,
-                            RecExpr<L>,
-                            RecExpr<L>,
-                            usize,
-                        )> = vec![];
+                        let mut conditional_candidates: Vec<RuleAsRecExpr<L>> = vec![];
 
                         for predicate in &predicates {
                             let true_count = conditions
@@ -450,12 +448,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                             // 5. See if there exists a valid rule in `conditional_candidates`
                             // that subsumes this one, or if our rule subsumes any of theirs.
                             let mut should_add = true;
-                            let mut should_remove: Vec<(
-                                RecExpr<L>,
-                                RecExpr<L>,
-                                RecExpr<L>,
-                                usize,
-                            )> = vec![];
+                            let mut should_remove: Vec<RuleAsRecExpr<L>> = vec![];
                             for (l, r, c, tc) in conditional_candidates.iter() {
                                 if l == &e1 && r == &e2 {
                                     // 5a:
@@ -464,13 +457,9 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     // so we should remove ours and keep theirs.
                                     if mini_egraph
                                         .lookup_expr(
-                                            &format!(
-                                                "({} {})",
-                                                L::assumption_label(),
-                                                c.to_string()
-                                            )
-                                            .parse()
-                                            .unwrap(),
+                                            &format!("({} {})", L::assumption_label(), c)
+                                                .parse()
+                                                .unwrap(),
                                         )
                                         .is_some()
                                     {
@@ -482,23 +471,18 @@ impl<L: SynthLanguage> Ruleset<L> {
                                     // If our condition is an assumption in their egraph, then
                                     // their condition implies ours (our condition is stronger),
                                     // so we should remove theirs and keep ours.
-                                    match predicate_to_egraph.get(&c.to_string()) {
-                                        Some(egraph) => {
-                                            if egraph
-                                                .lookup_expr(
-                                                    &predicate.to_string().parse().unwrap(),
-                                                )
-                                                .is_some()
-                                            {
-                                                should_remove.push((
-                                                    l.clone(),
-                                                    r.clone(),
-                                                    c.clone(),
-                                                    *tc,
-                                                ));
-                                            }
+                                    if let Some(egraph) = predicate_to_egraph.get(&c.to_string()) {
+                                        if egraph
+                                            .lookup_expr(&predicate.to_string().parse().unwrap())
+                                            .is_some()
+                                        {
+                                            should_remove.push((
+                                                l.clone(),
+                                                r.clone(),
+                                                c.clone(),
+                                                *tc,
+                                            ));
                                         }
-                                        _ => {}
                                     }
                                 }
                             }
