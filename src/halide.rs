@@ -6,12 +6,8 @@ use crate::{
         implication::{Implication, ImplicationValidationResult},
         implication_set::run_implication_workload,
     },
-<<<<<<< HEAD
     enumo::Rule,
-    *,
-=======
     time_fn_call, *,
->>>>>>> main
 };
 
 use conditions::implication_set::ImplicationSet;
@@ -1121,18 +1117,17 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     let and_comps = Workload::new(&["V", "(&& V V)"]).plug("V", &comps);
 
-    let and_comps_rules =
-        time_fn_call!(
+    let and_comps_rules = time_fn_call!(
         "and_comps_rules",
         run_workload(
-        and_comps,
-        Some(wkld.clone()),
-        all_rules.clone(),
-        base_implications.clone(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true
-            ),
+            and_comps,
+            Some(wkld.clone()),
+            all_rules.clone(),
+            base_implications.clone(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true
+        ),
     );
 
     all_rules.extend(and_comps_rules.clone());
