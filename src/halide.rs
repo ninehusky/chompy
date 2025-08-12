@@ -4,7 +4,9 @@ use crate::{
     conditions::{
         assumption::Assumption,
         implication::{Implication, ImplicationValidationResult},
+        implication_set::run_implication_workload,
     },
+    time_fn_call,
     enumo::Rule,
     *,
 };
@@ -166,9 +168,9 @@ impl SynthLanguage for Pred {
                         Sexp::Atom(format!("(Lit {num})"))
                     } else if a.starts_with("?") {
                         // a is a meta-variable, leave it alone.
-                        return Sexp::Atom(a.into());
+                        Sexp::Atom(a.into())
                     } else {
-                        return Sexp::Atom(format!("(Var \"{a}\")"));
+                        Sexp::Atom(format!("(Var \"{a}\")"))
                     }
                 }
                 Sexp::List(l) => {
@@ -1039,6 +1041,23 @@ pub fn og_recipe() -> Ruleset<Pred> {
     base_implications.add(and_implies_left);
     base_implications.add(and_implies_right);
 
+    let other_implications = time_fn_call!(
+        "find_base_implications",
+        run_implication_workload(
+            &wkld,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &base_implications,
+            &Default::default()
+        )
+    );
+
+    base_implications.add_all(other_implications);
+
+    println!("# base implications: {}", base_implications.len());
+
+    for i in base_implications.iter() {
+        println!("implication: {}", i.name());
+    }
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
@@ -1134,38 +1153,47 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(simp_comps.clone());
 
-    let arith_basic = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(
-            &["0", "1"],
-            &["a", "b", "c"],
-            &[&["-"], &["+", "-", "*", "/"]],
-        ),
-        Ruleset::default(),
-        base_implications.clone(),
-        wkld.clone(),
+    let arith_basic = time_fn_call!(
+        "arith_basic",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(
+                &["0", "1"],
+                &["a", "b", "c"],
+                &[&["-"], &["+", "-", "*", "/"]],
+            ),
+            Ruleset::default(),
+            base_implications.clone(),
+            wkld.clone(),
+        )
     );
     all_rules.extend(arith_basic.clone());
 
-    let min_max = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
-        all_rules.clone(),
-        base_implications.clone(),
-        wkld.clone(),
+    let min_max = time_fn_call!(
+        "min_max",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+        )
     );
 
     all_rules.extend(min_max.clone());
 
-    let min_max_add = recursive_rules_cond(
-        Metric::Atoms,
-        5,
-        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
-        all_rules.clone(),
-        base_implications.clone(),
-        wkld.clone(),
+    let min_max_add = time_fn_call!(
+        "min_max_add",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+        )
     );
 
     all_rules.extend(min_max_add.clone());
@@ -1184,26 +1212,32 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 "c".to_string(),
             ]));
 
-        let eq_simp = run_workload(
-            eq_workload,
-            Some(wkld.clone()),
-            min_max.clone(),
-            base_implications.clone(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
+        let eq_simp = time_fn_call!(
+            format!("eq_simp_{}", op),
+            run_workload(
+                eq_workload,
+                Some(wkld.clone()),
+                min_max.clone(),
+                base_implications.clone(),
+                Limits::synthesis(),
+                Limits::minimize(),
+                true,
+            )
         );
 
         all_rules.extend(eq_simp);
     }
 
-    let min_max_mul = recursive_rules_cond(
-        Metric::Atoms,
-        7,
-        Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
-        all_rules.clone(),
-        base_implications.clone(),
-        wkld.clone(),
+    let min_max_mul = time_fn_call!(
+        "min_max_mul",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+        )
     );
 
     all_rules.extend(min_max_mul);
