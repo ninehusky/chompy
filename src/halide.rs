@@ -289,8 +289,8 @@ impl SynthLanguage for Pred {
               // The redundant assignment is just to get the variable names to match with Halide's C++ implementation.
               let a = *x;
               let b = *y;
-              let mut ia = a.clone();
-              let mut ib = b.clone();
+              let mut ia = a;
+              let mut ib = b;
               let a_neg: i64 = ia >> 63;
               let b_neg: i64 = ib >> 63;
               let b_zero = if ib == 0 { -1 } else { 0 };
@@ -513,7 +513,7 @@ impl SynthLanguage for Pred {
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&lexpr._eq(&rexpr).not());
         let res = solver.check();
-        println!("res: {:?}", res);
+        println!("res: {res:?}");
         if matches!(res, z3::SatResult::Sat) {
             let model = solver.get_model().unwrap();
             println!(
@@ -675,9 +675,9 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 let a_as_bv = z3::ast::BV::from_int(a, 64);
                 let b_as_bv = z3::ast::BV::from_int(b, 64);
 
-                let zero = z3::ast::BV::from_i64(&ctx, 0, 64);
-                let neg_one = z3::ast::BV::from_i64(&ctx, -1, 64);
-                let sixty_three = z3::ast::BV::from_i64(&ctx, 63, 64);
+                let zero = z3::ast::BV::from_i64(ctx, 0, 64);
+                let neg_one = z3::ast::BV::from_i64(ctx, -1, 64);
+                let sixty_three = z3::ast::BV::from_i64(ctx, 63, 64);
 
                 let a_neg = z3::ast::BV::bvashr(&a_as_bv, &sixty_three);
                 let b_neg = z3::ast::BV::bvashr(&b_as_bv, &sixty_three);
@@ -708,8 +708,8 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 let b_as_bv = z3::ast::BV::from_int(b, 64);
 
                 let zero = z3::ast::BV::from_i64(ctx, 0, 64);
-                let neg_one = z3::ast::BV::from_i64(&ctx, -1, 64);
-                let sixty_three = z3::ast::BV::from_i64(&ctx, 63, 64);
+                let neg_one = z3::ast::BV::from_i64(ctx, -1, 64);
+                let sixty_three = z3::ast::BV::from_i64(ctx, 63, 64);
 
                 let a_neg = z3::ast::BV::bvashr(&a_as_bv, &sixty_three);
                 let b_neg = z3::ast::BV::bvashr(&b_as_bv, &sixty_three);
@@ -772,7 +772,9 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
 // This function is different from `Self::validate` in that `validate` only checks to see if a
 // given statement is true, while this function checks if the statement is always true or always
 // false (forall).
+#[allow(unreachable_code, unused_variables)]
 pub fn validate_expression(expr: &Sexp) -> ValidationResult {
+    todo!("Need to re-implement this to match division semantics");
     pub fn sexpr_to_z3<'a>(ctx: &'a z3::Context, expr: &Sexp) -> z3::ast::Int<'a> {
         match expr {
             Sexp::Atom(a) => {
@@ -1248,8 +1250,7 @@ mod div_mod_tests {
             let r_id = egraph.lookup_expr(&r.parse().unwrap()).unwrap();
             assert_eq!(
                 egraph[l_id].data.cvec, egraph[r_id].data.cvec,
-                "Failed for {} == {}",
-                l, r
+                "Failed for {l} == {r}"
             );
         }
     }
@@ -1285,8 +1286,7 @@ mod div_mod_tests {
             let r_id = egraph.lookup_expr(&r.parse().unwrap()).unwrap();
             assert_eq!(
                 egraph[l_id].data.cvec, egraph[r_id].data.cvec,
-                "Failed for {} == {}",
-                l, r
+                "Failed for {l} == {r}"
             );
         }
     }
@@ -1336,8 +1336,7 @@ mod div_mod_tests {
             let expr_el = egraph[expr_id].data.cvec.get(idx).unwrap();
             assert_eq!(
                 a_el, expr_el,
-                "Mismatch at index {}: a_el == {:?}, b_el == {:?}, expr_el == {:?}",
-                idx, a_el, b_el, expr_el
+                "Mismatch at index {idx}: a_el == {a_el:?}, b_el == {b_el:?}, expr_el == {expr_el:?}"
             );
         }
     }
