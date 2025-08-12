@@ -669,46 +669,71 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 &[&buf[usize::from(*x)], &buf[usize::from(*y)]],
             )),
             Pred::Div([x, y]) => {
-                let l = &buf[usize::from(*x)];
-                let r = &buf[usize::from(*y)];
+                let a = &buf[usize::from(*x)];
+                let b = &buf[usize::from(*y)];
 
-                let zero = z3::ast::Int::from_i64(ctx, 0);
+                let a_as_bv = z3::ast::BV::from_int(a, 64);
+                let b_as_bv = z3::ast::BV::from_int(b, 64);
 
-                let l_neg = z3::ast::Int::lt(l, &zero);
-                let r_neg = z3::ast::Int::lt(r, &zero);
+                let zero = z3::ast::BV::from_i64(&ctx, 0, 64);
+                let neg_one = z3::ast::BV::from_i64(&ctx, -1, 64);
+                let sixty_three = z3::ast::BV::from_i64(&ctx, 63, 64);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
-                let div = z3::ast::Int::div(&l_abs, &r_abs);
+                let a_neg = z3::ast::BV::bvashr(&a_as_bv, &sixty_three);
+                let b_neg = z3::ast::BV::bvashr(&b_as_bv, &sixty_three);
 
-                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+                let b_zero = z3::ast::Bool::ite(&b_as_bv._eq(&zero), &neg_one, &zero);
 
-                buf.push(z3::ast::Bool::ite(
-                    &r._eq(&zero),
-                    &zero,
-                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&div), &div),
-                ));
+                let ib = z3::ast::BV::bvsub(&b_as_bv, &b_zero);
+                let ia = z3::ast::BV::bvsub(&a_as_bv, &a_neg);
+
+                let mut q = z3::ast::BV::bvsdiv(&ia, &ib);
+
+                q = z3::ast::BV::bvadd(
+                    &q,
+                    &z3::ast::BV::bvand(
+                        &a_neg,
+                        &z3::ast::BV::bvsub(&z3::ast::BV::bvnot(&b_neg), &b_neg),
+                    ),
+                );
+
+                q = z3::ast::BV::bvand(&q, &z3::ast::BV::bvnot(&b_zero));
+
+                buf.push(q.to_int(true));
             }
             Pred::Mod([x, y]) => {
-                let l = &buf[usize::from(*x)];
-                let r = &buf[usize::from(*y)];
+                let a = &buf[usize::from(*x)];
+                let b = &buf[usize::from(*y)];
+                let a_as_bv = z3::ast::BV::from_int(a, 64);
+                let b_as_bv = z3::ast::BV::from_int(b, 64);
 
-                let zero = z3::ast::Int::from_i64(ctx, 0);
+                let zero = z3::ast::BV::from_i64(ctx, 0, 64);
+                let neg_one = z3::ast::BV::from_i64(&ctx, -1, 64);
+                let sixty_three = z3::ast::BV::from_i64(&ctx, 63, 64);
 
-                let l_neg = z3::ast::Int::lt(l, &zero);
-                let r_neg = z3::ast::Int::lt(r, &zero);
+                let a_neg = z3::ast::BV::bvashr(&a_as_bv, &sixty_three);
+                let b_neg = z3::ast::BV::bvashr(&b_as_bv, &sixty_three);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
-                let rem = z3::ast::Int::rem(&l_abs, &r_abs);
+                let b_zero = z3::ast::Bool::ite(&b_as_bv._eq(&zero), &neg_one, &zero);
 
-                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+                let ia = z3::ast::BV::bvsub(&a_as_bv, &a_neg);
 
-                buf.push(z3::ast::Bool::ite(
-                    &r._eq(&zero),
-                    &zero,
-                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&rem), &rem),
-                ));
+                let mut r = z3::ast::BV::bvsrem(&ia, &z3::ast::BV::bvor(&b_as_bv, &b_zero));
+
+                r = z3::ast::BV::bvadd(
+                    &r,
+                    &z3::ast::BV::bvand(
+                        &a_neg,
+                        &z3::ast::BV::bvadd(
+                            &z3::ast::BV::bvxor(&b_as_bv, &b_neg),
+                            &z3::ast::BV::bvnot(&b_neg),
+                        ),
+                    ),
+                );
+
+                r = z3::ast::BV::bvand(&r, &z3::ast::BV::bvnot(&b_zero));
+
+                buf.push(r.to_int(true));
             }
             Pred::Min([x, y]) => {
                 let l = &buf[usize::from(*x)];
@@ -1190,4 +1215,21 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules
+}
+
+// TODO
+mod div_mod_tests {
+    use crate::enumo::Rule;
+
+    use super::Pred;
+
+    #[test]
+    fn euclidean_identity_valid() {
+        // if b != 0, then (a / b) * b + (a % b) == a
+        let rule: Rule<Pred> =
+            Rule::from_string("(+ (* (/ ?a ?b) ?b) (% ?a ?b)) ==> ?a if (!= ?b 0)")
+                .unwrap()
+                .0;
+        assert!(rule.is_valid());
+    }
 }
