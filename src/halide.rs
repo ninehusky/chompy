@@ -283,29 +283,37 @@ impl SynthLanguage for Pred {
             Pred::Add([x, y]) => map!(get_cvec, x, y => x.checked_add(*y)),
             Pred::Sub([x, y]) => map!(get_cvec, x, y => x.checked_sub(*y)),
             Pred::Mul([x, y]) => map!(get_cvec, x, y => x.checked_mul(*y)),
+            // NOTE: The implementations of `Div` and `Mod` are designed to be equal to the implementations of `div`, `mod`
+            // in the Halide source. See https://github.com/halide/Halide/blob/c98f92b6d64ca0fede983de337908265c2c7e9fd/src/IROperator.h#L474.
             Pred::Div([x, y]) => map!(get_cvec, x, y => {
-                if *y == zero {
-                    Some(zero)
-                } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_div(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_div(*y)
-                    }
-                }
+              // The redundant assignment is just to get the variable names to match with Halide's C++ implementation.
+              let a = *x;
+              let b = *y;
+              let mut ia = a.clone();
+              let mut ib = b.clone();
+              let a_neg: i64 = ia >> 63;
+              let b_neg: i64 = ib >> 63;
+              let b_zero = if ib == 0 { -1 } else { 0 };
+              ib -= b_zero;
+              ia -= a_neg;
+              let mut q: i64 = ia / ib;
+              q += a_neg & (!b_neg - b_neg);
+              q &= !b_zero;
+              return Some(q);
             }),
             Pred::Mod([x, y]) => map!(get_cvec, x, y => {
-                if *y == zero {
-                    Some(zero)
-                } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_rem(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_rem(*y)
-                    }
-                }
+                let a = x;
+                let b = y;
+                let mut ia = a.clone();
+                let ib = b;
+                let a_neg = ia >> 63;
+                let b_neg = ib >> 63;
+                let b_zero: i64 = if *ib == 0 { -1 } else { 0 };
+                ia -= a_neg;
+                let mut r: i64 = ia % (ib | b_zero);
+                r += a_neg & ((ib ^ b_neg) + !b_neg);
+                r &= !b_zero;
+                return Some(r);
             }),
             Pred::Min([x, y]) => map!(get_cvec, x, y => Some(*x.min(y))),
             Pred::Max([x, y]) => map!(get_cvec, x, y => Some(*x.max(y))),
