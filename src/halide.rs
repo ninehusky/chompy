@@ -6,9 +6,8 @@ use crate::{
         implication::{Implication, ImplicationValidationResult},
         implication_set::run_implication_workload,
     },
-    time_fn_call,
     enumo::Rule,
-    *,
+    time_fn_call, *,
 };
 
 use conditions::implication_set::ImplicationSet;
