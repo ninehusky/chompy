@@ -1021,7 +1021,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
     let start_time = std::time::Instant::now();
     // cut down on the number of atoms
     let wkld =
-        conditions::generate::get_condition_workload().filter(Filter::MetricLt(Metric::Atoms, 3));
+        conditions::generate::get_condition_workload().filter(Filter::MetricEq(Metric::Atoms, 3));
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
     let mut all_rules = Ruleset::default();
