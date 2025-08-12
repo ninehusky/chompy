@@ -1238,7 +1238,7 @@ mod div_mod_tests {
             // this is an instance where Halide division is
             // different from C division.
             ("(/ -5 2)", "-3"),
-            ("/ 1 0", "0"),
+            ("(/ 1 0)", "0"),
         ];
 
         for (l, r) in pairs {
