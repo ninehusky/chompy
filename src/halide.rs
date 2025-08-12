@@ -1162,12 +1162,26 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(min_max_mul);
 
-    // let min_max_div = recursive_rules_cond(
-    //     Metric::Atoms,
-    //     7,
-    //     Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
-    //     all_rules.clone(),
-    //     wkld.clone(),
+    // // BEGIN DEBUG
+    // let double_div_cancel: Rule<Pred> =
+    //     Rule::from_string("(/ (/ a b) c) ==> (/ a (* b c)) if (&& (== (% b c) 0) (!= c 0))")
+    //         .unwrap()
+    //         .0;
+
+    // assert!(double_div_cancel.is_valid());
+    // all_rules.add(double_div_cancel.clone());
+    // // END DEBUG
+
+    // let min_max_div = time_fn_call!(
+    //     "min_max_div",
+    //     recursive_rules_cond(
+    //         Metric::Atoms,
+    //         7,
+    //         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+    //         all_rules.clone(),
+    //         base_implications.clone(),
+    //         wkld.clone(),
+    //     )
     // );
 
     // all_rules.extend(min_max_div);

@@ -14,6 +14,8 @@ use crate::{
     CVec, Limits,
 };
 
+use super::merge_eqs;
+
 /// A set of implications. Like a `Ruleset<L>`, but with implications instead of rewrites.
 #[derive(Debug, Clone)]
 pub struct ImplicationSet<L: SynthLanguage>(pub IndexMap<Arc<str>, Implication<L>>);
@@ -325,8 +327,12 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     }
 
     /// Converts the implications in this set to a vector of Egg rewrite rules.
+    /// Importantly, this also includes `merge_eqs`, which is a rewrite that merges
+    /// `?a` and `?b` for any `(assume (== ?a ?b))`.
     pub fn to_egg_rewrites(&self) -> Vec<Rewrite<L, SynthAnalysis>> {
-        self.iter().map(|imp| imp.rewrite()).collect()
+        let mut res: Vec<_> = self.iter().map(|imp| imp.rewrite()).collect();
+        res.push(merge_eqs());
+        res
     }
 
     /// Removes implications from the set that are subsumed by any of the rules present in the e-graph.
