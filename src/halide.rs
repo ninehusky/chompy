@@ -1080,11 +1080,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
             .0,
     );
 
-    dummy_ruleset.add(
-        Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
-            .unwrap()
-            .0,
-    );
+    // dummy_ruleset.add(
+    //     Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
+    //         .unwrap()
+    //         .0,
+    // );
 
     dummy_ruleset.add(
         Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
