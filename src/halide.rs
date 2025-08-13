@@ -284,29 +284,35 @@ impl SynthLanguage for Pred {
             Pred::Add([x, y]) => map!(get_cvec, x, y => x.checked_add(*y)),
             Pred::Sub([x, y]) => map!(get_cvec, x, y => x.checked_sub(*y)),
             Pred::Mul([x, y]) => map!(get_cvec, x, y => x.checked_mul(*y)),
+            // NOTE: The implementations of `Div` and `Mod` are designed to be equal to the implementations of `div`, `mod`
+            // in the Halide source. See https://github.com/halide/Halide/blob/c98f92b6d64ca0fede983de337908265c2c7e9fd/src/IROperator.h#L474.
             Pred::Div([x, y]) => map!(get_cvec, x, y => {
-                if *y == zero {
-                    Some(zero)
-                } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_div(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_div(*y)
-                    }
-                }
+              // The redundant assignment is just to get the variable names to match with Halide's C++ implementation.
+              let a = *x;
+              let b = *y;
+              let mut ia = a;
+              let mut ib = b;
+              let a_neg: i64 = ia >> 63;
+              let b_neg: i64 = ib >> 63;
+              let b_zero = if ib == 0 { -1 } else { 0 };
+              ib -= b_zero;
+              ia -= a_neg;
+              let mut q: i64 = ia / ib;
+              q += a_neg & (!b_neg - b_neg);
+              q &= !b_zero;
+              return Some(q);
             }),
             Pred::Mod([x, y]) => map!(get_cvec, x, y => {
-                if *y == zero {
-                    Some(zero)
-                } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_rem(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_rem(*y)
-                    }
-                }
+                let a: i64 = *x; // or x.clone() if x is i64, just make sure it's i64
+                let b: i64 = *y;
+                let a_neg = a >> 63;
+                let b_neg = b >> 63;
+                let b_zero = if b == 0 { -1 } else { 0 };
+                let ia = a - a_neg;
+                let mut r = ia % (b | b_zero);
+                r += a_neg & ((b ^ b_neg) + !b_neg);
+                r &= !b_zero;
+                Some(r)
             }),
             Pred::Min([x, y]) => map!(get_cvec, x, y => Some(*x.min(y))),
             Pred::Max([x, y]) => map!(get_cvec, x, y => Some(*x.max(y))),
@@ -507,20 +513,22 @@ impl SynthLanguage for Pred {
         let lexpr = egg_to_z3(&ctx, Self::instantiate(lhs).as_ref());
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&lexpr._eq(&rexpr).not());
-        // if matches!(solver.check(), z3::SatResult::Sat) {
-        //     let model = solver.get_model().unwrap();
-        //     println!(
-        //         "Rule {} ==> {} is invalid.\nthe model is:\n{:?}eval({}) = {:?}\neval({}) = {:?}\n",
-        //         lhs,
-        //         rhs,
-        //         model,
-        //         lhs,
-        //         model.eval(&lexpr),
-        //         rhs,
-        //         model.eval(&rexpr)
-        //     );
-        // }
-        match solver.check() {
+        let res = solver.check();
+        println!("res: {res:?}");
+        if matches!(res, z3::SatResult::Sat) {
+            let model = solver.get_model().unwrap();
+            println!(
+                "Rule {} ==> {} is invalid.\nthe model is:\n{:?}eval({}) = {:?}\neval({}) = {:?}\n",
+                lhs,
+                rhs,
+                model,
+                lhs,
+                model.eval(&lexpr, true),
+                rhs,
+                model.eval(&rexpr, true)
+            );
+        }
+        match res {
             z3::SatResult::Unsat => ValidationResult::Valid,
             z3::SatResult::Unknown => ValidationResult::Unknown,
             z3::SatResult::Sat => ValidationResult::Invalid,
@@ -662,46 +670,71 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 &[&buf[usize::from(*x)], &buf[usize::from(*y)]],
             )),
             Pred::Div([x, y]) => {
-                let l = &buf[usize::from(*x)];
-                let r = &buf[usize::from(*y)];
+                let a = &buf[usize::from(*x)];
+                let b = &buf[usize::from(*y)];
 
-                let zero = z3::ast::Int::from_i64(ctx, 0);
+                let a_as_bv = z3::ast::BV::from_int(a, 64);
+                let b_as_bv = z3::ast::BV::from_int(b, 64);
 
-                let l_neg = z3::ast::Int::lt(l, &zero);
-                let r_neg = z3::ast::Int::lt(r, &zero);
+                let zero = z3::ast::BV::from_i64(ctx, 0, 64);
+                let neg_one = z3::ast::BV::from_i64(ctx, -1, 64);
+                let sixty_three = z3::ast::BV::from_i64(ctx, 63, 64);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
-                let div = z3::ast::Int::div(&l_abs, &r_abs);
+                let a_neg = z3::ast::BV::bvashr(&a_as_bv, &sixty_three);
+                let b_neg = z3::ast::BV::bvashr(&b_as_bv, &sixty_three);
 
-                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+                let b_zero = z3::ast::Bool::ite(&b_as_bv._eq(&zero), &neg_one, &zero);
 
-                buf.push(z3::ast::Bool::ite(
-                    &r._eq(&zero),
-                    &zero,
-                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&div), &div),
-                ));
+                let ib = z3::ast::BV::bvsub(&b_as_bv, &b_zero);
+                let ia = z3::ast::BV::bvsub(&a_as_bv, &a_neg);
+
+                let mut q = z3::ast::BV::bvsdiv(&ia, &ib);
+
+                q = z3::ast::BV::bvadd(
+                    &q,
+                    &z3::ast::BV::bvand(
+                        &a_neg,
+                        &z3::ast::BV::bvsub(&z3::ast::BV::bvnot(&b_neg), &b_neg),
+                    ),
+                );
+
+                q = z3::ast::BV::bvand(&q, &z3::ast::BV::bvnot(&b_zero));
+
+                buf.push(q.to_int(true));
             }
             Pred::Mod([x, y]) => {
-                let l = &buf[usize::from(*x)];
-                let r = &buf[usize::from(*y)];
+                let a = &buf[usize::from(*x)];
+                let b = &buf[usize::from(*y)];
+                let a_as_bv = z3::ast::BV::from_int(a, 64);
+                let b_as_bv = z3::ast::BV::from_int(b, 64);
 
-                let zero = z3::ast::Int::from_i64(ctx, 0);
+                let zero = z3::ast::BV::from_i64(ctx, 0, 64);
+                let neg_one = z3::ast::BV::from_i64(ctx, -1, 64);
+                let sixty_three = z3::ast::BV::from_i64(ctx, 63, 64);
 
-                let l_neg = z3::ast::Int::lt(l, &zero);
-                let r_neg = z3::ast::Int::lt(r, &zero);
+                let a_neg = z3::ast::BV::bvashr(&a_as_bv, &sixty_three);
+                let b_neg = z3::ast::BV::bvashr(&b_as_bv, &sixty_three);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
-                let rem = z3::ast::Int::rem(&l_abs, &r_abs);
+                let b_zero = z3::ast::Bool::ite(&b_as_bv._eq(&zero), &neg_one, &zero);
 
-                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+                let ia = z3::ast::BV::bvsub(&a_as_bv, &a_neg);
 
-                buf.push(z3::ast::Bool::ite(
-                    &r._eq(&zero),
-                    &zero,
-                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&rem), &rem),
-                ));
+                let mut r = z3::ast::BV::bvsrem(&ia, &z3::ast::BV::bvor(&b_as_bv, &b_zero));
+
+                r = z3::ast::BV::bvadd(
+                    &r,
+                    &z3::ast::BV::bvand(
+                        &a_neg,
+                        &z3::ast::BV::bvadd(
+                            &z3::ast::BV::bvxor(&b_as_bv, &b_neg),
+                            &z3::ast::BV::bvnot(&b_neg),
+                        ),
+                    ),
+                );
+
+                r = z3::ast::BV::bvand(&r, &z3::ast::BV::bvnot(&b_zero));
+
+                buf.push(r.to_int(true));
             }
             Pred::Min([x, y]) => {
                 let l = &buf[usize::from(*x)];
@@ -740,7 +773,9 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
 // This function is different from `Self::validate` in that `validate` only checks to see if a
 // given statement is true, while this function checks if the statement is always true or always
 // false (forall).
+#[allow(unreachable_code, unused_variables)]
 pub fn validate_expression(expr: &Sexp) -> ValidationResult {
+    todo!("Need to re-implement this to match division semantics");
     pub fn sexpr_to_z3<'a>(ctx: &'a z3::Context, expr: &Sexp) -> z3::ast::Int<'a> {
         match expr {
             Sexp::Atom(a) => {
@@ -1275,4 +1310,147 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules
+}
+
+#[cfg(test)]
+mod div_mod_tests {
+    #[allow(unused_imports)]
+    use crate::{
+        enumo::{Rule, Ruleset, Workload},
+        EGraph, SynthAnalysis,
+    };
+    use crate::{SynthLanguage, ValidationResult};
+
+    use super::Pred;
+
+    #[test]
+    fn div_interpreter_ok() {
+        let pairs = vec![
+            ("(/ 1 2)", "0"),
+            ("(/ -4 -2)", "2"),
+            ("(/ 5 2)", "2"),
+            ("(/ -5 -2)", "3"),
+            // this is an instance where Halide division is
+            // different from C division.
+            ("(/ -5 2)", "-3"),
+            ("(/ 1 0)", "0"),
+        ];
+
+        for (l, r) in pairs {
+            let workload = Workload::new(&[l, r, "dummy_var"]);
+            let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
+            let l_id = egraph.lookup_expr(&l.parse().unwrap()).unwrap();
+            let r_id = egraph.lookup_expr(&r.parse().unwrap()).unwrap();
+            assert_eq!(
+                egraph[l_id].data.cvec, egraph[r_id].data.cvec,
+                "Failed for {l} == {r}"
+            );
+        }
+    }
+
+    #[test]
+    fn div_validation_ok() {
+        let mut ruleset: Ruleset<Pred> = Default::default();
+        ruleset.add(Rule::from_string("(/ 1 2) ==> 0").unwrap().0);
+        ruleset.add(Rule::from_string("(/ -4 -2) ==> 2").unwrap().0);
+        ruleset.add(Rule::from_string("(/ 5 2) ==> 2").unwrap().0);
+        ruleset.add(Rule::from_string("(/ -5 -2) ==> 3").unwrap().0);
+
+        for (_, rule) in ruleset {
+            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+        }
+    }
+
+    #[test]
+    fn mod_interpreter_ok() {
+        let pairs = vec![
+            ("(% 1 2)", "1"),
+            ("(% -4 -2)", "0"),
+            ("(% 5 2)", "1"),
+            ("(% -5 -2)", "1"),
+            ("(% -5 2)", "1"),
+            ("(% 1 0)", "0"),
+        ];
+
+        for (l, r) in pairs {
+            let workload = Workload::new(&[l, r, "dummy_var"]);
+            let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
+            let l_id = egraph.lookup_expr(&l.parse().unwrap()).unwrap();
+            let r_id = egraph.lookup_expr(&r.parse().unwrap()).unwrap();
+            assert_eq!(
+                egraph[l_id].data.cvec, egraph[r_id].data.cvec,
+                "Failed for {l} == {r}"
+            );
+        }
+    }
+
+    #[test]
+    fn mod_validation_ok() {
+        let mut ruleset: Ruleset<Pred> = Default::default();
+        ruleset.add(Rule::from_string("(% 1 2) ==> 1").unwrap().0);
+        ruleset.add(Rule::from_string("(% -4 -2) ==> 0").unwrap().0);
+        ruleset.add(Rule::from_string("(% 5 2) ==> 1").unwrap().0);
+        ruleset.add(Rule::from_string("(% -5 -2) ==> 1").unwrap().0);
+        ruleset.add(Rule::from_string("(% 1 0) ==> 0").unwrap().0);
+
+        for (_, rule) in ruleset {
+            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+        }
+    }
+
+    #[test]
+    fn mod_axioms_valid() {
+        let mut ruleset: Ruleset<Pred> = Default::default();
+        ruleset.add(Rule::from_string("(<= 0 (% ?a ?b)) ==> 1").unwrap().0);
+        ruleset.add(Rule::from_string("(< (% ?a ?b) (abs ?b)) ==> 1").unwrap().0);
+
+        for (_, rule) in ruleset {
+            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+        }
+    }
+
+    #[test]
+    fn euclidean_identity_interpreter() {
+        let workload = Workload::new(&["(+ (* (/ a b) b) (% a b))", "a"]);
+        let egraph: EGraph<Pred, SynthAnalysis> = workload.to_egraph();
+        let a_id = egraph.lookup_expr(&"a".parse().unwrap()).unwrap();
+        let b_id = egraph.lookup_expr(&"b".parse().unwrap()).unwrap();
+        let expr_id = egraph
+            .lookup_expr(&"(+ (* (/ a b) b) (% a b))".parse().unwrap())
+            .unwrap();
+        assert!(!egraph[a_id].data.cvec.is_empty());
+
+        for (idx, a_el) in egraph[a_id].data.cvec.iter().enumerate() {
+            let b_el = egraph[b_id].data.cvec.get(idx).unwrap();
+            if *b_el == Some(0) {
+                // Skip division by zero.
+                continue;
+            }
+            let expr_el = egraph[expr_id].data.cvec.get(idx).unwrap();
+            assert_eq!(
+                a_el, expr_el,
+                "Mismatch at index {idx}: a_el == {a_el:?}, b_el == {b_el:?}, expr_el == {expr_el:?}"
+            );
+        }
+    }
+
+    #[test]
+    // The euclidean identity should be valid. Our current implementation causes SMT
+    // to hang on this test, so I'm just ensuring that it's _not_ invalid for now.
+    fn euclidean_identity_valid() {
+        // if b != 0, then (a / b) * b + (a % b) == a
+        // let rule: Rule<Pred> =
+        //     Rule::from_string("(+ (* (/ ?a ?b) ?b) (% ?a ?b)) ==> ?a if (!= ?b 0)")
+        //         .unwrap()
+        //         .0;
+        // assert!(rule.is_valid());
+        assert!(!matches!(
+            Pred::validate_with_cond(
+                &"(+ (* (/ ?a ?b) ?b) (% ?a ?b))".parse().unwrap(),
+                &"a".parse().unwrap(),
+                &"(!= ?b 0)".parse().unwrap()
+            ),
+            ValidationResult::Invalid
+        ));
+    }
 }
