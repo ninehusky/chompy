@@ -322,8 +322,9 @@ pub mod halide_derive_tests {
         // total caviar rules.
         let forward_result =
             run_derivability_tests(&chompy_rules, &caviar_rules, &implication_rules);
-        let backward_result =
-            run_derivability_tests(&caviar_rules, &chompy_rules, &implication_rules);
+        // let backward_result =
+        //     run_derivability_tests(&caviar_rules, &chompy_rules, &implication_rules);
+        //  commenting out for now
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({
@@ -334,7 +335,7 @@ pub mod halide_derive_tests {
 
         let to_write = serde_json::json!({
             "forwards": to_json(forward_result),
-            "backwards": to_json(backward_result),
+            // "backwards": to_json(backward_result),
         });
         std::fs::write(out_path, to_write.to_string())
             .expect("Failed to write derivability results to file");

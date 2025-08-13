@@ -126,11 +126,11 @@ fn run_workload_internal<L: SynthLanguage>(
 
         let mut rws = impl_prop_rules.to_egg_rewrites();
 
-        if conditional_candidates.len() > 500 {
-            // take the best 500
-            println!("cutting down conditional candidates to 500");
-            conditional_candidates = conditional_candidates.select(500, &mut Default::default());
-            println!("here are the 500 candidates:");
+        if conditional_candidates.len() > 200 {
+            // take the best 200
+            println!("cutting down conditional candidates to 200");
+            conditional_candidates = conditional_candidates.select(200, &mut Default::default());
+            println!("here are the {} candidates:", conditional_candidates.len());
             for rule in conditional_candidates.iter() {
                 println!("  {}", rule);
             }
