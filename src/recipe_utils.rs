@@ -8,6 +8,23 @@ use crate::{
     Limits, SynthAnalysis, SynthLanguage,
 };
 
+// A cute lil' macro to time function calls.
+#[macro_export]
+macro_rules! time_fn_call {
+    ($label:expr, $fn_call:expr) => {{
+        use std::time::Instant;
+        let start = Instant::now();
+        let result = $fn_call;
+        let duration = start.elapsed();
+        println!(
+            "LOG: Chomp! I finished {} in {} ms.",
+            $label,
+            duration.as_millis()
+        );
+        result
+    }};
+}
+
 /// Iterate a grammar (represented as a workload) up to a certain size metric
 pub fn iter_metric(wkld: Workload, atom: &str, met: Metric, n: usize) -> Workload {
     let mut pegs = wkld.clone();
@@ -74,46 +91,28 @@ fn run_workload_internal<L: SynthLanguage>(
         return chosen;
     }
 
-    // TODO: Make this a parameter; 5 is a bit arbitrary lol.
-    let max_cond_size = 5;
-
     let impl_prop_rules = state.implications();
 
-    for cond_size in 1..=max_cond_size {
-        println!("[run_workload] cond size: {cond_size}");
-        let mut predicates: PredicateMap<L> = Default::default();
+    let mut predicates: PredicateMap<L> = Default::default();
 
-        for pvec in state.pvec_to_patterns().keys() {
-            for pattern in state.pvec_to_patterns().get(pvec).unwrap() {
-                let size = pattern.chop_assumption().ast.as_ref().len();
-                if size == cond_size {
-                    predicates
-                        .entry(pvec.clone())
-                        .or_default()
-                        .push(pattern.clone());
-                }
-            }
+    for pvec in state.pvec_to_patterns().keys() {
+        for pattern in state.pvec_to_patterns().get(pvec).unwrap() {
+            predicates
+                .entry(pvec.clone())
+                .or_default()
+                .push(pattern.clone());
         }
-
-        if predicates.is_empty() {
-            println!("[run_workload] No predicates of size {cond_size}");
-            continue;
-        }
-
-        let mut conditional_candidates = Ruleset::conditional_cvec_match(
-            &compressed,
-            &chosen,
-            &predicates,
-            state.implications(),
-        );
-
-        let mut rws = impl_prop_rules.to_egg_rewrites();
-        rws.push(merge_eqs());
-
-        let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
-        chosen_cond.pretty_print();
-        chosen.extend(chosen_cond.clone());
     }
+
+    let mut conditional_candidates =
+        Ruleset::conditional_cvec_match(&compressed, &chosen, &predicates, state.implications());
+
+    let mut rws = impl_prop_rules.to_egg_rewrites();
+    rws.push(merge_eqs());
+
+    let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
+    chosen_cond.pretty_print();
+    chosen.extend(chosen_cond.clone());
 
     let time = t.elapsed().as_secs_f64();
 

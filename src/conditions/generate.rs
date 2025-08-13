@@ -100,7 +100,7 @@ pub fn get_condition_workload() -> Workload {
 
     println!("comparisons:");
     for i in comparisons.clone().force() {
-        println!("comparison: {}", i);
+        println!("comparison: {i}");
     }
 
     println!("Condition workload generation took: {:?}", start.elapsed());
