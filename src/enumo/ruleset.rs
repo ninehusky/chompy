@@ -833,7 +833,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             // TODO: make this an optimization flag
             if should_skip {
-                println!("[shrink_cond] Skipping derivability run for {} because it is not stronger than any of {:?}",assumption, most_recent_conditions);
+                println!("[shrink_cond] Skipping derivability run for {assumption} because it is not stronger than any of {most_recent_conditions:?}");
                 continue;
             }
 
