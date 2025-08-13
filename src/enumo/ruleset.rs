@@ -819,13 +819,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                 // we have to jump through some hoops here. first,
                 // instantiate the condition, and then turn it into a pattern again.
                 let general_cond_pattern: Pattern<L> = added_condition.chop_assumption();
-                let instantiated_condition = L::instantiate(&general_cond_pattern);
-                let concrete_assumption: Pattern<L> =
-                    format!("({} {})", L::assumption_label(), instantiated_condition)
-                        .parse()
-                        .unwrap();
-
-                if !concrete_assumption.search(&egraph).is_empty() {
+                if general_cond_pattern.search(&egraph).is_empty() {
                     should_skip = false;
                     break;
                 }
