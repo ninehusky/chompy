@@ -6,8 +6,8 @@ use std::{fmt::Display, io::Write, sync::Arc};
 
 use crate::{
     conditions::{assumption::Assumption, implication_set::ImplicationSet},
-    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
-    SynthAnalysis, SynthLanguage,
+    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Pattern,
+    Signature, SynthAnalysis, SynthLanguage,
 };
 
 use super::{Rule, Scheduler};
@@ -754,7 +754,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         &mut self,
         chosen: &Self,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
-        most_recent_condition: &Assumption<L>,
+        most_recent_conditions: &Vec<Assumption<L>>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
@@ -812,25 +812,30 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .run(prop_rules)
                 .with_node_limit(1000);
 
-            // TODO: make this an optimization flag
-            if most_recent_condition
-                .chop_assumption()
-                .search(&runner.egraph)
-                .is_empty()
-            {
-                println!("skipping {condition}");
-                // if the most recent condition is not in the e-graph, then it's not relevant
-                continue;
+            egraph = Scheduler::Saturating(Limits::minimize()).run(&runner.egraph, chosen);
+
+            let mut should_skip = true;
+            for added_condition in most_recent_conditions {
+                // we have to jump through some hoops here. first,
+                // instantiate the condition, and then turn it into a pattern again.
+                let general_cond_pattern: Pattern<L> = added_condition.chop_assumption();
+                let instantiated_condition = L::instantiate(&general_cond_pattern);
+                let concrete_assumption: Pattern<L> =
+                    format!("({} {})", L::assumption_label(), instantiated_condition)
+                        .parse()
+                        .unwrap();
+
+                if !concrete_assumption.search(&egraph).is_empty() {
+                    should_skip = false;
+                    break;
+                }
             }
 
-            let egraph = runner.egraph.clone();
-
-            let egraph = Scheduler::Saturating(Limits {
-                iter: 1,
-                node: 100,
-                match_: 1000,
-            })
-            .run(&egraph, chosen);
+            // TODO: make this an optimization flag
+            if should_skip {
+                println!("[shrink_cond] Skipping derivability run for {} because it is not stronger than any of {:?}",assumption, most_recent_conditions);
+                continue;
+            }
 
             // 5. Compress the candidates with the rules we've chosen so far.
             // Anjali said this was good! Thank you Anjali!
@@ -918,19 +923,15 @@ impl<L: SynthLanguage> Ruleset<L> {
             // We might add `step_size` rules, and each rule might have a backwards version too.
             assert!(selected.len() <= step_size * 2);
 
-            let most_recent_condition = &selected
+            let most_recent_conditions = &selected
                 .0
                 .values()
-                .map(|rule| rule.cond.clone())
-                .collect::<Vec<_>>()
-                .first()
-                .cloned()
-                .unwrap()
-                .unwrap();
+                .map(|rule| rule.cond.clone().unwrap())
+                .collect::<Vec<_>>();
 
             chosen.extend(selected.clone());
 
-            self.shrink_cond(&chosen, prop_rules, most_recent_condition);
+            self.shrink_cond(&chosen, prop_rules, most_recent_conditions);
         }
         // Return only the new rules
         chosen.remove_all(prior);
