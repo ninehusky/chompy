@@ -6,14 +6,15 @@ use std::{
 
 use conditions::assumption::Assumption;
 use egg::{
-    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, PatternAst,
-    RecExpr, Rewrite, Subst,
+    Analysis, Applier, AstSize, CostFunction, DidMerge, ENodeOrVar, FromOp, Language, MultiPattern,
+    PatternAst, RecExpr, Rewrite, Runner, Subst,
 };
 use enumo::lookup_pattern;
 
 use crate::{
     conditions::implication::{Implication, ImplicationValidationResult},
     enumo::Sexp,
+    halide::Pred,
     *,
 };
 
@@ -32,9 +33,9 @@ pub struct ImplicationSwitch<L: SynthLanguage> {
     pub(crate) my_cond: Pattern<L>,
 }
 
-struct ImplicationApplier<L: SynthLanguage> {
-    parent_cond: Pattern<L>,
-    my_cond: Pattern<L>,
+pub struct ImplicationApplier<L: SynthLanguage> {
+    pub(crate) parent_cond: Pattern<L>,
+    pub(crate) my_cond: Pattern<L>,
 }
 
 // Given a subst and a pattern, this function adds the substituted pattern to the egraph.
@@ -486,7 +487,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         rhs: &Pattern<Self>,
         cond: &Option<Assumption<Self>>,
         true_count: Option<usize>,
-    ) -> [i32; 3] {
+    ) -> i32 {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -523,12 +524,23 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         } else {
             0
         };
+        let ast_cost = l_cost + r_cost + c_cost; // lower = better
 
-        [
-            -(l_cost + r_cost + c_cost),
-            (true_count.unwrap_or(i32::MAX as usize) as i32),
-            lhs_bigger,
-        ]
+        // Optimization: subtract a bonus if LHS > RHS, so optimizations reduce score
+        let lhs_bonus = if l_cost > r_cost { -50 } else { 0 };
+
+        // Condition weakness: subtract more if the condition is weak (fires often)
+        let condition_bonus = -(true_count.unwrap_or(0) as i32);
+
+        let score = ast_cost + lhs_bonus + condition_bonus; // lower = better
+                                                            //
+        score
+
+        // [
+        //     -(l_cost + r_cost + c_cost),
+        //     lhs_bigger,
+        //     (true_count.unwrap_or(i32::MAX as usize) as i32),
+        // ]
     }
 
     #[allow(dead_code)]
@@ -944,4 +956,37 @@ pub mod implication_switch_tests {
 
         println!("selected: {selected:?}");
     }
+}
+
+// a test rewrite
+pub fn my_good_rewrite<L: SynthLanguage>() -> Rewrite<L, SynthAnalysis> {
+    let searcher: MultiPattern<L> = "?sum = (+ ?a ?b), ?body = (assume (< ?b 0))"
+        .parse()
+        .unwrap();
+    let rewrite = Rewrite::new(
+        "my funny implication",
+        searcher,
+        ImplicationApplier {
+            parent_cond: "(< ?b 0)".parse().unwrap(),
+            my_cond: "(< (+ ?a ?b) ?b)".parse().unwrap(),
+        },
+    );
+
+    rewrite.unwrap()
+}
+
+#[test]
+fn my_good_rewrite_works() {
+    let mut egraph = EGraph::<Pred, SynthAnalysis>::default();
+    egraph.add_expr(&"(assume (< y 0))".parse().unwrap());
+    egraph.add_expr(&"(+ x y)".parse().unwrap());
+
+    let runner: Runner<Pred, SynthAnalysis> = Runner::new(SynthAnalysis::default())
+        .with_egraph(egraph.clone())
+        .run(&[my_good_rewrite()]);
+
+    assert!(runner
+        .egraph
+        .lookup_expr(&"(assume (< (+ x y) y))".parse().unwrap())
+        .is_some());
 }

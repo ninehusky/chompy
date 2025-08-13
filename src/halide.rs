@@ -1128,7 +1128,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 Filter::Excludes("OP1".parse().unwrap()),
             ]))
             .plug("OP2", &Workload::new(&[op, "+"]))
-            .plug("VAR", &Workload::new(&["a", "b", "c"]));
+            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
 
         let lt_workload =
             Workload::new(&["(< V V)"])
@@ -1137,13 +1137,16 @@ pub fn og_recipe() -> Ruleset<Pred> {
                     "a".to_string(),
                     "b".to_string(),
                     "c".to_string(),
+                    "d".to_string(),
                 ]));
 
         let lt_rules = time_fn_call!(
             format!("lt_rules_{}", op),
             run_workload(
                 lt_workload,
-                Some(wkld.clone()),
+                Some(Workload::new(&[
+                    "(< a 0)", "(> a 0)", "(!= b c)", "(!= c d)"
+                ])),
                 all_rules.clone(),
                 base_implications.clone(),
                 Limits::synthesis(),
@@ -1188,21 +1191,30 @@ pub fn og_recipe() -> Ruleset<Pred> {
             .unwrap()
             .0,
     );
-    dummy_ruleset.add(
-        Rule::from_string("(< (max ?a ?c) (min ?a ?b)) ==> 0")
-            .unwrap()
-            .0,
-    );
+    // dummy_ruleset.add(
+    //     Rule::from_string("(< (max ?a ?c) (min ?a ?b)) ==> 0")
+    //         .unwrap()
+    //         .0,
+    // );
 
+    let mut cannot_derive = vec![];
     for r in dummy_ruleset.iter() {
         assert!(r.is_valid());
-        assert!(all_rules.can_derive_cond(
+        if !all_rules.can_derive_cond(
             DeriveType::LhsAndRhs,
             r,
             Limits::deriving(),
-            &base_implications.to_egg_rewrites()
-        ));
+            &base_implications.to_egg_rewrites(),
+        ) {
+            cannot_derive.push(r);
+        }
     }
+
+    assert!(
+        cannot_derive.is_empty(),
+        "Could not derive: {:?}",
+        cannot_derive
+    );
 
     for op in &["min", "max"] {
         let int_workload = Workload::new(&["0", "1", "(OP V V)"])

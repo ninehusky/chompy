@@ -11,8 +11,10 @@ use crate::{
 use crate::{
     conditions::{assumption::Assumption, manager::EGraphManager},
     enumo::{Filter, Metric, Scheduler, Workload},
-    CVec, Limits,
+    my_good_rewrite, CVec, Limits,
 };
+
+use super::merge_eqs;
 
 /// A set of implications. Like a `Ruleset<L>`, but with implications instead of rewrites.
 #[derive(Debug, Clone)]
@@ -326,7 +328,12 @@ impl<L: SynthLanguage> ImplicationSet<L> {
 
     /// Converts the implications in this set to a vector of Egg rewrite rules.
     pub fn to_egg_rewrites(&self) -> Vec<Rewrite<L, SynthAnalysis>> {
-        self.iter().map(|imp| imp.rewrite()).collect()
+        let mut rws: Vec<_> = vec![];
+        rws.push(my_good_rewrite());
+        // rws.push(merge_eqs());
+        let rest: Vec<_> = self.iter().map(|imp| imp.rewrite()).collect();
+        rws.extend(rest);
+        rws
     }
 
     /// Removes implications from the set that are subsumed by any of the rules present in the e-graph.

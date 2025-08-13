@@ -431,7 +431,17 @@ impl<L: SynthLanguage> Ruleset<L> {
                             let pred: RecExpr<L> =
                                 predicate.chop_assumption().to_string().parse().unwrap();
                             // 4. If the candidate is a new conditional rule, add it.
-                            candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                            let mut dummy: Ruleset<L> = Default::default();
+                            dummy.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+
+                            if !dummy.0.is_empty() {
+                                let rule = dummy.0.values().next().unwrap();
+                                if rule.is_valid() {
+                                    candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                                } else {
+                                    skipped_rules += 1;
+                                }
+                            }
                         }
                     }
                 }
@@ -511,8 +521,8 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(colored_egraph.clone())
-            .run(&rules)
-            .with_node_limit(500);
+            .with_node_limit(50000)
+            .run(&rules);
 
         // 3. If we can compress the egraph further, do so.
         //    This might not be a bad place to use a `Scheduler::Saturating` instead.
@@ -807,13 +817,13 @@ impl<L: SynthLanguage> Ruleset<L> {
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
                 .run(prop_rules)
-                .with_node_limit(1000);
+                .with_node_limit(1500);
 
             let egraph = runner.egraph.clone();
-            let egraph = Scheduler::Saturating(Limits {
-                iter: 1,
-                node: 100,
-                match_: 1000,
+            let egraph = Scheduler::Simple(Limits {
+                iter: 2,
+                node: 30000,
+                match_: 4000,
             })
             .run(&egraph, chosen);
 
@@ -827,10 +837,10 @@ impl<L: SynthLanguage> Ruleset<L> {
                 // if the most recent condition is not in the e-graph, then it's not relevant
                 continue;
             }
-            // 5. Compress the candidates with the rules we've chosen so far.
-            // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Saturating(Limits::deriving());
-            let egraph = scheduler.run(&runner.egraph, chosen);
+            // // 5. Compress the candidates with the rules we've chosen so far.
+            // // Anjali said this was good! Thank you Anjali!
+            // let scheduler = Scheduler::Saturating(Limits::deriving());
+            // let egraph = scheduler.run(&runner.egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {

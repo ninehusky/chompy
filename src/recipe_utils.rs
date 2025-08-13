@@ -1,11 +1,11 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
-use egg::EGraph;
+use egg::{EGraph, MultiPattern, Rewrite};
 
 use crate::{
     conditions::{implication_set::ImplicationSet, merge_eqs},
     enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
-    Limits, SynthAnalysis, SynthLanguage,
+    my_good_rewrite, ImplicationApplier, Limits, SynthAnalysis, SynthLanguage,
 };
 
 // A cute lil' macro to time function calls.
@@ -125,7 +125,16 @@ fn run_workload_internal<L: SynthLanguage>(
         );
 
         let mut rws = impl_prop_rules.to_egg_rewrites();
-        rws.push(merge_eqs());
+
+        if conditional_candidates.len() > 500 {
+            // take the best 500
+            println!("cutting down conditional candidates to 500");
+            conditional_candidates = conditional_candidates.select(500, &mut Default::default());
+            println!("here are the 500 candidates:");
+            for rule in conditional_candidates.iter() {
+                println!("  {}", rule);
+            }
+        }
 
         let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
         chosen_cond.pretty_print();

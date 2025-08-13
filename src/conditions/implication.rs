@@ -4,7 +4,7 @@ use egg::{Analysis, Applier, Language, Pattern, PatternAst, Rewrite, Var};
 
 use crate::{
     apply_pat,
-    enumo::{lookup_pattern, Sexp},
+    enumo::{egg_to_serialized_egraph, lookup_pattern, Sexp},
     SynthAnalysis, SynthLanguage,
 };
 
@@ -178,12 +178,17 @@ where
 
         // First, search for the left-hand side pattern in the egraph.
         // If it's not there, something terrible happened.
-        assert!(
-            lookup_pattern(&lhs, egraph, subst),
-            "For implication {}, could not find {}",
-            self.implication.name,
-            lhs
-        );
+        if !lookup_pattern(&lhs, egraph, subst) {
+            let dump = egg_to_serialized_egraph(egraph);
+            dump.to_json_file("bad_assumption.json")
+                .expect("Failed to write egraph to file");
+            assert!(
+                lookup_pattern(&lhs, egraph, subst),
+                "For implication {}, could not find {}",
+                self.implication.name,
+                lhs
+            );
+        }
 
         // TODO: if this is expensive, we might be able to comment this out?
         if lookup_pattern(&rhs, egraph, subst) {
