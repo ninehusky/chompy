@@ -6,7 +6,8 @@ use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
 use crate::{ConditionRecipe, Recipe};
 
-const PROMPT_DE_LA_SOPA_ALFABETO: &str = r#"
+
+const ENUMERATE_TERMS_PROMPT: &str = r#"
 You are an expert in generating a list of terms for a given
 programming language. The syntax of the programming language
 is s-expressions. You will be given a list of variables,
@@ -26,7 +27,6 @@ Your response should only be terms, one after another.
 Do not include any other text in your response. Do not
 include line numbers or any other formatting. Only
 include the terms in your response.
-
 Example:
 
 Example Input:
@@ -59,7 +59,7 @@ vars: {vars},
 ops: {ops},
 "#;
 
-const PROMPT_DE_LA_SOPA_ALFABETO_CON_CONDICIONES: &str = r#"
+const ENUMERATE_CONDITIONS_PROMPT: &str = r#"
 Good job! Now let's do it again, but with conditions. Your input will be the same as before:
 it will be a list of variables, constants, and operations. However, this time instead of generating
 terms that will be useful in rewrite situations, you generate conditions which can be used to
@@ -155,7 +155,7 @@ pub async fn condition_soup(
     r: &ConditionRecipe,
 ) -> Result<Vec<String>, reqwest::Error> {
     // TODO: @ninehusky -- check that term workload vars are superset of recipe vars.
-    let content = PROMPT_DE_LA_SOPA_ALFABETO_CON_CONDICIONES
+    let content = ENUMERATE_CONDITIONS_PROMPT
         .replace(
             "{last_step_workload}",
             // This will be the workload from the previous step, which is a list of terms.
@@ -208,7 +208,7 @@ pub async fn condition_soup(
 // asks GPT to generate a list of terms which implement some bigass recipe.
 pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, reqwest::Error> {
     let url = "https://api.openai.com/v1/chat/completions";
-    let content = PROMPT_DE_LA_SOPA_ALFABETO
+    let content = ENUMERATE_TERMS_PROMPT
         .replace("{max_size}", &r.max_size.to_string())
         .replace("{vals}", format!("{:?}", r.vals).as_str())
         .replace("{vars}", format!("{:?}", r.vars).as_str())
