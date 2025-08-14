@@ -1003,8 +1003,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             rule.cond.is_some(),
             "Rule must have a condition to derive conditionally"
         );
-        let scheduler = Scheduler::Saturating(limits);
-        let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+        let scheduler = Scheduler::Simple(limits);
+        let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default().with_explanations_enabled();
         let lexpr = &L::instantiate(&rule.lhs);
         let rexpr = &L::instantiate(&rule.rhs);
 
@@ -1046,7 +1046,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
-        let out_egraph = scheduler.run_derive(&egraph, self, rule);
+        let mut out_egraph = scheduler.run_derive(&egraph, self, rule);
 
         let l_id = out_egraph
             .lookup_expr(lexpr)
@@ -1063,7 +1063,14 @@ impl<L: SynthLanguage> Ruleset<L> {
                     "an assume node merged with somethin else!"
                 );
             }
-            l_id == r_id
+            let res = out_egraph.find(l_id) == out_egraph.find(r_id);
+            if res {
+                println!("{} and {} are equal under condition {}", lexpr, rexpr, cond);
+                println!("here's why:");
+                let proof = out_egraph.explain_equivalence(lexpr, rexpr);
+                println!("{proof}");
+            }
+            res
         } else {
             false
         }

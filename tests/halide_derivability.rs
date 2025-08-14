@@ -167,7 +167,7 @@ fn run_derivability_tests<L: SynthLanguage>(
     let (can, cannot) = base.derive(
         ruler::DeriveType::LhsAndRhs,
         against,
-        Limits::super_deriving(),
+        Limits::deriving(),
         Some(&impl_rules),
     );
 
@@ -178,6 +178,7 @@ fn caviar_rules() -> Ruleset<Pred> {
     let rules = CAVIAR_RULES;
     let mut ruleset = Ruleset::default();
     for rule in rules.trim().lines() {
+        println!("looking at rule: {rule}");
         match Rule::from_string(rule) {
             Ok((rule, None)) => {
                 if !rule.is_valid() {

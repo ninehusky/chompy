@@ -25,6 +25,8 @@ macro_rules! time_fn_call {
     }};
 }
 
+const ALLOWED_RULE_CAP: usize = 100;
+
 /// Iterate a grammar (represented as a workload) up to a certain size metric
 pub fn iter_metric(wkld: Workload, atom: &str, met: Metric, n: usize) -> Workload {
     let mut pegs = wkld.clone();
@@ -126,10 +128,11 @@ fn run_workload_internal<L: SynthLanguage>(
 
         let mut rws = impl_prop_rules.to_egg_rewrites();
 
-        if conditional_candidates.len() > 200 {
-            // take the best 200
-            println!("cutting down conditional candidates to 200");
-            conditional_candidates = conditional_candidates.select(200, &mut Default::default());
+        if conditional_candidates.len() > ALLOWED_RULE_CAP {
+            // take the best ALLOWED_RULE_CAP
+            println!("cutting down conditional candidates to {ALLOWED_RULE_CAP}");
+            conditional_candidates =
+                conditional_candidates.select(ALLOWED_RULE_CAP, &mut Default::default());
             println!("here are the {} candidates:", conditional_candidates.len());
             for rule in conditional_candidates.iter() {
                 println!("  {}", rule);

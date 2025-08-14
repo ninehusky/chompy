@@ -329,7 +329,7 @@ impl<L: SynthLanguage> ImplicationSet<L> {
     /// Converts the implications in this set to a vector of Egg rewrite rules.
     pub fn to_egg_rewrites(&self) -> Vec<Rewrite<L, SynthAnalysis>> {
         let mut rws: Vec<_> = vec![];
-        rws.push(my_good_rewrite());
+        // rws.push(my_good_rewrite());
         // rws.push(merge_eqs());
         let rest: Vec<_> = self.iter().map(|imp| imp.rewrite()).collect();
         rws.extend(rest);
