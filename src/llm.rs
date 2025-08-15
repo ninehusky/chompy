@@ -7,7 +7,9 @@ use std::fmt::Display;
 use crate::enumo::{Rule, Ruleset};
 use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
-use crate::{ConditionRecipe, Recipe};
+use crate::{ConditionRecipe, IndexMap, Recipe};
+
+pub type CategorizedRuleset<L> = IndexMap<String, Ruleset<L>>;
 
 const SCORE_RULES_PROMPT: &str = r#"
 You are an expert in program optimization and algebraic reasoning.
@@ -39,6 +41,129 @@ Existing rules:
 prior_text
 
 Candidate rules:
+candidates_text
+"#;
+
+const GROUP_RULES_PROMPT: &str = r#"
+You are the world’s leading expert in program optimization and algebraic reasoning.
+You are helping organize rewrite rules for use in an equality saturation system.
+
+You will be given a batch of valid candidate rewrite rules.
+
+Your goal:
+  - Group the rules into semantic categories according to what they do.
+  - If a rule produces a RHS that is structurally simpler, more canonical, or “even” compared to other rules with similar LHS patterns, place it in its own category.
+    Do not lump it with other rules that merely reshuffle or perform minor transformations.
+  - Each category should describe the general behavior or transformation pattern of the rules.
+  - Single out important rewrite patterns like idempotency, distributivity, or constant simplifications:
+    they should always get their own category, even if there are only one or two rules of that type.
+  - Do not simply group rules together because they use the same operators. Make new categories
+    that capture the differences between how the rules are transformed.
+  - Place each rule under exactly one category.
+  - Remove rules which just look like noise.
+  - Strive to capture semantic differences clearly, even if that results in more categories than before.
+  - Avoid redundant categories; rules that are semantically similar should be grouped together.
+
+Format your output like this:
+
+Category: <brief description of transformation>
+<rule 1>
+<rule 2>
+...
+
+Category: <next transformation>
+<rule 1>
+<rule 2>
+...
+
+Do not output any numeric hints, explanations, or any other text. Only output the categories and rules.
+
+Example Input:
+(+ (* ?a 1) ?b) ==> (+ ?b (* ?a 1))
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(+ ?a (+ ?b ?c)) ==> (+ ?a (+ ?c ?b))
+(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (< ?b 0)
+(+ (+ ?a ?b) (* ?c 1)) ==> (+ (* ?c 1) (+ ?b ?a))
+(max (+ ?a ?b) ?c) ==> (max (+ ?b ?a) ?c)
+(< ?a (+ ?a ?b)) ==> (< ?a (+ ?b ?a))
+(* ?a (* ?b ?c)) ==> (* ?a (* ?c ?b))
+(+ (+ ?a ?b) (+ ?c ?d)) ==> (+ (+ ?b ?a) (+ ?d ?c))
+(< (?a (+ ?b ?c))) ==> (< ?a (+ ?c ?b)) if (!= ?b 0)
+(min ?a ?b) ==> ?a if (< ?a ?b)
+(* (* ?a ?b) ?c) ==> (* (* ?b ?a) ?c)
+(< (+ ?a ?b) (+ ?b ?a)) ==> 0 if (== ?a ?b)
+(min (+ ?a ?b) ?c) ==> (+ ?a (min ?b ?c)) if (< ?a ?c)
+(+ ?a (* ?b 0)) ==> ?a if (>= ?b 0)
+(+ ?a (+ ?b ?c)) ==> (+ ?b (+ ?a ?c))
+(< (+ ?a ?b) (+ ?b ?a)) ==> (< (+ ?b ?a) (+ ?a ?b))
+(/ ?a ?a) ==> 1 if (> ?a 0)
+(min ?a (+ ?b ?c)) ==> (min (+ ?c ?b) ?a)
+(* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c)) if (>= ?a 0)
+(+ (+ ?a ?b) ?c) ==> (+ (+ ?b ?a) ?c)
+(min ?a (+ ?b ?c)) ==> (min ?a (+ ?c ?b))
+
+Example Output (Bad):
+Category: Argument Shuffling
+(+ (* ?a 1) ?b) ==> (+ ?b (* ?a 1))
+(+ ?a (+ ?b ?c)) ==> (+ ?a (+ ?b ?c))
+(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (< ?b 0)
+(+ (+ ?a ?b) (* ?c 1)) ==> (+ (+ ?a ?b) (* ?c 1))
+(max (+ ?a ?b) ?c) ==> (max (+ ?a ?b) ?c)
+(+ (+ ?a ?b) (+ ?c ?d)) ==> (+ (+ ?a ?b) (+ ?c ?d))
+(* ?a (* ?b ?c)) ==> (* ?a (* ?b ?c))
+
+Category: Simplifications
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(/ ?a ?a) ==> 1 if (> ?a 0)
+(+ ?a (* ?b 0)) ==> ?a if (>= ?b 0)
+(< ?a (+ ?a ?b)) ==> (< ?a (+ ?a ?b))
+(< (?a (+ ?b ?c))) ==> (< (?a (+ ?b ?c))) if (!= ?b 0)
+(min ?a ?b) ==> ?a if (< ?a ?b)
+(min (+ ?a ?b) ?c) ==> (+ ?a (min ?b ?c)) if (< ?a ?c)
+(* ?a (+ ?b ?c)) ==> (* ?a (+ ?b ?c)) if (>= ?a 0)
+
+Response:
+No, there are too few categories. Do this again, making sure to (1) correctly identify common rewrite rule patterns, and
+(2) creating sub-categories which capture semantic differences between rules.
+
+Example Output (Good):
+Category: Simplifications for Division
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(/ ?a ?a) ==> 1 if (> ?a 0)
+
+Category: Simplifications for Min
+(min ?a ?b) ==> ?a if (< ?a ?b)
+(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (< ?b 0)
+
+Category: Constant Multiplication and Addition Simplifications
+(+ ?a (* ?b 0)) ==> ?a if (>= ?b 0)
+(+ (* ?a 1) ?b) ==> (+ ?b (* ?a 1))
+(+ (+ ?a ?b) (* ?c 1)) ==> (+ (* ?c 1) (+ ?b ?a))
+
+Category: Commutativity and Argument Shuffling
+(+ ?a (+ ?b ?c)) ==> (+ ?a (+ ?c ?b))
+(+ ?a (+ ?b ?c)) ==> (+ ?b (+ ?a ?c))
+(* ?a (* ?b ?c)) ==> (* ?a (* ?c ?b))
+(* (* ?a ?b) ?c) ==> (* (* ?b ?a) ?c)
+(+ (+ ?a ?b) (+ ?c ?d)) ==> (+ (+ ?b ?a) (+ ?d ?c))
+(+ (+ ?a ?b) ?c) ==> (+ (+ ?b ?a) ?c)
+(max (+ ?a ?b) ?c) ==> (max (+ ?b ?a) ?c)
+
+Category: Inequality Shuffles
+(< ?a (+ ?a ?b)) ==> (< ?a (+ ?b ?a))
+(< (+ ?a ?b) (+ ?b ?a)) ==> (< (+ ?b ?a) (+ ?a ?b))
+(< (+ ?a ?b) (+ ?b ?a)) ==> 0 if (== ?a ?b)
+(< (?a (+ ?b ?c))) ==> (< ?a (+ ?c ?b)) if (!= ?b 0)
+
+Category: Min/Max Transformations
+(min (+ ?a ?b) ?c) ==> (+ ?a (min ?b ?c)) if (< ?a ?c)
+(min ?a (+ ?b ?c)) ==> (min (+ ?c ?b) ?a)
+(min ?a (+ ?b ?c)) ==> (min ?a (+ ?c ?b))
+
+Category: Distributivity of Multiplication over Addition
+(* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c)) if (>= ?a 0)
+
+Input:
 candidates_text
 "#;
 
@@ -172,6 +297,101 @@ vals: {vals},
 vars: {vars},
 ops: {ops},
 "#;
+
+fn parse_categorization_response<L: SynthLanguage>(response: String) -> CategorizedRuleset<L> {
+    let mut result: CategorizedRuleset<L> = Default::default();
+    let mut current_category: Option<String> = None;
+
+    for line in response.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with("Category:") {
+            // Start a new category
+            current_category = Some(line["Category:".len()..].trim().to_string());
+        } else if let Some(ref category) = current_category {
+            let ruleset = result.entry(category.clone()).or_default();
+            // Treat it as a rule
+            match Rule::from_string(line) {
+                Ok((fwd, bkwd)) => {
+                    ruleset.add(fwd);
+                    if let Some(bkwd) = bkwd {
+                        ruleset.add(bkwd);
+                    }
+                },
+                Err(e) => {
+                    // Handle parsing error, could log warning
+                    eprintln!("Error parsing rule '{}': {}", line, e);
+                    continue; // Skip this line
+                }
+            }
+        } else {
+            // Line outside of a category, could log warning
+            eprintln!("Warning: rule found outside of a category: {}", line);
+        }
+    }
+    result
+}
+
+pub async fn sort_rule_candidates<L: SynthLanguage>(
+    client: &Client,
+    candidates: Ruleset<L>,
+    batch_size: usize,
+) -> CategorizedRuleset<L> {
+    let candidates_text = candidates.to_str_vec().join("\n");
+    let prompt = GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
+    let mut result: CategorizedRuleset<L> = Default::default();
+
+    println!("Prompt: {}", prompt);
+
+    // Build the request payload
+    let request_body = json!({
+        "model": "gpt-4o",
+        "messages": [
+            { "role": "system", "content": prompt }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 1500
+    });
+
+    // Batch the candidates:
+    let mut candidates = candidates.clone();
+    while !candidates.is_empty() {
+        // 1. Make a batch of up to `batch_size` candidates.
+        let batch = candidates.iter().take(batch_size).collect::<Vec<_>>();
+        let batch_ruleset: Ruleset<L> = {
+            let mut rs = Ruleset::default();
+            for rule in batch {
+                rs.add(rule.clone());
+            }
+            rs
+        };
+        candidates.remove_all(batch_ruleset.clone());
+
+        // 2. Send the batch to the LLM for categorization.
+        let current_categorized = send_group_rules_request(&client, &batch_ruleset)
+            .await
+            .map_err(|e| {
+                eprintln!("Error sending request: {}", e);
+                e
+            })
+            .unwrap();
+
+        // 3. Parse the response into a CategorizedRuleset.
+        let categorized = parse_categorization_response(current_categorized);
+
+        // 4. Merge the categorized rules into the result.
+        for (category, ruleset) in categorized {
+            let entry = result.entry(category).or_default();
+            entry.extend(ruleset);
+        }
+    }
+    // 5. Return the final categorized ruleset.
+    result
+}
+
 
 pub async fn generate_alphabet_soup(
     term_recipe: &Recipe,
@@ -378,6 +598,54 @@ pub fn soup_to_workload<L: SynthLanguage>(
     let soup_workload = Workload::new(good_expressions);
 
     Ok(soup_workload)
+}
+
+pub async fn send_group_rules_request<L: SynthLanguage>(
+    client: &Client,
+    candidate_rules: &Ruleset<L>,
+) -> Result<String, String> {
+    // Build the prompt with existing rules + candidates
+    let candidates_text = candidate_rules.to_str_vec().join("\n");
+
+    let prompt =
+        GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
+
+    println!("prompt: {}", prompt);
+
+    // Build the request payload
+    let request_body = json!({
+        "model": "gpt-4o",
+        "messages": [
+            { "role": "system", "content": prompt }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 1500
+    });
+
+    // Send the request
+    let response = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
+            ),
+        )
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await.map_err(|e| format!("Failed: {}", e))?;
+
+    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    // Return raw text content
+    let text_output = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(text_output)
 }
 
 
@@ -590,13 +858,70 @@ pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset
 }
 
 pub mod rule_filter_tests {
-    use crate::{enumo::{Rule, Ruleset}, halide::Pred, llm::{filter_rules_llm, send_score_rules_request}};
+    use crate::{enumo::{Rule, Ruleset}, halide::Pred, llm::{filter_rules_llm, send_group_rules_request, send_score_rules_request, sort_rule_candidates}};
 
+    // TODO: move to `parse` tests in `src/rule.rs`
     #[test]
-    fn read_rule() {
+    fn read_rule_without_crashing() {
         let rule: Rule<Pred> = Rule::from_string("(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))").unwrap().0;
-
     }
+
+
+    #[tokio::test]
+async fn group_rules_request() {
+        let candidates_str: &str = r#"?a ==> (max ?a ?b) if (<= ?b ?a)
+(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
+(< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
+(< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
+(< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
+(< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
+(< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
+(< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
+(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
+(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
+(< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
+(< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
+(< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
+(< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
+(< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
+(< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
+(< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
+(< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
+(< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
+(< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
+(max ?b ?a) ==> ?a if (== ?b ?a)"#;
+
+        let client = reqwest::Client::new();
+
+        let mut candidate_rules: Ruleset<Pred> = Default::default();
+
+        for line in candidates_str.lines() {
+            let rule_str = line.trim();
+            if !rule_str.is_empty() {
+                match Rule::from_string(rule_str) {
+                    Ok((f, _)) => {
+                        println!("adding rule: {}", f);
+                        candidate_rules.add(f);
+                    }
+                    Err(e) => {
+                        println!("Error parsing rule '{}': {}", rule_str, e);
+
+                    }
+                };
+            }
+        }
+
+        let categorized_rules = sort_rule_candidates::<Pred>(&client, candidate_rules, 10).await;
+        println!("Here's the categorized rules:");
+        for key in categorized_rules.keys() {
+            println!("Category: {}", key);
+            let ruleset = categorized_rules.get(key).unwrap();
+            for rule in ruleset.iter() {
+                println!("  - {}", rule);
+            }
+        }
+}
 
     #[tokio::test]
     async fn score_rules_request_doesnt_filter_out_important_rules() {
