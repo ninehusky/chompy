@@ -276,12 +276,80 @@ pub mod halide_derive_tests {
 
     use ruler::{
         conditions::{generate::compress, implication_set::run_implication_workload},
-        enumo::Metric,
+        enumo::{Filter, Metric},
         halide::og_recipe,
-        recipe_utils::{recursive_rules_cond, run_workload, Lang},
+        recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, Lang},
     };
 
     use super::*;
+
+    /// This takes a long time if we don't adjust the Limits and the Scheduler.
+    #[test]
+    fn op_min_max_workload() {
+        let start_time = std::time::Instant::now();
+        if std::env::var("RUN_ME").is_err() {
+            return;
+        }
+
+        // this workload will consist of well-typed lt comparisons, where the child
+        // expressions consist of variables, `+`, and `min` (of up to size 5).
+        let int_workload =
+            // i only want OP2s and EXPRs
+            iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5).filter(Filter::And(vec![
+                Filter::Excludes("VAL".parse().unwrap()),
+                Filter::Excludes("OP1".parse().unwrap()),
+            ]))
+            .plug("OP2", &Workload::new(&["min", "+"]))
+            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+
+        let lt_workload = Workload::new(&["(OP V V)"])
+            .plug("OP", &Workload::new(&["<"]))
+            .plug("V", &int_workload);
+
+        let cond_workload = Workload::new(&["(OP2 V V)"])
+            .plug("OP2", &Workload::new(&["<"]))
+            .plug("V", &Workload::new(&["a", "b", "c", "d"]));
+
+        // These are rules which will help compress the workload so we can mimic
+        // focus on "realistic" candidate spaces for large grammars.
+        let mut prior: Ruleset<Pred> = Ruleset::default();
+        prior.add(
+            Rule::from_string("(min ?a ?b) ==> ?a if (<= ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        prior.add(Rule::from_string("(min ?a ?b) ==> (min ?b ?a)").unwrap().0);
+
+        prior.add(Rule::from_string("(< ?a ?a) ==> 0").unwrap().0);
+
+        prior.add(Rule::from_string("(< ?a ?b) ==> 1 if (< ?a ?b)").unwrap().0);
+
+        prior.add(Rule::from_string("(< ?a ?b) ==> 0 if (< ?b ?a)").unwrap().0);
+
+        prior.add(Rule::from_string("(+ ?a 0) ==> ?a").unwrap().0);
+
+        prior.add(Rule::from_string("(+ ?a ?b) ==> (+ ?b ?a)").unwrap().0);
+
+        for rule in prior.iter() {
+            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+        }
+
+        let rules = run_workload(
+            lt_workload.clone(),
+            Some(cond_workload.clone()),
+            prior.clone(),
+            // we don't need any implications for this test; notice how
+            // all the conditions are just `(< ?a ?b)`.
+            ImplicationSet::default(),
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+        );
+
+        let end_time = std::time::Instant::now();
+        println!("Time taken: {:?}", end_time - start_time);
+    }
 
     #[test]
     // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
