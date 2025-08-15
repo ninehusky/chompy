@@ -260,7 +260,21 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
             println!("  {candidate}");
         }
 
-        if candidates.contains(desired_rule) {
+        let can_derive = match &desired_rule.cond {
+            Some(cond) => candidates.can_derive_cond(
+                ruler::DeriveType::LhsAndRhs,
+                &desired_rule,
+                Limits::deriving(),
+                &vec![],
+            ),
+            None => candidates.can_derive(
+                ruler::DeriveType::LhsAndRhs,
+                &desired_rule,
+                Limits::deriving(),
+            ),
+        };
+
+        if can_derive {
             can.add(rule.clone());
         } else {
             cannot.add(rule.clone());
@@ -351,9 +365,11 @@ pub mod halide_derive_tests {
 
         let caviar_conditional_rules = caviar_rules().partition(|r| r.cond.is_some()).0;
         let (_, cannot) = can_synthesize_all(caviar_conditional_rules.clone());
-        // This is a magic number for now, but later we'll document specific
-        // rules we can't derive along with why.
-        assert_eq!(cannot.len(), 7);
+        assert!(
+            cannot.is_empty(),
+            "Chompy couldn't synthesize these rules: {:?}",
+            cannot
+        );
     }
 
     #[test]
