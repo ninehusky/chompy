@@ -824,8 +824,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 4. Run condition propagation rules, and the rewrites.
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
-                .run(prop_rules)
-                .with_node_limit(1000);
+                .with_node_limit(1000)
+                .run(prop_rules);
 
             // TODO: make this an optimization flag
             if most_recent_condition
@@ -840,17 +840,13 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             let egraph = runner.egraph.clone();
 
-            let egraph = Scheduler::Saturating(Limits {
-                iter: 1,
-                node: 100,
-                match_: 1000,
+            // 5. Compress the candidates with the rules we've chosen so far.
+            let egraph = Scheduler::Simple(Limits {
+                iter: 2,
+                node: 30000,
+                match_: 4000,
             })
             .run(&egraph, chosen);
-
-            // 5. Compress the candidates with the rules we've chosen so far.
-            // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Saturating(Limits::deriving());
-            let egraph = scheduler.run(&egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {

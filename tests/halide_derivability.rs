@@ -274,11 +274,13 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
 pub mod halide_derive_tests {
     use std::path::Path;
 
+    use egg::{EGraph, RecExpr, Runner};
     use ruler::{
         conditions::{generate::compress, implication_set::run_implication_workload},
         enumo::{Filter, Metric},
         halide::og_recipe,
         recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, Lang},
+        SynthAnalysis,
     };
 
     use super::*;
@@ -363,8 +365,33 @@ pub mod halide_derive_tests {
             true,
         );
 
+        // (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
+        let l_expr: RecExpr<Pred> = "(< (min z (+ y c0)) (min x y))".parse().unwrap();
+        let r_expr: RecExpr<Pred> = "(< (min z (+ y c0)) x)".parse().unwrap();
+        let l_id = egraph.add_expr(&l_expr);
+        let r_id = egraph.add_expr(&r_expr);
+        egraph.add_expr(&"(assume (< c0 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = egg::Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .with_explanations_enabled()
+            .with_node_limit(100000)
+            .run(rules.iter().map(|r| &r.rewrite));
+
+        let mut out_egraph = runner.egraph;
+
         let end_time = std::time::Instant::now();
         println!("Time taken: {:?}", end_time - start_time);
+
+        if out_egraph.find(l_id) == out_egraph.find(r_id) {
+            println!("The rule was derived: (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)");
+            println!("Here's the proof:");
+            let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
+            println!("\n{}", proof);
+        } else {
+            println!("The rule was NOT derived.");
+        }
     }
 
     #[test]
