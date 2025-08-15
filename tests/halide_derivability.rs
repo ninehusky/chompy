@@ -293,9 +293,8 @@ pub mod halide_derive_tests {
 
         // this workload will consist of well-typed lt comparisons, where the child
         // expressions consist of variables, `+`, and `min` (of up to size 5).
-        let int_workload =
-            // i only want OP2s and EXPRs
-            iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5).filter(Filter::And(vec![
+        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
+            .filter(Filter::And(vec![
                 Filter::Excludes("VAL".parse().unwrap()),
                 Filter::Excludes("OP1".parse().unwrap()),
             ]))
@@ -304,35 +303,52 @@ pub mod halide_derive_tests {
 
         let lt_workload = Workload::new(&["(OP V V)"])
             .plug("OP", &Workload::new(&["<"]))
-            .plug("V", &int_workload);
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ]));
 
-        let cond_workload = Workload::new(&["(OP2 V V)"])
+        let cond_workload = Workload::new(&["(OP2 V 0)"])
             .plug("OP2", &Workload::new(&["<"]))
-            .plug("V", &Workload::new(&["a", "b", "c", "d"]));
+            .plug(
+                "V",
+                &Workload::new(&["(< a 0)", "(== b b)", "(== c c)", "(== d d)"]),
+            );
 
         // These are rules which will help compress the workload so we can mimic
         // focus on "realistic" candidate spaces for large grammars.
         let mut prior: Ruleset<Pred> = Ruleset::default();
-        prior.add(
-            Rule::from_string("(min ?a ?b) ==> ?a if (<= ?a ?b)")
-                .unwrap()
-                .0,
-        );
 
-        prior.add(Rule::from_string("(min ?a ?b) ==> (min ?b ?a)").unwrap().0);
+        let prior_str = r#"(min ?a ?a) <=> ?a
+(max ?a ?a) <=> (min ?a ?a)
+(min ?b ?a) <=> (min ?a ?b)
+(max ?b ?a) <=> (max ?a ?b)
+(min ?b ?a) ==> ?a if (< ?a ?b)
+(max ?b ?a) ==> ?b if (< ?a ?b)
+(min ?b (max ?b ?a)) ==> ?b
+(max ?a (min ?b ?a)) ==> ?a
+(min ?c (min ?b ?a)) <=> (min ?a (min ?b ?c))
+(min ?b (min ?b ?a)) <=> (min ?a (min ?b ?a))
+(min ?a (max ?b ?a)) <=> (max ?a (min ?b ?a))
+(max ?c (max ?b ?a)) <=> (max ?b (max ?c ?a))
+(max ?c (min ?b ?a)) ==> (min ?a (max ?c ?b)) if  (< ?c ?a)
+(max (min ?a ?c) (min ?b ?c)) <=> (min ?c (max ?b ?a))
+(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a ?c))
+(min ?a (max ?c (min ?b ?a))) <=> (max (min ?c ?a) (min ?b ?a))
+(min (max ?b ?c) (max ?b ?a)) <=> (max ?b (min ?a (max ?b ?c)))
+(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a (max ?b ?c)))
+(+ ?a 0) <=> ?a
+(+ ?a ?b) <=> (+ ?b ?a)
+(< ?a ?b) ==> 1 if (< ?a ?b)
+(< ?a ?b) ==> 0 if (< ?b ?a)"#;
 
-        prior.add(Rule::from_string("(< ?a ?a) ==> 0").unwrap().0);
-
-        prior.add(Rule::from_string("(< ?a ?b) ==> 1 if (< ?a ?b)").unwrap().0);
-
-        prior.add(Rule::from_string("(< ?a ?b) ==> 0 if (< ?b ?a)").unwrap().0);
-
-        prior.add(Rule::from_string("(+ ?a 0) ==> ?a").unwrap().0);
-
-        prior.add(Rule::from_string("(+ ?a ?b) ==> (+ ?b ?a)").unwrap().0);
-
-        for rule in prior.iter() {
+        for line in prior_str.lines() {
+            let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
             assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+            prior.add(rule);
         }
 
         let rules = run_workload(

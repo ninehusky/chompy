@@ -391,6 +391,11 @@ impl<L: SynthLanguage> Ruleset<L> {
                         .filter(|&&x| x)
                         .count();
 
+                    if true_count == 0 || true_count == cvec1.len() {
+                        // If the predicate is always true or always false, skip it.
+                        continue;
+                    }
+
                     let pred_string = predicate.to_string();
                     let mini_egraph = predicate_to_egraph
                         .entry(pred_string.clone())
@@ -430,7 +435,17 @@ impl<L: SynthLanguage> Ruleset<L> {
                             let pred: RecExpr<L> =
                                 predicate.chop_assumption().to_string().parse().unwrap();
                             // 4. If the candidate is a new conditional rule, add it.
-                            candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                            let mut dummy: Ruleset<L> = Default::default();
+                            dummy.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+
+                            if !dummy.0.is_empty() {
+                                let rule = dummy.0.values().next().unwrap();
+                                if rule.is_valid() {
+                                    candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                                } else {
+                                    skipped_rules += 1;
+                                }
+                            }
                         }
                     }
                 }
