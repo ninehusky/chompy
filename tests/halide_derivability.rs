@@ -291,17 +291,39 @@ pub mod halide_derive_tests {
 
     use egg::{EGraph, RecExpr, Runner};
     use ruler::{
-        conditions::{generate::compress, implication_set::run_implication_workload},
-        enumo::{ChompyState, Filter, Metric},
-        halide::og_recipe,
-        recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm, Lang},
-        SynthAnalysis,
+        conditions::{generate::compress, implication_set::run_implication_workload}, enumo::{ChompyState, Filter, Metric}, halide::og_recipe, llm::generate_precondition, recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm, Lang}, SynthAnalysis
     };
 
     use super::*;
 
     // TODO: fix mii
     const USE_LLM: bool = false;
+
+    #[tokio::test]
+    async fn generate_preconditions_for_caviar() {
+        let client = reqwest::Client::new();
+        let rules = caviar_rules();
+        let mut valid_conditions = 0;
+        let mut total_conditions = 0;
+        for rule in rules.iter() {
+            match &rule.cond {
+                Some(_) => {
+                    total_conditions += 1;
+                    let lhs: RecExpr<Pred> = Pred::instantiate(&rule.lhs).into();
+                    let rhs: RecExpr<Pred> = Pred::instantiate(&rule.rhs).into();
+                    let new_rule = generate_precondition(&client, lhs, rhs).await;
+                    if new_rule.is_ok() {
+                        valid_conditions += 1;
+                        println!("valid rule: {}", new_rule.unwrap());
+                    }
+                }
+                None => continue, // we don't care about rules without conditions
+            }
+        }
+
+        println!("In total, {} valid conditions were generated out of a total of {} conditions.", valid_conditions, total_conditions);
+
+    }
 
     #[tokio::test]
     async fn op_min_max_workload_with_llm() {

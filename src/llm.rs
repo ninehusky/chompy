@@ -156,6 +156,85 @@ Input:
 candidates_text
 "#;
 
+const GENERATE_PRECONDITION_PROMPT: &str = r#"
+You are an expert in program analysis and symbolic reasoning, skilled in generating weakest preconditions for Halide expressions. Think carefully and show your reasoning step by step. Split cases when necessary. When finished, output a single line that says ANSWER: followed by the weakest precondition.
+
+We are working with Halide expressions. Two operators, / and %, have special semantics:
+
+1. (/ a b) (division):
+   - Rounds toward the sign of the denominator:
+       - b > 0 → rounds down (toward -∞)
+       - b < 0 → rounds up (toward +∞)
+   - Division by zero returns 0
+   - Overflow wraps (largest negative / -1)
+
+2. (% a b) (modulo):
+   - Result is always non-negative
+   - Modulo by zero returns 0
+
+Note: Halide division and modulo differ from C integer division. Follow the rules above strictly.
+
+Task:
+
+Given `lhs` and `rhs` expressions, generate the **weakest precondition** under which the rewrite `(lhs => rhs)` holds,
+and the rewrite `(rhs => lhs)` holds, taking into account Halide’s division and modulo semantics.
+There will be a single precondition that must hold for both rewrites to be valid.
+
+- Show all reasoning, including algebraic manipulations, constraints on variables, and case splits.
+- After the reasoning, output a single line: `ANSWER: <precondition>` in S-expression format. Do not include
+  any other formatting or backticks, just the S-expression after the ANSWER:  label.
+- Use 0 for "never valid".
+- Use (== a b) for equality.
+- Use S-expression style for all logical operators: `&&`, `||`, `>`, `<`, `>=`, `<=`, `!`.
+  Note that with the exception of `!`, all operators are binary; you'll need to use parentheses to group them correctly.
+- Use S-expression style for all arithmetic operators: `+`, `-`, `*`, `/`, `%`, `abs`, `min`, `max`.
+  Note that all operators are binary, so you'll need to use parentheses to group them correctly.
+- Simplify expressions where possible.
+
+Examples:
+
+lhs: (/ (+ x a) b)
+rhs: (+ (/ x b) (/ a b))
+[Reasoning]
+- For the rewrite to hold, the division must distribute: b ≠ 0
+- Also, a must be divisible by b for the sum to match exactly
+ANSWER: (&& (> b 0) (== (% a b) 0))
+
+lhs: (- a b)
+rhs: (- b a)
+[Reasoning]
+- The two expressions are equal only if a == b
+ANSWER: (== a b)
+
+lhs: (/ x b)
+rhs: 0
+[Reasoning]
+- For the rewrite to hold, we must consider Halide division semantics.
+- Case 1: b > 0
+  - Division rounds down
+  - x must be in [0, b-1] for (/ x b) == 0
+- Case 2: b < 0
+  - Division rounds up
+  - x must be in [b+1, 0] for (/ x b) == 0
+- Case 3: b == 0
+  - Division by zero returns 0, so the rewrite always holds
+- Combine all cases to get the minimal condition under which lhs equals rhs
+ANSWER: (|| (|| (== b 0) (&& (> b 0) (&& (<= x (- b 1)) (>= x 0))) (&& (&& (< b 0) (>= x (+ b 1))) (<= x 0))))
+
+lhs: (/ a 0)
+rhs: 0
+[Reasoning]
+- Division by zero always returns 0
+ANSWER: 1
+
+---
+
+Now generate the weakest precondition for:
+
+lhs: lhs_expression
+rhs: rhs_expression
+"#;
+
 const FILTER_RULES_PROMPT: &str = r#"
 You are an expert in program optimization and algebraic reasoning.
 
@@ -846,6 +925,79 @@ pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset
 
 }
 
+pub async fn generate_precondition<L: SynthLanguage>(client: &Client, lhs: RecExpr<L>, rhs: RecExpr<L>) -> Result<Rule<L>, String> {
+
+    println!("Generating precondition for {lhs} ==> {rhs}");
+
+    let prompt = GENERATE_PRECONDITION_PROMPT.replace("lhs_expression", &lhs.to_string().as_str()).replace("rhs_expression", &rhs.to_string().as_str());
+    // send the prompt
+
+    // Build the request payload
+    let request_body = json!({
+        "model": "gpt-4o",
+        "messages": [
+            { "role": "system", "content": prompt }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 1500
+    });
+
+
+    // Send the request
+    let response = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
+            ),
+        )
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await.map_err(|e| format!("Failed: {}", e))?;
+
+    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    // Return raw text content
+    let text_output = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    println!("Response: {text_output}");
+
+    for line in text_output.lines() {
+        // split on "ANSWER:"
+        let parts: Vec<&str> = line.split("ANSWER:").map(|s| s.trim()).collect();
+        if parts.len() > 1 {
+            let condition = parts[1];
+            println!("suggested: {}", &format!("{lhs} ==> {rhs} if {condition}").to_string());
+            let parsed_rule = Rule::<L>::from_string(&format!("{lhs} ==> {rhs} if {condition}").to_string());
+            match parsed_rule {
+                Ok((f, _)) => {
+                    if f.is_valid() {
+                        println!("and it was valid!");
+                        return Ok(f)
+                    } else {
+                        return Err(format!("{} wasn't valid", f));
+                    }
+
+                }
+                Err(e) => {
+                    println!("error: {}", e);
+
+                }
+            }
+        }
+    }
+    Err("I didn't get a condition?".to_string())
+
+
+
+}
+
 pub mod rule_filter_tests {
     use crate::{enumo::{Rule, Ruleset}, halide::Pred, llm::{filter_rules_llm, send_group_rules_request, send_score_rules_request, sort_rule_candidates}};
 
@@ -911,6 +1063,7 @@ async fn group_rules_request() {
             }
         }
 }
+
 
     #[tokio::test]
     async fn score_rules_request_doesnt_filter_out_important_rules() {
