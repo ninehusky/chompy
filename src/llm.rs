@@ -2,7 +2,9 @@ use egg::RecExpr;
 use reqwest::Client;
 use serde_json::json;
 
-use crate::enumo::Ruleset;
+use std::fmt::Display;
+
+use crate::enumo::{Rule, Ruleset};
 use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
 use crate::{ConditionRecipe, Recipe};
@@ -40,62 +42,39 @@ Candidate rules:
 candidates_text
 "#;
 
-const SELECT_RULES_PROMPT: &str = r#"
-You are given a list of rewrite rules with scores for CORE, IMPORTANCE, and NOVELTY.
-
-Your task:
-- Compute a COMPOSITE score for each rule:
-    COMPOSITE = (CORE × 2.0) + (IMPORTANCE × 1.5) + (NOVELTY × 1.0)
-- Select exactly the TOP 200 rules by COMPOSITE score.
-- Break ties by choosing the one with the higher CORE score, then IMPORTANCE score.
-- Output only the selected rules, sorted from highest to lowest COMPOSITE score.
-
-Format:
-Rank:<n> — COMPOSITE:<score> — CORE:<score> — IMPORTANCE:<score> — NOVELTY:<score> — <rule> — <reason from Pass 1>
-"#;
-
-const FILTER_RULES_PROMPT: &str  = r#"
+const FILTER_RULES_PROMPT: &str = r#"
 You are an expert in program optimization and algebraic reasoning.
 
 You will be given:
 - A set of existing rewrite rules already accepted.
-- A batch of new candidate rewrite rules that are valid.
+- A batch of new candidate rewrite rules that are valid, each annotated with numeric hints: CORE, IMPORTANCE, NOVELTY (higher values indicate higher importance).
 
-Your goal: select the most important and non-redundant rules, with *strong preference* for rules that capture core algebraic properties of operators, such as:
-- Distributivity (e.g., f(x ∘ y) → f(x) ∘ f(y), with correct guards)
-- Associativity (grouping changes that keep semantics the same)
-- Commutativity (order changes without altering meaning)
-- Idempotence (applying an operation twice has same effect as once)
-- Absorption (one operator absorbs another)
-- Homomorphism-like transformations (distributing a function into multiple arguments)
+Your goal:
+- Select the TOP {keep_max} rules that are most semantically meaningful, non-redundant, and likely to be useful in optimization.
+- Rules that express core operator laws should be strongly favored:
+   - Distributivity (e.g., (f (g x y)) -> (f (g x) (g y)), with correct guards)
+   - Associativity (grouping changes that preserve semantics)
+   - Commutativity (order changes without altering meaning)
+   - Idempotence (applying an operation twice has the same effect as once)
+   - Absorption (one operator absorbs another)
+   - Homomorphism-like transformations (distributing a function into multiple arguments)
+- Use the numeric hints (CORE, IMPORTANCE, NOVELTY) as guidance.
+- Avoid redundant rules: rules equivalent to existing ones, overly narrow, or achievable via sequences of simpler rules.
 
-**Selection criteria**:
-1. **Core property priority** — Rules expressing these core operator laws should be ranked *very high* and almost always KEPT unless redundant.
-2. **Generality** — Works for many inputs and variable arrangements.
-3. **Simplification potential** — Likely to reduce expression size or enable further simplifications.
-4. **Novelty** — Not equivalent to or implied by existing rules.
-5. **Compactness** — Prefer rules where the RHS is no more complex than LHS, unless enabling major simplification later.
+Instructions:
+- Output **only the rules to KEEP**, one per line.
+- Do not include scores, reasoning, or DROP rules.
 
-**Redundancy definition**:
-- Isomorphic to an existing rule under variable renaming.
-- Achieves the same effect as a sequence of simpler existing rules.
-- Overly narrow special case with little general use.
-
-**Instructions**:
-For each candidate, respond with:
-KEEP — if important and not redundant.
-DROP — if redundant or unimportant.
-
-If the rule matches a core algebraic property, add "CORE" after KEEP.
-
-**Format**:
-<rule> — <KEEP/DROP> [CORE if applicable] — <reason>
+Format:
+<rule>
 
 Existing rules:
-<insert existing rules here>
+prior_text
 
-Candidate rules:
-<insert candidate rules here>
+Candidate rules (with numeric hints):
+candidates_text
+
+
 "#;
 
 
@@ -450,130 +429,221 @@ pub async fn send_score_rules_request<L: SynthLanguage>(
     Ok(text_output)
 }
 
+pub async fn send_filter_rules_request<L: SynthLanguage>(
+    client: &Client,
+    prior_rules: &Ruleset<L>,
+    candidate_rules: &[ScoredRule<L>],
+    keep_max: usize,
+) -> Result<String, String> {
+    // Build the prompt with existing rules + candidates
+    let prior_text = prior_rules.to_str_vec().join("\n");
+    let candidates_text = candidate_rules.iter().map(|r| r.to_string()).collect::<Vec<_>>().join("\n");
 
-fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset<L>, max: usize) -> Ruleset<L> {
+    let prompt =
+        FILTER_RULES_PROMPT.replace("prior_text", &prior_text).replace("candidates_text", &candidates_text).replace("keep_max", &keep_max.to_string());
+
+    println!("Prompt: {}", prompt);
+
+    // Build the request payload
+    let request_body = json!({
+        "model": "gpt-4o",
+        "messages": [
+            { "role": "system", "content": prompt }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 1500
+    });
+
+    // Send the request
+    let response = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
+            ),
+        )
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await.map_err(|e| format!("Failed: {}", e))?;
+
+    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    // Return raw text content
+    let text_output = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(text_output)
+}
+
+
+#[derive(Debug, Clone)]
+pub struct ScoredRule<L: SynthLanguage> {
+    pub rule: Rule<L>,      // your rule type
+    pub core: u8,     // 0–5
+    pub importance: u8, // 0–5
+    pub novelty: u8,    // 0–5
+}
+
+impl<L: SynthLanguage> Display for ScoredRule<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} — CORE:{} — IMPORTANCE:{} — NOVELTY:{}",
+            self.rule, self.core, self.importance, self.novelty
+        )
+    }
+}
+
+pub fn parse_scored_rules<L: SynthLanguage>(text: &str) -> Vec<ScoredRule<L>>
+{
+    let mut results = Vec::new();
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Split on the “—” delimiter
+        let parts: Vec<&str> = line.split("—").map(|s| s.trim()).collect();
+        if parts.len() < 4 {
+            continue; // malformed line
+        }
+
+        let rule = Rule::from_string(parts[0]);
+        let core_str = parts[1].strip_prefix("CORE:").unwrap_or("0");
+        let importance_str = parts[2].strip_prefix("IMPORTANCE:").unwrap_or("0");
+        let novelty_str = parts[3].strip_prefix("NOVELTY:").unwrap_or("0");
+
+        if let (Ok(core), Ok(importance), Ok(novelty)) = (
+            core_str.parse::<u8>(),
+            importance_str.parse::<u8>(),
+            novelty_str.parse::<u8>(),
+        ) {
+            if let Ok((rule, _)) = rule {
+                results.push(ScoredRule {
+                    rule,
+                    core,
+                    importance,
+                    novelty,
+                });
+            }
+        }
+    }
+
+    results
+}
+
+
+pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset<L>, candidates: &Ruleset<L>, keep_max: usize, batch_size: usize) -> Ruleset<L> {
+    let mut candidates = candidates.clone();
+    let mut scored_rules = vec![];
+    while !candidates.is_empty() {
+        // 1. Make a batch of up to `batch_size` candidates.
+        let batch = candidates.iter().take(batch_size).collect::<Vec<_>>();
+        let batch_ruleset: Ruleset<L> = {
+            let mut rs = Ruleset::default();
+            for rule in batch {
+                rs.add(rule.clone());
+            }
+            rs
+        };
+        candidates.remove_all(batch_ruleset.clone());
+
+        // 2. Send the batch to the LLM for scoring.
+        let response = send_score_rules_request(client, prior, &batch_ruleset).await;
+        match response {
+            Ok(text) => {
+                // 3. Parse the response and filter rules.
+                let local_scored_rules: Vec<ScoredRule<L>> = parse_scored_rules(&text);
+                scored_rules.extend(local_scored_rules);
+
+                for scored_rule in &scored_rules {
+                    println!("Scored rule: {:?}", scored_rule);
+                }
+
+            }
+            Err(e) => {
+                eprintln!("Error scoring rules: {}", e);
+            }
+        }
+    }
+
+    println!("Scored rules: {}", scored_rules.len());
+
+    // 3. Ask the LLM to filter the scored rules based on their scores.
+    let filtered_response = send_filter_rules_request(client, prior, &scored_rules, keep_max).await;
+
+    if let Ok(r) = filtered_response {
+        println!("the filtered response: {}", r);
+    }
+
+
     Default::default()
+
+
 }
 
 pub mod rule_filter_tests {
-    use crate::{enumo::{Rule, Ruleset}, halide::Pred, llm::send_score_rules_request};
+    use crate::{enumo::{Rule, Ruleset}, halide::Pred, llm::{filter_rules_llm, send_score_rules_request}};
+
+    #[test]
+    fn read_rule() {
+        let rule: Rule<Pred> = Rule::from_string("(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))").unwrap().0;
+
+    }
 
     #[tokio::test]
     async fn score_rules_request_doesnt_filter_out_important_rules() {
         let candidates_str: &str = r#"?a ==> (max ?a ?b) if (<= ?b ?a)
-?a ==> (max ?a ?b) if (<= ?b ?a)
-?a ==> (max ?a ?b) if (< ?b ?a)
-?a ==> (max ?a ?b) if (< ?b ?a)
-?a ==> (max ?a ?b) if (== ?a ?b)
-?a ==> (max ?a ?b) if (== ?a ?b)
-?a ==> (min ?a ?b) if (<= ?a ?b)
-?a ==> (min ?a ?b) if (<= ?a ?b)
-?a ==> (min ?a ?b) if (< ?a ?b)
-?a ==> (min ?a ?b) if (< ?a ?b)
-?a ==> (min ?a ?b) if (== ?a ?b)
-?a ==> (min ?a ?b) if (== ?a ?b)
-?a ==> ?b if (== ?a ?b)
-?a ==> (max ?a ?b) if (<= ?b ?a)
-?a ==> (max ?a ?b) if (<= ?b ?a)
-?a ==> (max ?a ?b) if (< ?b ?a)
-?a ==> (max ?a ?b) if (< ?b ?a)
-?a ==> (max ?a ?b) if (== ?a ?b)
-?a ==> (max ?a ?b) if (== ?a ?b)
-?a ==> (min ?a ?b) if (<= ?a ?b)
-?a ==> (min ?a ?b) if (<= ?a ?b)
-?a ==> (min ?a ?b) if (< ?a ?b)
-?a ==> (min ?a ?b) if (< ?a ?b)
-?a ==> (min ?a ?b) if (== ?a ?b)
-?a ==> (min ?a ?b) if (== ?a ?b)
-?a ==> ?b if (== ?a ?b)
-(min ?b ?a) ==> (max ?b ?a) if (== ?b ?a)
-(min ?b ?a) ==> (max ?b ?a) if (== ?b ?a)
-(min ?b ?a) ==> (min ?c ?b) if (== ?c ?a)
-(min ?b ?a) ==> ?a if (<= ?a ?b)
-(min ?b ?a) ==> ?a if (<= ?a ?b)
-(min ?b ?a) ==> ?a if (< ?a ?b)
-(min ?b ?a) ==> ?a if (< ?a ?b)
-(min ?b ?a) ==> ?a if (== ?b ?a)
-(min ?b ?a) ==> ?a if (== ?b ?a)
-(min ?b ?a) ==> (min ?c ?a) if (== ?c ?b)
-(min ?b ?a) ==> ?b if (<= ?b ?a)
-(min ?b ?a) ==> ?b if (<= ?b ?a)
-(min ?b ?a) ==> ?b if (< ?b ?a)
-(min ?b ?a) ==> ?b if (< ?b ?a)
-(min ?b ?a) ==> ?b if (== ?b ?a)
-(min ?b ?a) ==> ?b if (== ?b ?a)
-(max ?b ?a) ==> (max ?c ?a) if (== ?c ?b)
-(max ?b ?a) ==> ?a if (<= ?b ?a)
-(max ?b ?a) ==> ?a if (<= ?b ?a)
-(max ?b ?a) ==> ?a if (< ?b ?a)
-(max ?b ?a) ==> ?a if (< ?b ?a)
-(max ?b ?a) ==> ?a if (== ?b ?a)
-(max ?b ?a) ==> ?a if (== ?b ?a)
-(max ?b ?a) ==> (max ?c ?b) if (== ?c ?a)
-(max ?b ?a) ==> ?b if (<= ?a ?b)
-(max ?b ?a) ==> ?b if (<= ?a ?b)
-(max ?b ?a) ==> ?b if (< ?a ?b)
-(max ?b ?a) ==> ?b if (< ?a ?b)
-(max ?b ?a) ==> ?b if (== ?b ?a)
-(max ?b ?a) ==> ?b if (== ?b ?a)
-(max ?b ?a) ==> ?a if (<= ?b ?a)
-(max ?b ?a) ==> ?a if (<= ?b ?a)
-(max ?b ?a) ==> ?a if (< ?b ?a)
-(max ?b ?a) ==> ?a if (< ?b ?a)
-(max ?b ?a) ==> ?a if (== ?b ?a)
-(max ?b ?a) ==> ?a if (== ?b ?a)
-(max ?b ?a) ==> (max ?b ?c) if (== ?c ?a)
-(max ?b ?a) ==> (min ?b ?a) if (== ?b ?a)
-(max ?b ?a) ==> (min ?b ?a) if (== ?b ?a)
-(min ?b ?a) ==> (max ?b ?a) if (== ?b ?a)
-(min ?b ?a) ==> (max ?b ?a) if (== ?b ?a)
-(min ?b ?a) ==> (min ?b ?c) if (== ?a ?c)
-(min ?b ?a) ==> ?a if (<= ?a ?b)
-(min ?b ?a) ==> ?a if (<= ?a ?b)
-(min ?b ?a) ==> ?a if (< ?a ?b)
-(min ?b ?a) ==> ?a if (< ?a ?b)
-(min ?b ?a) ==> ?a if (== ?b ?a)
-(min ?b ?a) ==> ?a if (== ?b ?a)
-?a ==> (min ?b ?a) if (<= ?a ?b)
-?a ==> (min ?b ?a) if (<= ?a ?b)
-?a ==> (min ?b ?a) if (< ?a ?b)
-?a ==> (min ?b ?a) if (< ?a ?b)
-?a ==> (min ?b ?a) if (== ?b ?a)
-?a ==> (min ?b ?a) if (== ?b ?a)
-?a ==> ?b if (== ?b ?a)
-(max ?b ?a) ==> ?a if (<= ?b ?a)
-(max ?b ?a) ==> ?a if (<= ?b ?a)
-(max ?b ?a) ==> ?a if (< ?b ?a)
-(max ?b ?a) ==> ?a if (< ?b ?a)
-(max ?b ?a) ==> ?a if (== ?b ?a)
+(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
+(< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
+(< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
+(< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
+(< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
+(< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
+(< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
+(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
+(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
+(< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
+(< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
+(< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
+(< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
+(< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
+(< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
+(< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
+(< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
+(< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
+(< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
 (max ?b ?a) ==> ?a if (== ?b ?a)"#;
         let client = reqwest::Client::new();
 
         let mut prior_rules: Ruleset<Pred> = Default::default();
-
         let mut candidate_rules: Ruleset<Pred> = Default::default();
 
         for line in candidates_str.lines() {
             let rule_str = line.trim();
             if !rule_str.is_empty() {
-                println!("rule str: {}", rule_str);
-                let blah = Rule::<Pred>::from_string(rule_str);
-                println!("don");
                 match Rule::from_string(rule_str) {
-                    Ok((f, b)) => {
+                    Ok((f, _)) => {
                         println!("adding rule: {}", f);
                         candidate_rules.add(f);
                     }
-                    _ => ()
+                    Err(e) => {
+                        println!("Error parsing rule '{}': {}", rule_str, e);
+
+                    }
                 };
             }
         }
 
-        let result = send_score_rules_request(&client, &prior_rules, &candidate_rules).await;
-        assert!(result.is_ok());
-        let text = result.unwrap();
-        println!("Response: {}", text);
-
+        let result = filter_rules_llm(&client, &prior_rules, &candidate_rules, 50, 10).await;
 
 
     }

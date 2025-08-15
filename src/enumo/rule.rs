@@ -56,7 +56,11 @@ impl<L: SynthLanguage> Rule<L> {
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
-                let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
+                let cond: Result<Assumption<L>, _> = Assumption::new(r.to_string());
+                if cond.is_err() {
+                    return Err(format!("Failed to parse condition: {r}"));
+                }
+                let cond = cond.unwrap();
                 (l, Some(cond))
             } else {
                 (s, None)
