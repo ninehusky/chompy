@@ -45,6 +45,7 @@ candidates_text
 "#;
 
 const GROUP_RULES_PROMPT: &str = r#"
+const GROUP_RULES_PROMPT: &str = r#"
 You are the world’s leading expert in program optimization and algebraic reasoning.
 You are helping organize rewrite rules for use in an equality saturation system.
 
@@ -52,13 +53,12 @@ You will be given a batch of valid candidate rewrite rules.
 
 Your goal:
   - Group the rules into semantic categories according to what they do.
-  - If a rule produces a RHS that is structurally simpler, more canonical, or “even” compared to other rules with similar LHS patterns, place it in its own category.
-    Do not lump it with other rules that merely reshuffle or perform minor transformations.
-  - Each category should describe the general behavior or transformation pattern of the rules.
-  - Single out important rewrite patterns like idempotency, distributivity, or constant simplifications:
-    they should always get their own category, even if there are only one or two rules of that type.
-  - Do not simply group rules together because they use the same operators. Make new categories
-    that capture the differences between how the rules are transformed.
+  - If a rule produces a RHS that is **structurally smaller than the LHS** (fewer operators, less nesting), place it in its own category.
+  - If a rule produces a RHS that is **more canonical or normalized** (terms reordered into standard order, consistent structure), place it in its own category.
+  - If a rule produces a RHS that is **more balanced or symmetric** than the LHS, place it in its own category.
+  - Do not lump simplifications with rules that merely reshuffle or perform minor transformations.
+  - Single out important rewrite patterns like idempotency, distributivity, or constant simplifications: they should always get their own category, even if there are only one or two rules of that type.
+  - Do not group rules together just because they use the same operators; create new categories for meaningful semantic differences.
   - Place each rule under exactly one category.
   - Remove rules which just look like noise.
   - Strive to capture semantic differences clearly, even if that results in more categories than before.
@@ -76,7 +76,7 @@ Category: <next transformation>
 <rule 2>
 ...
 
-Do not output any numeric hints, explanations, or any other text. Only output the categories and rules.
+Do not output numeric hints, explanations, or any other text. Only output the categories and rules.
 
 Example Input:
 (+ (* ?a 1) ?b) ==> (+ ?b (* ?a 1))
@@ -101,30 +101,6 @@ Example Input:
 (* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c)) if (>= ?a 0)
 (+ (+ ?a ?b) ?c) ==> (+ (+ ?b ?a) ?c)
 (min ?a (+ ?b ?c)) ==> (min ?a (+ ?c ?b))
-
-Example Output (Bad):
-Category: Argument Shuffling
-(+ (* ?a 1) ?b) ==> (+ ?b (* ?a 1))
-(+ ?a (+ ?b ?c)) ==> (+ ?a (+ ?b ?c))
-(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (< ?b 0)
-(+ (+ ?a ?b) (* ?c 1)) ==> (+ (+ ?a ?b) (* ?c 1))
-(max (+ ?a ?b) ?c) ==> (max (+ ?a ?b) ?c)
-(+ (+ ?a ?b) (+ ?c ?d)) ==> (+ (+ ?a ?b) (+ ?c ?d))
-(* ?a (* ?b ?c)) ==> (* ?a (* ?b ?c))
-
-Category: Simplifications
-(/ ?a ?a) ==> 1 if (!= ?a 0)
-(/ ?a ?a) ==> 1 if (> ?a 0)
-(+ ?a (* ?b 0)) ==> ?a if (>= ?b 0)
-(< ?a (+ ?a ?b)) ==> (< ?a (+ ?a ?b))
-(< (?a (+ ?b ?c))) ==> (< (?a (+ ?b ?c))) if (!= ?b 0)
-(min ?a ?b) ==> ?a if (< ?a ?b)
-(min (+ ?a ?b) ?c) ==> (+ ?a (min ?b ?c)) if (< ?a ?c)
-(* ?a (+ ?b ?c)) ==> (* ?a (+ ?b ?c)) if (>= ?a 0)
-
-Response:
-No, there are too few categories. Do this again, making sure to (1) correctly identify common rewrite rule patterns, and
-(2) creating sub-categories which capture semantic differences between rules.
 
 Example Output (Good):
 Category: Simplifications for Division
@@ -162,6 +138,20 @@ Category: Min/Max Transformations
 
 Category: Distributivity of Multiplication over Addition
 (* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c)) if (>= ?a 0)
+
+Category: Canonicalization / Reordering
+(+ ?a (+ ?b ?c)) ==> (+ ?a (+ ?c ?b))
+(+ ?a (+ ?b ?c)) ==> (+ ?b (+ ?a ?c))
+(max (+ ?a ?b) ?c) ==> (max (+ ?b ?a) ?c)
+
+Category: Structural Simplifications
+(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (< ?b 0)
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(+ ?a (* ?b 0)) ==> ?a if (>= ?b 0)
+
+Category: Balanced / Symmetric Transformations
+(+ (+ ?a ?b) (+ ?c ?d)) ==> (+ (+ ?b ?a) (+ ?d ?c))
+(+ (+ ?a ?b) ?c) ==> (+ (+ ?b ?a) ?c)
 
 Input:
 candidates_text

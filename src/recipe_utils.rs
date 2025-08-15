@@ -5,8 +5,13 @@ use egg::EGraph;
 use crate::{
     conditions::implication_set::ImplicationSet,
     enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
+    llm::{sort_rule_candidates, CategorizedRuleset},
     Limits, SynthAnalysis, SynthLanguage,
 };
+
+// After candidate collection, if there are MAX_RULE_SIZE rules remaining, we will
+// use an LLM to filter them down to the most "important" ones of size MAX_RULE_SIZE.
+pub const MAX_RULE_SIZE: usize = 50;
 
 // A cute lil' macro to time function calls.
 #[macro_export]
@@ -52,6 +57,7 @@ fn run_workload_internal<L: SynthLanguage>(
     minimize_limits: Limits,
     fast_match: bool,
     allow_empty: bool,
+    _use_llm: bool,
 ) -> Ruleset<L> {
     let prior: Ruleset<L> = state.chosen().clone();
     let cond_workload = state.predicates().clone();
@@ -127,7 +133,149 @@ fn run_workload_internal<L: SynthLanguage>(
 
         let rws = impl_prop_rules.to_egg_rewrites();
 
+
         let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
+
+        chosen_cond.pretty_print();
+        chosen.extend(chosen_cond.clone());
+    }
+
+    let time = t.elapsed().as_secs_f64();
+
+    if chosen.is_empty() && !allow_empty {
+        panic!("Didn't learn any rules!");
+    }
+
+    println!(
+        "Learned {} bidirectional rewrites, and {} conditional rules ({} total rewrites) in {} using {} prior rewrites",
+        chosen.bidir_len(),
+        chosen.condition_len(),
+        chosen.len(),
+        time,
+        num_prior
+    );
+
+    chosen.pretty_print();
+
+    chosen
+}
+
+pub async fn run_workload_internal_llm<L: SynthLanguage>(
+    state: &mut ChompyState<L>,
+    prior_limits: Limits,
+    minimize_limits: Limits,
+    fast_match: bool,
+    allow_empty: bool,
+    use_llm: bool,
+) -> Ruleset<L> {
+    let prior: Ruleset<L> = state.chosen().clone();
+    let cond_workload = state.predicates().clone();
+
+    let t = Instant::now();
+    let num_prior = prior.len();
+
+    // 1. Create an e-graph from the workload, and compress
+    //    it using the prior rules.
+    let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
+    println!("egraph size: {}", egraph.total_number_of_nodes());
+    let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
+
+    // 2. Discover total candidates using cvec matching.
+    let mut total_candidates = if fast_match {
+        Ruleset::fast_cvec_match(&compressed, prior.clone())
+    } else {
+        Ruleset::cvec_match(&compressed)
+    };
+
+    let mut chosen: Ruleset<L> = prior.clone();
+
+    // 3. Shrink the total candidates to a minimal set using the existing rules.
+    let (chosen_total, _) =
+        total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
+
+    chosen.extend(chosen_total.clone());
+
+    // 4. Using the rules that we've just discovered, shrink the egraph again.
+    let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
+
+    // 5. Find conditional rules.
+    // To help Chompy scale to higher condition sizes, we'll need to limit the size of the conditions we consider.
+    // As a heuristic, we'll go in ascending order of condition sizes.
+
+    if cond_workload == Workload::empty() {
+        // If there are no conditions, we can just return the chosen rules.
+        return chosen;
+    }
+
+    // TODO: Make this a parameter; 5 is a bit arbitrary lol.
+    let max_cond_size = 5;
+
+    let impl_prop_rules = state.implications();
+
+    for cond_size in 1..=max_cond_size {
+        println!("[run_workload] cond size: {cond_size}");
+        let mut predicates: PredicateMap<L> = Default::default();
+
+        for pvec in state.pvec_to_patterns().keys() {
+            for pattern in state.pvec_to_patterns().get(pvec).unwrap() {
+                let size = pattern.chop_assumption().ast.as_ref().len();
+                if size == cond_size {
+                    predicates
+                        .entry(pvec.clone())
+                        .or_default()
+                        .push(pattern.clone());
+                }
+            }
+        }
+
+        if predicates.is_empty() {
+            println!("[run_workload] No predicates of size {cond_size}");
+            continue;
+        }
+
+        let mut conditional_candidates = Ruleset::conditional_cvec_match(
+            &compressed,
+            &chosen,
+            &predicates,
+            state.implications(),
+        );
+
+        let rws = impl_prop_rules.to_egg_rewrites();
+
+
+        let (mut chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
+
+        if chosen_cond.len() > MAX_RULE_SIZE {
+            if use_llm {
+            println!("[run_workload] Using LLM to filter chosen conditional rules");
+            let client = reqwest::Client::new();
+            let sorted_candidates = sort_rule_candidates(&client, chosen_cond.clone(), 20).await;
+            println!("here are the sorted candidates:");
+            let mut final_choices: Ruleset<L> = Ruleset::default();
+            for key in sorted_candidates.keys() {
+                let rules = sorted_candidates.get(key).unwrap().clone();
+                println!("  {key}");
+                for rule in sorted_candidates.get(key).unwrap().iter() {
+                    println!("    {rule}");
+                }
+                // choose the top 5 for each category.
+                let top = rules.clone().select(5, &mut Default::default());
+                final_choices.extend(top);
+            }
+            chosen_cond = final_choices;
+            } else {
+                println!("Not using LLM, so we will keep all {} candidates",
+                    chosen_cond.len());
+
+            }
+
+        } else {
+            println!("Candidate size smaller than {}, so we will keep all {} candidates",
+                MAX_RULE_SIZE,
+                chosen_cond.len()
+            );
+        }
+
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
     }
@@ -165,6 +313,7 @@ pub fn run_workload<L: SynthLanguage>(
     prior_limits: Limits,
     minimize_limits: Limits,
     fast_match: bool,
+    use_llm: bool,
 ) -> Ruleset<L> {
     println!("[run_workload] Running workload");
     let start = Instant::now();
@@ -175,7 +324,15 @@ pub fn run_workload<L: SynthLanguage>(
         prior_impls,
     );
 
-    let res = run_workload_internal(&mut state, prior_limits, minimize_limits, fast_match, true);
+    let res = run_workload_internal(
+        &mut state,
+        prior_limits,
+        minimize_limits,
+        fast_match,
+        true,
+        use_llm,
+    );
+
     println!(
         "[run_workload] Finished workload in {:.2}s",
         start.elapsed().as_secs_f64()
@@ -265,6 +422,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     prior: Ruleset<L>,
     prior_impls: ImplicationSet<L>,
     conditions: Workload,
+    use_llm: bool,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
@@ -276,6 +434,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             prior.clone(),
             prior_impls.clone(),
             conditions.clone(),
+            use_llm,
         );
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
@@ -303,6 +462,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             Limits::minimize(),
             true,
             allow_empty,
+            use_llm,
         );
         let mut all = new_rules;
         all.extend(rec);
@@ -317,6 +477,7 @@ pub fn recursive_rules<L: SynthLanguage>(
     n: usize,
     lang: Lang,
     prior: Ruleset<L>,
+    use_llm: bool,
 ) -> Ruleset<L> {
     recursive_rules_cond(
         metric,
@@ -325,6 +486,7 @@ pub fn recursive_rules<L: SynthLanguage>(
         prior,
         ImplicationSet::default(),
         Workload::empty(),
+        use_llm,
     )
 }
 

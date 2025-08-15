@@ -150,7 +150,15 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
             return vec![];
         }
 
+        // println!("I'm applying rule: {} to eclass: {}", self.rhs, matched_id);
+
+        // if egraph.are_explanations_enabled() {
+        //     egraph.union_instantiations(from_pat, to_pat, subst, rule_name)
+
+        // } else {
         egraph.union(id, matched_id);
+
+        // }
         vec![id]
     }
 }
