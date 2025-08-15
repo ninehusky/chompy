@@ -1018,6 +1018,9 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
 
 pub fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
+
+    let use_llm = std::env::var("USE_LLM").is_ok();
+
     let start_time = std::time::Instant::now();
     let wkld = conditions::generate::get_condition_workload();
     let mut all_rules = Ruleset::default();
@@ -1113,6 +1116,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Limits::synthesis(),
         Limits::minimize(),
         true,
+        use_llm,
     );
 
     all_rules.extend(base_comps.clone());
@@ -1127,6 +1131,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Limits::synthesis(),
         Limits::minimize(),
         true,
+        use_llm,
     );
 
     all_rules.extend(and_comps_rules.clone());
@@ -1148,6 +1153,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Ruleset::default(),
         base_implications.clone(),
         wkld.clone(),
+        use_llm,
     );
 
     all_rules.extend(simp_comps.clone());
@@ -1165,6 +1171,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             Ruleset::default(),
             base_implications.clone(),
             wkld.clone(),
+            use_llm
         )
     );
     all_rules.extend(arith_basic.clone());
@@ -1178,6 +1185,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             all_rules.clone(),
             base_implications.clone(),
             wkld.clone(),
+            use_llm
         )
     );
 
@@ -1192,6 +1200,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             all_rules.clone(),
             base_implications.clone(),
             wkld.clone(),
+            use_llm
         )
     );
 
@@ -1221,6 +1230,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 Limits::synthesis(),
                 Limits::minimize(),
                 true,
+                use_llm
             )
         );
 
@@ -1236,6 +1246,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             all_rules.clone(),
             base_implications.clone(),
             wkld.clone(),
+            use_llm,
         )
     );
 
