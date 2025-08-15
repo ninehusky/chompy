@@ -391,6 +391,11 @@ impl<L: SynthLanguage> Ruleset<L> {
                         .filter(|&&x| x)
                         .count();
 
+                    if true_count == 0 || true_count == cvec1.len() {
+                        // If the predicate is always true or always false, skip it.
+                        continue;
+                    }
+
                     let pred_string = predicate.to_string();
                     let mini_egraph = predicate_to_egraph
                         .entry(pred_string.clone())
@@ -430,7 +435,17 @@ impl<L: SynthLanguage> Ruleset<L> {
                             let pred: RecExpr<L> =
                                 predicate.chop_assumption().to_string().parse().unwrap();
                             // 4. If the candidate is a new conditional rule, add it.
-                            candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                            let mut dummy: Ruleset<L> = Default::default();
+                            dummy.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+
+                            if !dummy.0.is_empty() {
+                                let rule = dummy.0.values().next().unwrap();
+                                if rule.is_valid() {
+                                    candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
+                                } else {
+                                    skipped_rules += 1;
+                                }
+                            }
                         }
                     }
                 }
@@ -809,8 +824,8 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 4. Run condition propagation rules, and the rewrites.
             let runner: Runner<L, SynthAnalysis> = Runner::default()
                 .with_egraph(egraph.clone())
-                .run(prop_rules)
-                .with_node_limit(1000);
+                .with_node_limit(1000)
+                .run(prop_rules);
 
             // TODO: make this an optimization flag
             if most_recent_condition
@@ -825,17 +840,13 @@ impl<L: SynthLanguage> Ruleset<L> {
 
             let egraph = runner.egraph.clone();
 
-            let egraph = Scheduler::Saturating(Limits {
-                iter: 1,
-                node: 100,
-                match_: 1000,
+            // 5. Compress the candidates with the rules we've chosen so far.
+            let egraph = Scheduler::Simple(Limits {
+                iter: 2,
+                node: 30000,
+                match_: 4000,
             })
             .run(&egraph, chosen);
-
-            // 5. Compress the candidates with the rules we've chosen so far.
-            // Anjali said this was good! Thank you Anjali!
-            let scheduler = Scheduler::Saturating(Limits::deriving());
-            let egraph = scheduler.run(&egraph, chosen);
 
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {

@@ -62,6 +62,7 @@ fn run_workload_internal<L: SynthLanguage>(
     // 1. Create an e-graph from the workload, and compress
     //    it using the prior rules.
     let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
+    println!("egraph size: {}", egraph.total_number_of_nodes());
     let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
 
     // 2. Discover total candidates using cvec matching.
