@@ -56,20 +56,31 @@ impl<L: SynthLanguage> Rule<L> {
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
+                println!("cond: {r}");
                 let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
+                println!("cond: {cond}");
                 (l, Some(cond))
             } else {
                 (s, None)
             }
         };
-        if let Some((l, r)) = s.split_once("=>") {
+        if let Some((l, r)) = s.split_once("==>") {
             let l_pat: Pattern<L> = l.parse().unwrap();
             let r_pat: Pattern<L> = r.parse().unwrap();
 
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
             let forwards = if cond.is_some() {
-                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None).unwrap()
+                println!("cond: {cond:?}");
+                let try_forwards = Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None);
+                match try_forwards {
+                    Some(rule) => rule,
+                    None => {
+                        return Err(format!(
+                            "Failed to create rule with condition: {cond:?} for {s}"
+                        ));
+                    }
+                }
             } else {
                 Self {
                     name: name.clone().into(),
