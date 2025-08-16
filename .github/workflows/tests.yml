@@ -76,6 +76,20 @@ jobs:
           name: derive.json
           path: out/derive.json
 
+  do_lt_workload_test:
+    name: "lt_workload"
+    runs-on: ubuntu-latest
+    env:
+      RUN_ME: 1
+    steps:
+      - uses: actions/checkout@main
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: "Build"
+        run: cargo build --release
+
+      - name: "Run lt_workload"
+        run: cargo test --package ruler --test halide_derivability -- halide_derive_tests::op_min_max_workload --exact --show-output --nocapture
 
 
   run_chompy:
