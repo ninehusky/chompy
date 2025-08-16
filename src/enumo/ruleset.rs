@@ -414,6 +414,23 @@ impl<L: SynthLanguage> Ruleset<L> {
                             let (c1, e1) = extract.find_best(id1);
                             let (c2, e2) = extract.find_best(id2);
 
+                            let good_lexpr: RecExpr<L> =
+                                "(< (min a b ) (+ a c ) )".parse().unwrap();
+                            let good_rexpr: RecExpr<L> = "1".parse().unwrap();
+
+                            let l_id = mini_egraph.lookup_expr(&good_lexpr).unwrap();
+                            let curr_l_id = mini_egraph.lookup_expr(&e1).unwrap();
+
+                            let r_id = mini_egraph.lookup_expr(&good_rexpr).unwrap();
+                            let curr_r_id = mini_egraph.lookup_expr(&e2).unwrap();
+
+                            let mut found_it = false;
+
+                            if r_id == curr_l_id && l_id == curr_r_id {
+                                found_it = true;
+                                panic!("found both: {} and {}", e1, e2);
+                            }
+
                             if c1 == usize::MAX || c2 == usize::MAX {
                                 continue;
                             }
@@ -426,6 +443,9 @@ impl<L: SynthLanguage> Ruleset<L> {
                             );
 
                             if result.is_none() {
+                                if found_it {
+                                    panic!("what?");
+                                }
                                 skipped_rules += 1;
                                 continue;
                             }
@@ -441,6 +461,10 @@ impl<L: SynthLanguage> Ruleset<L> {
                             if !dummy.0.is_empty() {
                                 let rule = dummy.0.values().next().unwrap();
                                 if rule.is_valid() {
+                                    if found_it {
+                                        println!("we're adding this rule: {rule}");
+                                        panic!("done");
+                                    }
                                     candidates.add_cond_from_recexprs(&e1, &e2, &pred, true_count);
                                 } else {
                                     skipped_rules += 1;

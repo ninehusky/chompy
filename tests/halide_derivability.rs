@@ -335,7 +335,7 @@ pub mod halide_derive_tests {
             .plug("OP2", &Workload::new(&["<"]))
             .plug(
                 "V",
-                &Workload::new(&["(< a 0)", "(== b b)", "(<= c 0)", "(== d d)"]),
+                &Workload::new(&["(< a 0)", "(== b b)", "(< c 0)", "(== d d)"]),
             );
 
         // These are rules which will help compress the workload so we can mimic
