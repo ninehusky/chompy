@@ -317,7 +317,7 @@ pub mod halide_derive_tests {
             .plug("OP2", &Workload::new(&["min", "+"]))
             .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
 
-        let lt_workload = Workload::new(&["(OP V V)"])
+        let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
             .plug("OP", &Workload::new(&["<"]))
             .plug("V", &int_workload)
             .filter(Filter::Canon(vec![
@@ -327,11 +327,15 @@ pub mod halide_derive_tests {
                 "d".to_string(),
             ]));
 
+        for lt_term in lt_workload.force() {
+            println!("lt_term: {}", lt_term);
+        }
+
         let cond_workload = Workload::new(&["(OP2 V 0)"])
             .plug("OP2", &Workload::new(&["<"]))
             .plug(
                 "V",
-                &Workload::new(&["(< a 0)", "(== b b)", "(== c c)", "(== d d)"]),
+                &Workload::new(&["(< a 0)", "(== b b)", "(<= c 0)", "(== d d)"]),
             );
 
         // These are rules which will help compress the workload so we can mimic
@@ -367,6 +371,30 @@ pub mod halide_derive_tests {
             prior.add(rule);
         }
 
+        let mut should_derive: Ruleset<Pred> = Default::default();
+        should_derive.add(
+            Rule::from_string(
+                "(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)",
+            )
+            .unwrap()
+            .0,
+        );
+
+        // I rewrote the condition. On the sheet, it's `(> ?c0 0)`, but this workload doesn't
+        // know what greater than is.
+        // In the real Chompy runs, the condition above should get rewritten as
+        // `(< ?c0 0)`, in which case the same rules above should be able to
+        // derive the rule.
+        should_derive.add(
+            Rule::from_string("(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (< 0 ?c0)")
+                .unwrap()
+                .0,
+        );
+
+        for rule in should_derive.iter() {
+            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+        }
+
         let rules = run_workload(
             lt_workload.clone(),
             Some(cond_workload.clone()),
@@ -379,32 +407,42 @@ pub mod halide_derive_tests {
             true,
         );
 
-        // (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
-        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
-        let l_expr: RecExpr<Pred> = "(< (min z (+ y c0)) (min x y))".parse().unwrap();
-        let r_expr: RecExpr<Pred> = "(< (min z (+ y c0)) x)".parse().unwrap();
-        let l_id = egraph.add_expr(&l_expr);
-        let r_id = egraph.add_expr(&r_expr);
-        egraph.add_expr(&"(assume (< c0 0))".parse().unwrap());
+        // NOTE : doing this manual derivation scheme for now because I don't have total
+        //        faith that the unsound merge problem has gone away; I want to
+        //        look at the proofs.
+        for rule in should_derive.iter() {
+            let mut egraph: EGraph<Pred, SynthAnalysis> =
+                EGraph::default().with_explanations_enabled();
+            let l_expr = Pred::instantiate(&rule.lhs);
+            let r_expr = Pred::instantiate(&rule.rhs);
+            let cond_expr = Pred::instantiate(&rule.cond.clone().unwrap().chop_assumption());
+            let l_id = egraph.add_expr(&l_expr);
+            let r_id = egraph.add_expr(&r_expr);
+            egraph.add_expr(
+                &format!("({} {})", Pred::assumption_label(), cond_expr)
+                    .parse()
+                    .unwrap(),
+            );
 
-        let runner: Runner<Pred, SynthAnalysis> = egg::Runner::new(SynthAnalysis::default())
-            .with_egraph(egraph.clone())
-            .with_explanations_enabled()
-            .with_node_limit(100000)
-            .run(rules.iter().map(|r| &r.rewrite));
+            let runner: Runner<Pred, SynthAnalysis> = egg::Runner::new(SynthAnalysis::default())
+                .with_egraph(egraph.clone())
+                .with_explanations_enabled()
+                .with_node_limit(100000)
+                .run(rules.iter().map(|r| &r.rewrite));
 
-        let mut out_egraph = runner.egraph;
+            let mut out_egraph = runner.egraph;
 
-        let end_time = std::time::Instant::now();
-        println!("Time taken: {:?}", end_time - start_time);
+            let end_time = std::time::Instant::now();
+            println!("Time taken: {:?}", end_time - start_time);
 
-        if out_egraph.find(l_id) == out_egraph.find(r_id) {
-            println!("The rule was derived: (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)");
-            println!("Here's the proof:");
-            let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
-            println!("\n{}", proof);
-        } else {
-            println!("The rule was NOT derived.");
+            if out_egraph.find(l_id) == out_egraph.find(r_id) {
+                println!("Derived the rule!");
+                println!("Here's the proof:");
+                let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
+                println!("\n{}", proof);
+            } else {
+                panic!("The rule was NOT derived.");
+            }
         }
     }
 
