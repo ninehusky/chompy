@@ -299,6 +299,87 @@ pub mod halide_derive_tests {
 
     use super::*;
 
+    #[test]
+    fn mul_div_workload() {
+        let start_time = std::time::Instant::now();
+        if std::env::var("RUN_ME").is_err() {
+            return;
+        }
+
+        let cond_workload = Workload::new(&[
+            "(< 0 b)",
+            "(< 0 a)",
+            "(&& (< 0 b) (== (% a b) 0))",
+            "(&& (< 0 a) (== (% a b) 0))",
+            "(== c c)",
+        ]);
+
+        let mut implications = run_implication_workload(
+            &cond_workload,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &Default::default(),
+            &Default::default(),
+        );
+
+        let and_implies_left: Implication<Pred> = Implication::new(
+            "and_implies_left".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        let and_implies_right: Implication<Pred> = Implication::new(
+            "and_implies_right".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?b".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        implications.add(and_implies_left);
+        implications.add(and_implies_right);
+
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+
+        all_rules.add(Rule::from_string("(< ?a ?b) ==> (> ?b ?a)").unwrap().0);
+
+        let rules = recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "%"]]),
+            Ruleset::default(),
+            implications.clone(),
+            cond_workload,
+        );
+
+        all_rules.extend(rules);
+
+        let mut should_derive: Ruleset<Pred> = Default::default();
+        for line in r#"
+(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
+"#
+        .lines()
+        {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let rule = Rule::from_string(line.trim())
+                .expect("Failed to parse rule")
+                .0;
+            assert!(rule.is_valid());
+            assert!(
+                all_rules.can_derive_cond(
+                    ruler::DeriveType::LhsAndRhs,
+                    &rule,
+                    Limits::deriving(),
+                    &implications.to_egg_rewrites(),
+                ),
+                "Rule should be derivable: {}",
+                rule
+            );
+        }
+    }
+
     /// This takes a long time if we don't adjust the Limits and the Scheduler.
     #[test]
     fn op_min_max_workload() {

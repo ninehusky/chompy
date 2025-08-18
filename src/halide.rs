@@ -1170,6 +1170,28 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
     all_rules.extend(arith_basic.clone());
 
+    let cond_workload = Workload::new(&[
+        "(< 0 b)",
+        "(< 0 a)",
+        "(&& (< 0 b) (== (% a b) 0))",
+        "(&& (< 0 a) (== (% a b) 0))",
+        "(== c c)",
+    ]);
+
+    let mul_div_mod = time_fn_call!(
+        "mul_div_mod",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "%"]]),
+            Ruleset::default(),
+            base_implications.clone(),
+            cond_workload,
+        )
+    );
+
+    all_rules.extend(mul_div_mod);
+
     let min_max = time_fn_call!(
         "min_max",
         recursive_rules_cond(
