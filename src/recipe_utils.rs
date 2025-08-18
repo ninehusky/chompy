@@ -83,42 +83,6 @@ fn run_workload_internal<L: SynthLanguage>(
     // 4. Using the rules that we've just discovered, shrink the egraph again.
     let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
 
-    let l_pattern: Pattern<L> = "(< (min a b) (+ a c))".parse().unwrap();
-    let r_pattern: Pattern<L> = "1".parse().unwrap();
-
-    let l_search = l_pattern.search(&compressed);
-    let r_search = r_pattern.search(&compressed);
-
-    let mut found_left = false;
-    let mut found_right = false;
-
-    if !l_search.is_empty() {
-        for l in &l_search {
-            let eclass = l.eclass;
-            let extractor = Extractor::new(&compressed, AstSize);
-            let (_, l_expr) = extractor.find_best(eclass);
-            println!("[run_workload] Found left pattern: {}", l_expr);
-            found_left = true;
-        }
-    } else {
-        println!("[run_workload] No left pattern found");
-    }
-
-    if !r_search.is_empty() {
-        assert!(r_search.len() == 1);
-        let eclass = r_search[0].eclass;
-        let extractor = Extractor::new(&compressed, AstSize);
-        let (_, r_expr) = extractor.find_best(eclass);
-        println!("[run_workload] Found right pattern: {}", r_expr);
-        found_right = true;
-    } else {
-        println!("[run_workload] No right pattern found");
-    }
-
-    if found_left && found_right {
-        println!("I fOUND IT");
-    }
-
     // 5. Find conditional rules.
     // To help Chompy scale to higher condition sizes, we'll need to limit the size of the conditions we consider.
     // As a heuristic, we'll go in ascending order of condition sizes.
