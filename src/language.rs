@@ -486,7 +486,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         rhs: &Pattern<Self>,
         cond: &Option<Assumption<Self>>,
         true_count: Option<usize>,
-    ) -> [i32; 3] {
+    ) -> [i32; 4] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -525,6 +525,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         };
 
         [
+            (vars.len() as i32),
             -(l_cost + r_cost + c_cost),
             (true_count.unwrap_or(i32::MAX as usize) as i32),
             lhs_bigger,
