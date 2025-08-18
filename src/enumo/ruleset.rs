@@ -1039,9 +1039,6 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         let mut egraph = runner.egraph;
 
-        let serialized = egg_to_serialized_egraph(&egraph);
-        serialized.to_json_file("dump.json").unwrap();
-
         match derive_type {
             DeriveType::Lhs => {
                 egraph.add_expr(lexpr);

@@ -261,7 +261,7 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
         }
 
         let can_derive = match &desired_rule.cond {
-            Some(cond) => candidates.can_derive_cond(
+            Some(_) => candidates.can_derive_cond(
                 ruler::DeriveType::LhsAndRhs,
                 &desired_rule,
                 Limits::deriving(),

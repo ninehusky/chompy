@@ -1263,10 +1263,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 "d".to_string(),
             ]));
 
-        for lt_term in lt_workload.force() {
-            println!("lt_term: {}", lt_term);
-        }
-
         let cond_workload = Workload::new(&["(OP2 V 0)"])
             .plug("OP2", &Workload::new(&["<"]))
             .plug(
