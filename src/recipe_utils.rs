@@ -1,11 +1,11 @@
 use std::time::Instant;
 
-use egg::{AstSize, EGraph, Extractor, Searcher};
+use egg::EGraph;
 
 use crate::{
     conditions::implication_set::ImplicationSet,
     enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
-    Limits, Pattern, SynthAnalysis, SynthLanguage,
+    Limits, SynthAnalysis, SynthLanguage,
 };
 
 // A cute lil' macro to time function calls.
