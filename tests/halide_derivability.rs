@@ -167,7 +167,7 @@ fn run_derivability_tests<L: SynthLanguage>(
     let (can, cannot) = base.derive(
         ruler::DeriveType::LhsAndRhs,
         against,
-        Limits::super_deriving(),
+        Limits::deriving(),
         Some(&impl_rules),
     );
 

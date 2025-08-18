@@ -1009,7 +1009,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             rule.cond.is_some(),
             "Rule must have a condition to derive conditionally"
         );
-        let scheduler = Scheduler::Saturating(limits);
+        let scheduler = Scheduler::Simple(limits);
         let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
         let lexpr = &L::instantiate(&rule.lhs);
         let rexpr = &L::instantiate(&rule.rhs);
@@ -1027,7 +1027,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         // but maybe eventually we should just have a single Scheduler that can run both?
 
         // run the rules on the condition itself, for the tiniest smidge.
-        let egraph = Scheduler::Saturating(Limits {
+        let egraph = Scheduler::Simple(Limits {
             iter: 2,
             node: 100,
             match_: 10_000,
@@ -1082,7 +1082,7 @@ impl<L: SynthLanguage> Ruleset<L> {
     ///     2. Run the ruleset
     ///     3. Return true if the lhs and rhs are equivalent, false otherwise.
     pub fn can_derive(&self, derive_type: DeriveType, rule: &Rule<L>, limits: Limits) -> bool {
-        let scheduler = Scheduler::Saturating(limits);
+        let scheduler = Scheduler::Simple(limits);
         let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
         let lexpr = &L::instantiate(&rule.lhs);
         let rexpr = &L::instantiate(&rule.rhs);
