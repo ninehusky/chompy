@@ -7,6 +7,7 @@ use crate::{
         implication_set::run_implication_workload,
     },
     enumo::Rule,
+    recipe_utils::{base_lang, iter_metric},
     time_fn_call, *,
 };
 
@@ -1240,6 +1241,54 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(min_max_mul);
+
+    for op in &["min", "max"] {
+        // this workload will consist of well-typed lt comparisons, where the child
+        // expressions consist of variables, `+`, and `min` (of up to size 5).
+        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
+            .filter(Filter::And(vec![
+                Filter::Excludes("VAL".parse().unwrap()),
+                Filter::Excludes("OP1".parse().unwrap()),
+            ]))
+            .plug("OP2", &Workload::new(&[op, "+"]))
+            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+
+        let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
+            .plug("OP", &Workload::new(&["<"]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ]));
+
+        for lt_term in lt_workload.force() {
+            println!("lt_term: {}", lt_term);
+        }
+
+        let cond_workload = Workload::new(&["(OP2 V 0)"])
+            .plug("OP2", &Workload::new(&["<"]))
+            .plug(
+                "V",
+                &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
+            );
+
+        let rules = time_fn_call!(
+            format!("lt_add_{}", op),
+            run_workload(
+                lt_workload.clone(),
+                Some(cond_workload.clone()),
+                all_rules.clone(),
+                base_implications.clone(),
+                Limits::synthesis(),
+                Limits::minimize(),
+                true,
+            )
+        );
+
+        all_rules.extend(rules);
+    }
 
     // // BEGIN DEBUG
     // let double_div_cancel: Rule<Pred> =
