@@ -335,7 +335,7 @@ pub mod halide_derive_tests {
             .plug("OP2", &Workload::new(&["<"]))
             .plug(
                 "V",
-                &Workload::new(&["(< a 0)", "(== b b)", "(< c 0)", "(== d d)"]),
+                &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
             );
 
         // These are rules which will help compress the workload so we can mimic
@@ -389,6 +389,14 @@ pub mod halide_derive_tests {
             Rule::from_string("(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (< 0 ?c0)")
                 .unwrap()
                 .0,
+        );
+
+        should_derive.add(
+            Rule::from_string(
+                "(< (min ?a ?b) (min ?c (+ ?b ?d))) ==> (< (min ?a ?b) ?c) if (< 0 ?d)",
+            )
+            .unwrap()
+            .0,
         );
 
         for rule in should_derive.iter() {
