@@ -1,4 +1,5 @@
-use std::str::FromStr;
+use smtlib::{backend::cvc5_binary::Cvc5Binary, Solver, Storage};
+use std::{ffi::OsStr, str::FromStr};
 
 use crate::{
     conditions::{
@@ -1320,4 +1321,52 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules
+}
+
+#[test]
+fn it_works() -> Result<(), Box<dyn std::error::Error>> {
+    use smtlib::{
+        backend::z3_binary::Z3Binary, prelude::*, Int, SatResultWithModel, Solver, Storage,
+    };
+
+    let st = Storage::new();
+
+    // Initialize the solver with the Z3 backend. The "z3" string refers the
+    // to location of the already installed `z3` binary. In this case, the
+    // binary is in the path.
+    let path: &OsStr = "/opt/homebrew/bin/cvc5".as_ref();
+    let mut solver = Solver::new(&st, Cvc5Binary::new(path)?)?;
+
+    // Declare two new variables
+    let x = Int::new_const(&st, "x");
+    let y = Int::new_const(&st, "y");
+
+    // Assert some constraints. This tells the solver that these expressions
+    // must be true, so any solution will satisfy these.
+    solver.assert(x._eq(y + 25))?;
+    solver.assert(x._eq(204))?;
+    // The constraints are thus:
+    // - x == y + 25
+    // - x == 204
+    // Note that we use `a._eq(b)` rather than `a == b`, since we want to
+    // express the mathematical relation of `a` and `b`, while `a == b` checks
+    // that the two **expressions** are structurally the same.
+
+    // Check for validity
+    match solver.check_sat_with_model()? {
+        SatResultWithModel::Sat(model) => {
+            // Since it is valid, we can extract the possible values of the
+            // variables using a model
+            println!("x = {}", model.eval(x).unwrap());
+            println!("y = {}", model.eval(y).unwrap());
+        }
+        SatResultWithModel::Unsat => println!("No valid solutions found!"),
+        SatResultWithModel::Unknown => println!("Satisfaction remains unknown..."),
+    }
+
+    Ok(())
+}
+
+pub fn egg_to_cvc5(expr: &[Pred]) {
+    todo!()
 }
