@@ -557,7 +557,7 @@ impl SynthLanguage for Pred {
     }
 }
 
-pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
+pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int {
     let mut buf: Vec<z3::ast::Int> = vec![];
     let zero = z3::ast::Int::from_i64(ctx, 0);
     let one = z3::ast::Int::from_i64(ctx, 1);
@@ -743,7 +743,7 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
 // given statement is true, while this function checks if the statement is always true or always
 // false (forall).
 pub fn validate_expression(expr: &Sexp) -> ValidationResult {
-    pub fn sexpr_to_z3<'a>(ctx: &'a z3::Context, expr: &Sexp) -> z3::ast::Int<'a> {
+    pub fn sexpr_to_z3<'a>(ctx: &'a z3::Context, expr: &Sexp) -> z3::ast::Int {
         match expr {
             Sexp::Atom(a) => {
                 if let Ok(c) = a.parse::<i64>() {
@@ -1321,6 +1321,36 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules
+}
+
+#[test]
+fn z3_output_smtlib() {
+    // let rule: Rule<Pred> = Rule::from_string("(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))").unwrap().0;
+
+    let cond: Pattern<Pred> = "(&& (< ?a 0) (== (% ?b ?a) 0))".parse().unwrap();
+    let lhs: Pattern<Pred> = "(min (* ?x ?a) ?b)".parse().unwrap();
+    let rhs: Pattern<Pred> = "(* (max ?x (/ ?b ?a)) ?a)".parse().unwrap();
+
+    let mut cfg = z3::Config::new();
+    cfg.set_timeout_msec(1000);
+    let ctx = z3::Context::new(&cfg);
+    let solver = z3::Solver::new(&ctx);
+    let zero = z3::ast::Int::from_i64(&ctx, 0);
+
+    let cexpr = z3::ast::Bool::not(&egg_to_z3(&ctx, Pred::instantiate(&cond).as_ref())._eq(&zero));
+
+    let lexpr = egg_to_z3(&ctx, Pred::instantiate(&lhs).as_ref());
+    let rexpr = egg_to_z3(&ctx, Pred::instantiate(&rhs).as_ref());
+    solver.assert(&z3::ast::Bool::implies(&cexpr, &lexpr._eq(&rexpr)).not());
+
+    match solver.check() {
+        z3::SatResult::Unsat => ValidationResult::Valid,
+        z3::SatResult::Unknown => ValidationResult::Unknown,
+        z3::SatResult::Sat => ValidationResult::Invalid,
+    };
+
+    let s = solver.to_smt2();
+    println!("s: {}", s);
 }
 
 #[test]
