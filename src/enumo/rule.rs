@@ -56,7 +56,11 @@ impl<L: SynthLanguage> Rule<L> {
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
-                let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
+                let cond: Result<Assumption<L>, _> = Assumption::new(r.to_string());
+                if cond.is_err() {
+                    return Err(format!("Failed to parse condition: {r}"));
+                }
+                let cond = cond.unwrap();
                 (l, Some(cond))
             } else {
                 (s, None)
@@ -69,7 +73,15 @@ impl<L: SynthLanguage> Rule<L> {
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
             let forwards = if cond.is_some() {
-                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None).unwrap()
+                let try_forwards = Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None);
+                match try_forwards {
+                    Some(rule) => rule,
+                    None => {
+                        return Err(format!(
+                            "Failed to create rule with condition: {cond:?} for {s}"
+                        ));
+                    }
+                }
             } else {
                 Self {
                     name: name.clone().into(),
@@ -138,7 +150,15 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
             return vec![];
         }
 
+        // println!("I'm applying rule: {} to eclass: {}", self.rhs, matched_id);
+
+        // if egraph.are_explanations_enabled() {
+        //     egraph.union_instantiations(from_pat, to_pat, subst, rule_name)
+
+        // } else {
         egraph.union(id, matched_id);
+
+        // }
         vec![id]
     }
 }

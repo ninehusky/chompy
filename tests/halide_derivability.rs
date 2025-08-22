@@ -7,6 +7,7 @@ use ruler::{
     Limits, SynthLanguage,
 };
 
+
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
     cannot: Ruleset<L>,
@@ -290,11 +291,11 @@ pub mod halide_derive_tests {
 
     use egg::{EGraph, RecExpr, Runner};
     use ruler::{
-        conditions::{self, generate::compress, implication_set::run_implication_workload},
-        enumo::{Filter, Metric},
+        conditions::{generate::compress, implication_set::run_implication_workload},
+        enumo::{ChompyState, Filter, Metric},
         halide::og_recipe,
-        recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, Lang},
-        time_fn_call, SynthAnalysis,
+        recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm, Lang},
+        SynthAnalysis,
     };
 
     use super::*;
@@ -460,6 +461,124 @@ pub mod halide_derive_tests {
             println!("Here is the proof for why the rule is derivable:");
             println!("{}", proof.get_flat_string());
         }
+
+    // TODO: fix mii
+    const USE_LLM: bool = false;
+
+    #[tokio::test]
+    async fn op_min_max_workload_with_llm() {
+let start_time = std::time::Instant::now();
+        if std::env::var("RUN_ME").is_err() {
+            println!("Not running op_min_max_workload_with_llm test because RUN_ME is not set.");
+            return;
+        }
+
+        // this workload will consist of well-typed lt comparisons, where the child
+        // expressions consist of variables, `+`, and `min` (of up to size 5).
+        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
+            .filter(Filter::And(vec![
+                Filter::Excludes("VAL".parse().unwrap()),
+                Filter::Excludes("OP1".parse().unwrap()),
+            ]))
+            .plug("OP2", &Workload::new(&["min", "+"]))
+            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+
+        let lt_workload = Workload::new(&["(OP V V)"])
+            .plug("OP", &Workload::new(&["<"]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ]));
+
+        let cond_workload = Workload::new(&["(OP2 V 0)"])
+            .plug("OP2", &Workload::new(&["<"]))
+            .plug(
+                "V",
+                &Workload::new(&["(< a 0)", "(== b b)", "(== c c)", "(== d d)"]),
+            );
+
+        // These are rules which will help compress the workload so we can mimic
+        // focus on "realistic" candidate spaces for large grammars.
+        let mut prior: Ruleset<Pred> = Ruleset::default();
+
+        let prior_str = r#"(min ?a ?a) <=> ?a
+(max ?a ?a) <=> (min ?a ?a)
+(min ?b ?a) <=> (min ?a ?b)
+(max ?b ?a) <=> (max ?a ?b)
+(min ?b ?a) ==> ?a if (< ?a ?b)
+(max ?b ?a) ==> ?b if (< ?a ?b)
+(min ?b (max ?b ?a)) ==> ?b
+(max ?a (min ?b ?a)) ==> ?a
+(min ?c (min ?b ?a)) <=> (min ?a (min ?b ?c))
+(min ?b (min ?b ?a)) <=> (min ?a (min ?b ?a))
+(min ?a (max ?b ?a)) <=> (max ?a (min ?b ?a))
+(max ?c (max ?b ?a)) <=> (max ?b (max ?c ?a))
+(max ?c (min ?b ?a)) ==> (min ?a (max ?c ?b)) if  (< ?c ?a)
+(max (min ?a ?c) (min ?b ?c)) <=> (min ?c (max ?b ?a))
+(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a ?c))
+(min ?a (max ?c (min ?b ?a))) <=> (max (min ?c ?a) (min ?b ?a))
+(min (max ?b ?c) (max ?b ?a)) <=> (max ?b (min ?a (max ?b ?c)))
+(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a (max ?b ?c)))
+(+ ?a 0) <=> ?a
+(+ ?a ?b) <=> (+ ?b ?a)
+(< ?a ?b) ==> 1 if (< ?a ?b)
+(< ?a ?b) ==> 0 if (< ?b ?a)"#;
+
+        for line in prior_str.lines() {
+            let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
+            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+            prior.add(rule);
+        }
+
+        let mut state: ChompyState<Pred> = ChompyState::new(
+            lt_workload.clone(),
+            prior.clone(),
+            cond_workload.clone(),
+            // we don't need any implications for this test; notice how
+            // all the conditions are just `(< ?a ?b)`.
+            ImplicationSet::default(),
+        );
+
+        let rules = run_workload_internal_llm(
+            &mut state,
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+            true,
+            true,
+        ).await;
+
+        // (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
+        let l_expr: RecExpr<Pred> = "(< (min z (+ y c0)) (min x y))".parse().unwrap();
+        let r_expr: RecExpr<Pred> = "(< (min z (+ y c0)) x)".parse().unwrap();
+        let l_id = egraph.add_expr(&l_expr);
+        let r_id = egraph.add_expr(&r_expr);
+        egraph.add_expr(&"(assume (< c0 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = egg::Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .with_explanations_enabled()
+            .with_node_limit(100000)
+            .run(rules.iter().map(|r| &r.rewrite));
+
+        let mut out_egraph = runner.egraph;
+
+        let end_time = std::time::Instant::now();
+        println!("Time taken: {:?}", end_time - start_time);
+
+        if out_egraph.find(l_id) == out_egraph.find(r_id) {
+            println!("The rule was derived: (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)");
+            println!("Here's the proof:");
+            let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
+            println!("\n{}", proof);
+        } else {
+            println!("The rule was NOT derived.");
+        }
+
     }
 
     /// This takes a long time if we don't adjust the Limits and the Scheduler.
@@ -572,6 +691,8 @@ pub mod halide_derive_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            false,
+            false
         );
 
         // NOTE : doing this manual derivation scheme for now because I don't have total
@@ -713,6 +834,7 @@ pub mod halide_derive_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            USE_LLM,
         );
 
         let cond_workload = compress(&cond_workload, rules.clone());
@@ -731,6 +853,7 @@ pub mod halide_derive_tests {
             rules.clone(),
             implications.clone(),
             cond_workload.clone(),
+            USE_LLM,
         );
 
         println!("min_max_rules: {}", min_max_rules.len());
@@ -818,6 +941,7 @@ pub mod halide_derive_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            USE_LLM,
         );
 
         all_rules.extend(cond_rules.clone());
@@ -847,6 +971,7 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
+            USE_LLM,
         );
 
         all_rules.extend(min_max_add_rules);
@@ -858,6 +983,7 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
+            USE_LLM,
         );
 
         all_rules.extend(min_max_sub_rules);
@@ -869,6 +995,7 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
+            USE_LLM,
         );
 
         all_rules.extend(min_max_mul_rules);
