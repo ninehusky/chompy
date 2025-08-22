@@ -291,11 +291,7 @@ pub mod halide_derive_tests {
 
     use egg::{EGraph, RecExpr, Runner};
     use ruler::{
-        conditions::{generate::compress, implication_set::run_implication_workload},
-        enumo::{ChompyState, Filter, Metric},
-        halide::og_recipe,
-        recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm, Lang},
-        SynthAnalysis,
+        conditions::{generate::{get_condition_workload, compress}, implication_set::run_implication_workload}, enumo::{ChompyState, Filter, Metric}, halide::og_recipe, recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm, Lang}, time_fn_call, SynthAnalysis
     };
 
     use super::*;
@@ -312,7 +308,7 @@ pub mod halide_derive_tests {
             return;
         }
 
-        let wkld = conditions::generate::get_condition_workload();
+        let wkld = get_condition_workload();
 
         let cond_workload = Workload::new(&[
             "(< 0 b)",
@@ -395,6 +391,7 @@ pub mod halide_derive_tests {
             Ruleset::default(),
             base_implications.clone(),
             cond_workload,
+            false,
         );
 
         all_rules.extend(rules);
@@ -461,6 +458,7 @@ pub mod halide_derive_tests {
             println!("Here is the proof for why the rule is derivable:");
             println!("{}", proof.get_flat_string());
         }
+    }
 
     // TODO: fix mii
     const USE_LLM: bool = false;
@@ -692,7 +690,6 @@ let start_time = std::time::Instant::now();
             Limits::minimize(),
             true,
             false,
-            false
         );
 
         // NOTE : doing this manual derivation scheme for now because I don't have total
