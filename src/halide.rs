@@ -1183,7 +1183,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         recursive_rules_cond(
             Metric::Atoms,
             5,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "%"]]),
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
             Ruleset::default(),
             base_implications.clone(),
             cond_workload,
@@ -1195,6 +1195,10 @@ pub fn og_recipe() -> Ruleset<Pred> {
     for line in r#"
 (/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
 (/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
+(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
 "#
     .lines()
     {
