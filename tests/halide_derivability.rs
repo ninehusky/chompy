@@ -290,14 +290,19 @@ pub mod halide_derive_tests {
 
     use egg::{EGraph, RecExpr, Runner};
     use ruler::{
-        conditions::{generate::compress, implication_set::run_implication_workload},
+        conditions::{self, generate::compress, implication_set::run_implication_workload},
         enumo::{Filter, Metric},
         halide::og_recipe,
         recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, Lang},
-        SynthAnalysis,
+        time_fn_call, SynthAnalysis,
     };
 
     use super::*;
+
+    #[test]
+    fn mul_div_derive_big_wkld() {
+        // let rules = include_str!("big-rules.txt");
+    }
 
     #[test]
     fn mul_div_workload() {
@@ -305,6 +310,8 @@ pub mod halide_derive_tests {
         if std::env::var("RUN_ME").is_err() {
             return;
         }
+
+        let wkld = conditions::generate::get_condition_workload();
 
         let cond_workload = Workload::new(&[
             "(< 0 b)",
@@ -314,13 +321,9 @@ pub mod halide_derive_tests {
             "(== c c)",
         ]);
 
-        let mut implications = run_implication_workload(
-            &cond_workload,
-            &["a".to_string(), "b".to_string(), "c".to_string()],
-            &Default::default(),
-            &Default::default(),
-        );
+        let mut base_implications = ImplicationSet::default();
 
+        // and the "and" rules here.
         let and_implies_left: Implication<Pred> = Implication::new(
             "and_implies_left".into(),
             Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
@@ -335,19 +338,61 @@ pub mod halide_derive_tests {
         )
         .unwrap();
 
-        implications.add(and_implies_left);
-        implications.add(and_implies_right);
+        base_implications.add(and_implies_left);
+        base_implications.add(and_implies_right);
+
+        let other_implications = time_fn_call!(
+            "find_base_implications",
+            run_implication_workload(
+                &wkld,
+                &["a".to_string(), "b".to_string(), "c".to_string()],
+                &base_implications,
+                &Default::default()
+            )
+        );
+
+        base_implications.add_all(other_implications);
+
+        println!("# base implications: {}", base_implications.len());
+
+        for i in base_implications.iter() {
+            println!("implication: {}", i.name());
+        }
+
+        // let mut implications = run_implication_workload(
+        //     &cond_workload,
+        //     &["a".to_string(), "b".to_string(), "c".to_string()],
+        //     &Default::default(),
+        //     &Default::default(),
+        // );
+
+        // let and_implies_left: Implication<Pred> = Implication::new(
+        //     "and_implies_left".into(),
+        //     Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        //     Assumption::new_unsafe("?a".to_string()).unwrap(),
+        // )
+        // .unwrap();
+
+        // let and_implies_right: Implication<Pred> = Implication::new(
+        //     "and_implies_right".into(),
+        //     Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        //     Assumption::new_unsafe("?b".to_string()).unwrap(),
+        // )
+        // .unwrap();
+
+        // implications.add(and_implies_left);
+        // implications.add(and_implies_right);
 
         let mut all_rules: Ruleset<Pred> = Ruleset::default();
 
-        all_rules.add(Rule::from_string("(< ?a ?b) ==> (> ?b ?a)").unwrap().0);
+        // all_rules.add(Rule::from_string("(< ?a ?b) ==> (> ?b ?a)").unwrap().0);
 
         let rules = recursive_rules_cond(
             Metric::Atoms,
             5,
             Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "%"]]),
             Ruleset::default(),
-            implications.clone(),
+            base_implications.clone(),
             cond_workload,
         );
 
@@ -372,11 +417,44 @@ pub mod halide_derive_tests {
                     ruler::DeriveType::LhsAndRhs,
                     &rule,
                     Limits::deriving(),
-                    &implications.to_egg_rewrites(),
+                    &base_implications.to_egg_rewrites(),
                 ),
                 "Rule should be derivable: {}",
                 rule
             );
+
+            println!("Oh... i can derive this rule: {}", rule);
+
+            let l_expr = Pred::instantiate(&rule.lhs);
+            let r_expr = Pred::instantiate(&rule.rhs);
+            let c_expr = Pred::instantiate(&rule.cond.clone().unwrap().chop_assumption());
+
+            let mut egraph: EGraph<Pred, SynthAnalysis> =
+                EGraph::default().with_explanations_enabled();
+            let l_id = egraph.add_expr(&l_expr);
+            let r_id = egraph.add_expr(&r_expr);
+
+            let c_assumption = Assumption::new(c_expr.to_string()).unwrap();
+            c_assumption.insert_into_egraph(&mut egraph);
+
+            // 0. run the implications.
+            let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
+                .with_explanations_enabled()
+                .with_egraph(egraph.clone())
+                .run(base_implications.to_egg_rewrites().iter());
+
+            let egraph = runner.egraph;
+
+            // 1. run the rules.
+            let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
+                .with_explanations_enabled()
+                .with_egraph(egraph)
+                .run(all_rules.iter().map(|r| &r.rewrite));
+
+            let mut proof = runner.explain_equivalence(&l_expr, &r_expr);
+
+            println!("Here is the proof for why the rule is derivable:");
+            println!("{}", proof.get_flat_string());
         }
     }
 

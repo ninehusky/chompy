@@ -8,11 +8,11 @@ use crate::{
     },
     enumo::Rule,
     recipe_utils::{base_lang, iter_metric},
-    time_fn_call, *,
+    time_fn_call, DeriveType, *,
 };
 
 use conditions::implication_set::ImplicationSet;
-use egg::{RecExpr, Rewrite};
+use egg::{RecExpr, Rewrite, Runner};
 use enumo::{Filter, Metric, Ruleset, Sexp, Workload};
 use num::ToPrimitive;
 use recipe_utils::{recursive_rules_cond, run_workload, Lang};
@@ -1191,6 +1191,63 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(mul_div_mod);
+
+    for line in r#"
+(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
+"#
+    .lines()
+    {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let rule = Rule::from_string(line.trim())
+            .expect("Failed to parse rule")
+            .0;
+        assert!(rule.is_valid());
+        assert!(
+            all_rules.can_derive_cond(
+                DeriveType::LhsAndRhs,
+                &rule,
+                Limits::deriving(),
+                &base_implications.to_egg_rewrites(),
+            ),
+            "Rule should be derivable: {}",
+            rule
+        );
+
+        println!("Oh... i can derive this rule: {}", rule);
+
+        let l_expr = Pred::instantiate(&rule.lhs);
+        let r_expr = Pred::instantiate(&rule.rhs);
+        let c_expr = Pred::instantiate(&rule.cond.clone().unwrap().chop_assumption());
+
+        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
+        let l_id = egraph.add_expr(&l_expr);
+        let r_id = egraph.add_expr(&r_expr);
+
+        let c_assumption = Assumption::new(c_expr.to_string()).unwrap();
+        c_assumption.insert_into_egraph(&mut egraph);
+
+        // 0. run the implications.
+        let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
+            .with_explanations_enabled()
+            .with_egraph(egraph.clone())
+            .run(base_implications.to_egg_rewrites().iter());
+
+        let egraph = runner.egraph;
+
+        // 1. run the rules.
+        let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
+            .with_explanations_enabled()
+            .with_egraph(egraph)
+            .run(all_rules.iter().map(|r| &r.rewrite));
+
+        let mut proof = runner.explain_equivalence(&l_expr, &r_expr);
+
+        println!("Here is the proof for why the rule is derivable:");
+        println!("{}", proof.get_flat_string());
+    }
 
     let min_max = time_fn_call!(
         "min_max",
