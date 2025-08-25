@@ -1336,6 +1336,34 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(min_max_mul);
 
+    let mut dummy_ruleset: Ruleset<Pred> = Default::default();
+
+    dummy_ruleset.add(
+        Rule::from_string("(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (<= ?b 0)")
+            .unwrap()
+            .0,
+    );
+
+    dummy_ruleset.add(
+        Rule::from_string("(max ?a (+ ?a ?b)) ==> (+ ?a ?b) if (>= ?b 0)")
+            .unwrap()
+            .0,
+    );
+
+    dummy_ruleset.add(
+        Rule::from_string("(min ?a (+ ?a ?b)) ==> ?a if (>= ?b 0)")
+            .unwrap()
+            .0,
+    );
+
+    dummy_ruleset.add(
+        Rule::from_string("(max ?a (+ ?a ?b)) ==> ?a if (<= ?b 0)")
+            .unwrap()
+            .0,
+    );
+
+    all_rules.extend(dummy_ruleset);
+
     for op in &["min", "max"] {
         // this workload will consist of well-typed lt comparisons, where the child
         // expressions consist of variables, `+`, and `min` (of up to size 5).
@@ -1371,7 +1399,8 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 Some(cond_workload.clone()),
                 all_rules.clone(),
                 base_implications.clone(),
-                Limits::synthesis(),
+                Limits::super_minimize(),
+                // up the limits significantly
                 Limits::minimize(),
                 true,
                 false

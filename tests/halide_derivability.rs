@@ -888,6 +888,30 @@ let start_time = std::time::Instant::now();
                 .0,
         );
 
+        against.add(
+            Rule::from_string("(min ?a ?b) ==> ?a if (< ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?a ?b) ==> ?b if (< ?b ?a)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?b ?a) ==> ?b if (< ?b ?a)")
+                .unwrap()
+                .0,
+        );
+
+        against.add(
+            Rule::from_string("(min ?b ?a) ==> ?a if (< ?a ?b)")
+                .unwrap()
+                .0,
+        );
+
         let mut matches = 0;
         for r in against.iter() {
             assert!(min_max_rules.can_derive_cond(

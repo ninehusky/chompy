@@ -921,6 +921,10 @@ impl<L: SynthLanguage> Ruleset<L> {
 
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
+            println!("I selected:");
+            for s in selected.iter() {
+                println!("[minimize_cond] Selected: {s}");
+            }
             if selected.is_empty() {
                 continue;
             }

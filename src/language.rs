@@ -518,17 +518,15 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             vars.extend(cond_pat.vars());
         }
 
-        let lhs_bigger = if AstSize.cost_rec(&lhs.ast) as i32 > AstSize.cost_rec(&rhs.ast) as i32 {
-            0
-        } else {
-            1
-        };
-
         [
-            lhs_bigger,
-            vars.len() as i32,
-            -(l_cost + r_cost + c_cost),
-            (true_count.unwrap_or(i32::MAX as usize) as i32),
+            // 1. prefer LHS bigger than RHS
+            (AstSize.cost_rec(&rhs.ast) as i32) - (AstSize.cost_rec(&lhs.ast) as i32),
+            // 2. prefer more variables
+            -(vars.len() as i32),
+            // 3. prefer smaller overall AST cost
+            l_cost + r_cost + c_cost,
+            // 4. prefer larger true_count
+            -(true_count.unwrap_or(i32::MAX as usize) as i32),
         ]
     }
 

@@ -109,6 +109,14 @@ impl Limits {
         }
     }
 
+    pub fn super_minimize() -> Self {
+        Self {
+            iter: 6,
+            node: 700_000,
+            match_: 500_000,
+        }
+    }
+
     // match oopsla21 limits
     pub fn deriving() -> Self {
         Self {
