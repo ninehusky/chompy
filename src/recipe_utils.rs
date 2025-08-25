@@ -258,8 +258,8 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
                 for rule in sorted_candidates.get(key).unwrap().iter() {
                     println!("    {rule}");
                 }
-                // choose the top 5 for each category.
-                let top = rules.clone().select(5, &mut Default::default());
+                // choose the top rule for each category.
+                let top = rules.clone().select(1, &mut Default::default());
                 final_choices.extend(top);
             }
             chosen_cond = final_choices;

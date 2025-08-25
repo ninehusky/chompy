@@ -727,8 +727,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
     pub fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
         let mut chosen = Self::default();
-        self.0
-            .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));
+        self.0.sort_by(|_, r1, _, r2| r2.score().cmp(&r1.score())); // note r2 vs r1
 
         // 2. insert step_size best candidates into self.new_rws
         let mut selected: Ruleset<L> = Default::default();
@@ -972,6 +971,10 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
+            println!("I have selected: ");
+            for s in selected.iter() {
+                println!("[minimize] Selected: {s}");
+            }
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
         }

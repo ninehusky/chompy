@@ -45,7 +45,6 @@ candidates_text
 "#;
 
 const GROUP_RULES_PROMPT: &str = r#"
-const GROUP_RULES_PROMPT: &str = r#"
 You are the world’s leading expert in program optimization and algebraic reasoning.
 You are helping organize rewrite rules for use in an equality saturation system.
 
@@ -83,8 +82,7 @@ Example Input:
 (/ ?a ?a) ==> 1 if (!= ?a 0)
 (+ ?a (+ ?b ?c)) ==> (+ ?a (+ ?c ?b))
 (min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (< ?b 0)
-(+ (+ ?a ?b) (* ?c 1)) ==> (+ (* ?c 1) (+ ?b ?a))
-(max (+ ?a ?b) ?c) ==> (max (+ ?b ?a) ?c)
+(+ (+ ?a ?b) (* ?c 1)) ==> (+ (* ?c 1) (+ ?b ?a)) (max (+ ?a ?b) ?c) ==> (max (+ ?b ?a) ?c)
 (< ?a (+ ?a ?b)) ==> (< ?a (+ ?b ?a))
 (* ?a (* ?b ?c)) ==> (* ?a (* ?c ?b))
 (+ (+ ?a ?b) (+ ?c ?d)) ==> (+ (+ ?b ?a) (+ ?d ?c))

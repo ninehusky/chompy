@@ -819,7 +819,7 @@ let start_time = std::time::Instant::now();
             return;
         }
 
-        let cond_workload = Workload::new(&["(OP V V)"])
+        let cond_workload = Workload::new(&["(OP V V)", "0", "1"])
             .plug("OP", &Workload::new(&["<", "<="]))
             .plug("V", &Workload::new(&["a", "b", "c", "0"]));
 
@@ -842,6 +842,11 @@ let start_time = std::time::Instant::now();
             &Default::default(),
             &rules,
         );
+
+        println!("implications:");
+        for i in implications.iter() {
+            println!("i: {:?}", i);
+        }
 
         let min_max_rules: Ruleset<Pred> = recursive_rules_cond(
             Metric::Atoms,
