@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use egg::EGraph;
+use egg::{AstSize, EGraph, Extractor, Runner};
 
 use crate::{
     conditions::implication_set::ImplicationSet,
@@ -69,7 +69,58 @@ fn run_workload_internal<L: SynthLanguage>(
     //    it using the prior rules.
     let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
 
-    let compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
+    let mut compressed = Scheduler::Compress(prior_limits).run(&egraph, &prior);
+
+    let mut changed = true;
+    let mut should_merge = vec![];
+    while changed {
+        // go through each pair of e-classes, and find cvec-equal expressions.
+        let cloned_compressed = compressed.clone();
+        let extractor = Extractor::new(&cloned_compressed, AstSize);
+        changed = false;
+        for ec1 in cloned_compressed.classes() {
+            for ec2 in cloned_compressed.classes() {
+                if ec1.id >= ec2.id {
+                    continue;
+                }
+                // if the cvecs are equal, then we have a candidate.
+                if ec1.data.cvec == ec2.data.cvec {
+                    let e1 = extractor.find_best(ec1.id).1;
+                    let e2 = extractor.find_best(ec2.id).1;
+
+                    let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+                    let l = mini_egraph.add_expr(&e1.to_string().parse().unwrap());
+                    let r = mini_egraph.add_expr(&e2.to_string().parse().unwrap());
+                    let runner: Runner<L, SynthAnalysis> = Runner::default()
+                        .with_egraph(mini_egraph.clone())
+                        .run(
+                            &prior
+                                .iter()
+                                .map(|rule| rule.rewrite.clone())
+                                .collect::<Vec<_>>(),
+                        )
+                        .with_node_limit(100);
+
+                    let mini_egraph = runner.egraph;
+                    if mini_egraph.find(l) == mini_egraph.find(r) {
+                        let size = egraph.total_size();
+                        // e1 and e2 are equivalent in the mini egraph
+                        println!(
+                            "merging {e1} and {e2} because they are equivalent in the mini egraph of size {size}"
+                        );
+                        should_merge.push((ec1.id, ec2.id));
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        for (id1, id2) in &should_merge {
+            compressed.union(*id1, *id2);
+        }
+    }
+
+
 
     // 2. Discover total candidates using cvec matching.
     let mut total_candidates = if fast_match {
@@ -449,6 +500,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
         for (i, ops) in lang.ops.iter().enumerate() {
             wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
         }
+        wkld = wkld.append(Workload::new(&["0", "1"]));
 
         rec.extend(prior);
         let allow_empty = n < 3;
