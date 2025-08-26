@@ -150,7 +150,7 @@ fn run_workload_internal<L: SynthLanguage>(
     }
 
     // TODO: Make this a parameter; 5 is a bit arbitrary lol.
-    let max_cond_size = 5;
+    let max_cond_size = 7;
 
     let impl_prop_rules = state.implications();
 

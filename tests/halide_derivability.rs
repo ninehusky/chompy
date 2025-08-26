@@ -361,13 +361,20 @@ pub mod halide_derive_tests {
 
         let mut all_rules: Ruleset<Pred> = Ruleset::default();
 
+
+        // These are useful because they let us flip the sides of the condition.
+        // (We only learn rules dealing with *, /, and min, not < and <=.
+        //  To be able to derive rules of the form l ~> r if (> p q), we need
+        //  to rewrite the `>` to `<`.)
         all_rules.add(Rule::from_string("(!= ?a ?b) ==> (!= ?b ?a)").unwrap().0);
+        all_rules.add(Rule::from_string("(> ?a ?b) ==> (< ?b ?a)").unwrap().0);
+        all_rules.add(Rule::from_string("(>= ?a ?b) ==> (<= ?b ?a)").unwrap().0);
 
 
         let rules = recursive_rules_cond(
             Metric::Atoms,
-            3,
-            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
             all_rules.clone(),
             base_implications.clone(),
             cond_workload,
@@ -378,10 +385,10 @@ pub mod halide_derive_tests {
 
         let mut should_derive: Ruleset<Pred> = Default::default();
         for line in r#"
-(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
 (min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
 (min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (< 0 ?a) (== (% ?b ?a) 0))
+(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
 (min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
 (min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
 "#
