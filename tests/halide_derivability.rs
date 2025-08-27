@@ -7,6 +7,7 @@ use ruler::{
     Limits, SynthLanguage,
 };
 
+
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
     cannot: Ruleset<L>,
@@ -288,16 +289,280 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
 pub mod halide_derive_tests {
     use std::path::Path;
 
-    use egg::{EGraph, RecExpr, Runner};
+    use egg::{AstSize, CostFunction, EGraph, RecExpr, Runner};
     use ruler::{
-        conditions::{generate::compress, implication_set::run_implication_workload},
-        enumo::{Filter, Metric},
-        halide::og_recipe,
-        recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, Lang},
-        SynthAnalysis,
+        conditions::{generate::{get_condition_workload, compress}, implication_set::run_implication_workload}, enumo::{ChompyState, Filter, Metric}, halide::og_recipe, recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm, Lang}, time_fn_call, SynthAnalysis
     };
 
     use super::*;
+
+    #[test]
+    fn mul_div_derive_big_wkld() {
+        // let rules = include_str!("big-rules.txt");
+    }
+
+    #[test]
+    fn mul_div_workload() {
+        let start_time = std::time::Instant::now();
+        if std::env::var("RUN_ME").is_err() {
+            return;
+        }
+
+        let wkld = get_condition_workload();
+
+        let cond_workload = Workload::new(&[
+            "(&& (< 0 a) (== (% b a) 0))",
+            "(&& (< 0 a) (== (% b a) 0))",
+            "(&& (< a 0) (== (% b a) 0))",
+            "(&& (< a 0) (== (% b a) 0))",
+            "(!= a 0)",
+            "(!= b 0)",
+            "(!= c 0)",
+            "(== c c)",
+        ]);
+
+        let mut base_implications = ImplicationSet::default();
+
+        // and the "and" rules here.
+        let and_implies_left: Implication<Pred> = Implication::new(
+            "and_implies_left".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        let and_implies_right: Implication<Pred> = Implication::new(
+            "and_implies_right".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?b".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        base_implications.add(and_implies_left);
+        base_implications.add(and_implies_right);
+
+        let other_implications = time_fn_call!(
+            "find_base_implications",
+            run_implication_workload(
+                &wkld,
+                &["a".to_string(), "b".to_string(), "c".to_string()],
+                &base_implications,
+                &Default::default()
+            )
+        );
+
+        base_implications.add_all(other_implications);
+
+        println!("# base implications: {}", base_implications.len());
+
+        for i in base_implications.iter() {
+            println!("implication: {}", i.name());
+        }
+
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+
+
+        // These are useful because they let us flip the sides of the condition.
+        // (We only learn rules dealing with *, /, and min, not < and <=.
+        //  To be able to derive rules of the form l ~> r if (> p q), we need
+        //  to rewrite the `>` to `<`.)
+        all_rules.add(Rule::from_string("(!= ?a ?b) ==> (!= ?b ?a)").unwrap().0);
+        all_rules.add(Rule::from_string("(> ?a ?b) ==> (< ?b ?a)").unwrap().0);
+        all_rules.add(Rule::from_string("(>= ?a ?b) ==> (<= ?b ?a)").unwrap().0);
+
+
+        let rules = recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            cond_workload,
+            false,
+        );
+
+        all_rules.extend(rules);
+
+        let mut should_derive: Ruleset<Pred> = Default::default();
+        for line in r#"
+(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
+(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (< 0 ?a) (== (% ?b ?a) 0))
+(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
+(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
+(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
+"#
+        .lines()
+        {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let rule = Rule::from_string(line.trim())
+                .expect("Failed to parse rule")
+                .0;
+            assert!(rule.is_valid());
+            if !all_rules.can_derive_cond(
+                    ruler::DeriveType::LhsAndRhs,
+                    &rule,
+                    Limits::deriving(),
+                    &base_implications.to_egg_rewrites())
+                {
+                    println!("Hey.. we weren't able to derive this rule: {}", rule);
+                    continue;
+                }
+                    
+
+            let l_expr = Pred::instantiate(&rule.lhs);
+            let r_expr = Pred::instantiate(&rule.rhs);
+            let c_expr = Pred::instantiate(&rule.cond.clone().unwrap().chop_assumption());
+
+            let mut egraph: EGraph<Pred, SynthAnalysis> =
+                EGraph::default().with_explanations_enabled();
+            let l_id = egraph.add_expr(&l_expr);
+            let r_id = egraph.add_expr(&r_expr);
+
+            let c_assumption = Assumption::new(c_expr.to_string()).unwrap();
+            c_assumption.insert_into_egraph(&mut egraph);
+
+            // 0. run the implications.
+            let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
+                .with_explanations_enabled()
+                .with_egraph(egraph.clone())
+                .run(base_implications.to_egg_rewrites().iter());
+
+            let egraph = runner.egraph;
+
+            // 1. run the rules.
+            let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
+                .with_explanations_enabled()
+                .with_egraph(egraph)
+                .run(all_rules.iter().map(|r| &r.rewrite));
+
+            let mut proof = runner.explain_equivalence(&l_expr, &r_expr);
+
+            println!("Here is the proof for why the rule is derivable:");
+            println!("{}", proof.get_flat_string());
+        }
+    }
+
+    // TODO: fix mii
+    const USE_LLM: bool = false;
+
+    #[tokio::test]
+    async fn op_min_max_workload_with_llm() {
+let start_time = std::time::Instant::now();
+        if std::env::var("RUN_ME").is_err() {
+            println!("Not running op_min_max_workload_with_llm test because RUN_ME is not set.");
+            return;
+        }
+
+        // this workload will consist of well-typed lt comparisons, where the child
+        // expressions consist of variables, `+`, and `min` (of up to size 5).
+        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
+            .filter(Filter::And(vec![
+                Filter::Excludes("VAL".parse().unwrap()),
+                Filter::Excludes("OP1".parse().unwrap()),
+            ]))
+            .plug("OP2", &Workload::new(&["min", "+"]))
+            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+
+        let lt_workload = Workload::new(&["(OP V V)"])
+            .plug("OP", &Workload::new(&["<"]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ]));
+
+        let cond_workload = Workload::new(&["(OP2 V 0)"])
+            .plug("OP2", &Workload::new(&["<"]))
+            .plug(
+                "V",
+                &Workload::new(&["(< a 0)", "(== b b)", "(== c c)", "(== d d)"]),
+            );
+
+        // These are rules which will help compress the workload so we can mimic
+        // focus on "realistic" candidate spaces for large grammars.
+        let mut prior: Ruleset<Pred> = Ruleset::default();
+
+        let prior_str = r#"(min ?a ?a) <=> ?a
+(max ?a ?a) <=> (min ?a ?a)
+(min ?b ?a) <=> (min ?a ?b)
+(max ?b ?a) <=> (max ?a ?b)
+(min ?b ?a) ==> ?a if (< ?a ?b)
+(max ?b ?a) ==> ?b if (< ?a ?b)
+(min ?b (max ?b ?a)) ==> ?b
+(max ?a (min ?b ?a)) ==> ?a
+(min ?c (min ?b ?a)) <=> (min ?a (min ?b ?c))
+(min ?b (min ?b ?a)) <=> (min ?a (min ?b ?a))
+(min ?a (max ?b ?a)) <=> (max ?a (min ?b ?a))
+(max ?c (max ?b ?a)) <=> (max ?b (max ?c ?a))
+(max ?c (min ?b ?a)) ==> (min ?a (max ?c ?b)) if  (< ?c ?a)
+(max (min ?a ?c) (min ?b ?c)) <=> (min ?c (max ?b ?a))
+(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a ?c))
+(min ?a (max ?c (min ?b ?a))) <=> (max (min ?c ?a) (min ?b ?a))
+(min (max ?b ?c) (max ?b ?a)) <=> (max ?b (min ?a (max ?b ?c)))
+(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a (max ?b ?c)))
+(+ ?a 0) <=> ?a
+(+ ?a ?b) <=> (+ ?b ?a)
+(< ?a ?b) ==> 1 if (< ?a ?b)
+(< ?a ?b) ==> 0 if (< ?b ?a)"#;
+
+        for line in prior_str.lines() {
+            let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
+            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+            prior.add(rule);
+        }
+
+        let mut state: ChompyState<Pred> = ChompyState::new(
+            lt_workload.clone(),
+            prior.clone(),
+            cond_workload.clone(),
+            // we don't need any implications for this test; notice how
+            // all the conditions are just `(< ?a ?b)`.
+            ImplicationSet::default(),
+        );
+
+        let rules = run_workload_internal_llm(
+            &mut state,
+            Limits::synthesis(),
+            Limits::minimize(),
+            true,
+            true,
+            true,
+        ).await;
+
+        // (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
+        let l_expr: RecExpr<Pred> = "(< (min z (+ y c0)) (min x y))".parse().unwrap();
+        let r_expr: RecExpr<Pred> = "(< (min z (+ y c0)) x)".parse().unwrap();
+        let l_id = egraph.add_expr(&l_expr);
+        let r_id = egraph.add_expr(&r_expr);
+        egraph.add_expr(&"(assume (< c0 0))".parse().unwrap());
+
+        let runner: Runner<Pred, SynthAnalysis> = egg::Runner::new(SynthAnalysis::default())
+            .with_egraph(egraph.clone())
+            .with_explanations_enabled()
+            .with_node_limit(100000)
+            .run(rules.iter().map(|r| &r.rewrite));
+
+        let mut out_egraph = runner.egraph;
+
+        let end_time = std::time::Instant::now();
+        println!("Time taken: {:?}", end_time - start_time);
+
+        if out_egraph.find(l_id) == out_egraph.find(r_id) {
+            println!("The rule was derived: (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)");
+            println!("Here's the proof:");
+            let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
+            println!("\n{}", proof);
+        } else {
+            println!("The rule was NOT derived.");
+        }
+
+    }
 
     /// This takes a long time if we don't adjust the Limits and the Scheduler.
     #[test]
@@ -409,6 +674,7 @@ pub mod halide_derive_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            false,
         );
 
         // NOTE : doing this manual derivation scheme for now because I don't have total
@@ -550,6 +816,7 @@ pub mod halide_derive_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            USE_LLM,
         );
 
         let cond_workload = compress(&cond_workload, rules.clone());
@@ -568,6 +835,7 @@ pub mod halide_derive_tests {
             rules.clone(),
             implications.clone(),
             cond_workload.clone(),
+            USE_LLM,
         );
 
         println!("min_max_rules: {}", min_max_rules.len());
@@ -655,6 +923,7 @@ pub mod halide_derive_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            USE_LLM,
         );
 
         all_rules.extend(cond_rules.clone());
@@ -684,6 +953,7 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
+            USE_LLM,
         );
 
         all_rules.extend(min_max_add_rules);
@@ -695,6 +965,7 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
+            USE_LLM,
         );
 
         all_rules.extend(min_max_sub_rules);
@@ -706,6 +977,7 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
+            USE_LLM,
         );
 
         all_rules.extend(min_max_mul_rules);
@@ -723,4 +995,1027 @@ pub mod halide_derive_tests {
             );
         }
     }
+
+    #[test]
+    fn for_fun() {
+        let rules = r#"
+(!= ?a ?b) ==> (!= ?b ?a)
+(> ?a ?b) ==> (< ?b ?a)
+(>= ?a ?b) ==> (<= ?b ?a)
+?a <=> (min ?a ?a)
+?a <=> (max ?a ?a)
+(min ?a ?b) <=> (min ?b ?a)
+(* ?a ?b) <=> (* ?b ?a)
+(max ?a ?b) <=> (max ?b ?a)
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(max ?a (* ?a ?a)) <=> (* ?a ?a)
+(< (+ ?c ?d) (max ?c (+ ?b ?a))) ==> 1 if (< ?d 0)
+(< (max ?d (max ?b ?c)) (+ ?b ?a)) ==> 0 if (< ?a 0)
+(< (+ ?b (max ?c ?d)) (+ ?c (+ ?b ?a))) ==> 0 if (< ?a 0)
+(< (max ?c ?b) (max ?a (+ ?a ?d))) ==> (< (max ?c ?b) ?a) if (< ?d 0)
+(< (max ?c ?b) (max ?a (+ ?b ?d))) ==> (< (max ?c ?b) ?a) if (< ?d 0)
+(< (max ?b (+ ?d ?c)) (+ ?b ?a)) ==> (< (+ ?d ?c) (+ ?b ?a)) if (< 0 ?a)
+(max ?b (min ?b ?a)) ==> ?b
+(min ?b (max ?b ?a)) ==> ?b
+(< (max ?d ?b) (max ?c (+ ?b ?a))) ==> (< ?d (max ?c (+ ?b ?a))) if (< 0 ?a)
+(min ?c (* ?b (min ?b ?a))) ==> ?c if (&& (< ?b ?c) (<= ?c 0))
+(< (max ?d ?b) (+ ?c (max ?b ?a))) ==> (< ?d (+ ?c (max ?b ?a))) if (< 0 ?c)
+(< (+ ?d (max ?c ?b)) (max ?b ?a)) ==> (< (+ ?d ?c) (max ?b ?a)) if (< ?d 0)
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?a (* ?b ?a)) if (&& (<= 0 ?c) (< 0 ?b))
+(< (max ?c ?b) (+ ?b (max ?a ?d))) ==> (< (max ?c ?b) (+ ?b ?a)) if (< ?d 0)
+(< (+ ?d (max ?c ?b)) (max ?c (max ?b ?a))) ==> (< (+ ?d (max ?c ?b)) ?a) if (< 0 ?d)
+(< (max ?d (+ ?d ?d)) (+ ?c (max ?b ?a))) ==> (< ?d (+ ?c (max ?b ?a))) if (< ?d 0)
+(< (max ?d (+ ?d ?c)) (max ?c (+ ?b ?a))) ==> (< ?d (max ?c (+ ?b ?a))) if (< ?c 0)
+(max (* ?b ?a) (min ?c ?a)) ==> (max ?a (* ?b ?a)) if (&& (< 0 ?b) (<= 0 ?c))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?c ?a)) if (&& (< 0 ?b) (<= 0 ?c))
+(< (+ ?d (max ?c ?b)) (max ?a (+ ?b ?a))) ==> (< (+ ?d (max ?c ?b)) ?a) if (< ?b 0)
+(min ?b (/ ?a ?a)) ==> (min ?b 1) if (< ?b 0)
+(min ?b (* ?a ?a)) ==> (min ?b 1) if (< ?b 0)
+(min ?b (/ ?b ?a)) ==> (min ?b 1) if (< ?b 0)
+(max ?b (/ ?b ?a)) ==> (max ?b 1) if (< 0 ?b)
+(max ?b (/ ?a ?a)) ==> (max ?b 1) if (< 0 ?b)
+(min ?a (/ ?b ?b)) ==> ?a if (< ?a 0)
+(min ?a (/ ?a ?b)) ==> ?a if (< ?a 0)
+(min ?a (* ?b ?b)) ==> ?a if (< ?a 0)
+(max ?a (/ ?b ?b)) ==> ?a if (< 0 ?a)
+(max ?a (/ ?a ?b)) ==> ?a if (< 0 ?a)
+(< (max ?d (max ?c ?b)) (max ?a (+ ?d ?c))) ==> (< (max ?d (max ?c ?b)) ?a) if (< ?d 0)
+(min ?a (* ?b (max ?c ?b))) ==> ?a if (&& (<= ?a 0) (< ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (< 0 ?b) (<= 0 ?c))
+(min ?a (* ?c (min ?a ?b))) ==> ?a if (&& (<= ?c ?a) (< ?a 0))
+(< (max ?d (+ ?c ?b)) (max ?a (+ ?b ?a))) ==> (< (max ?d (+ ?c ?b)) ?a) if (< ?b 0)
+(/ ?a (min ?a (/ ?a ?a))) ==> (max ?a (/ ?a ?a))
+(min ?b (* ?c (min ?b ?a))) ==> ?b if (&& (< ?b 0) (<= ?c ?b))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (<= 0 ?b) (<= 0 ?c))
+(/ ?a (max ?a (/ ?a ?a))) ==> (min ?a (/ ?a ?a))
+(< (max ?d (+ ?d ?b)) (max ?c (+ ?b ?a))) ==> (< ?d (max ?c (+ ?b ?a))) if (< ?b 0)
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?b ?c) (< ?c 0))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (< ?c ?b) (< ?b 0))
+(min ?b (* ?b (max ?c ?a))) ==> (min ?b (* ?b ?a)) if (&& (< ?c 0) (< ?b ?c))
+(< (+ ?a (+ ?b ?d)) (max ?d (+ ?d ?c))) ==> (< (+ ?b (+ ?a ?a)) ?a) if (< ?c 0)
+(max ?c (* ?b (min ?b ?a))) ==> (* ?b (min ?b ?a)) if (&& (< ?c 0) (< ?b ?c))
+(< (+ ?d (max ?b ?c)) (max ?d (+ ?b ?a))) ==> (< (+ ?d (max ?b ?c)) (+ ?b ?a)) if (< 0 ?c)
+(max ?c (* ?a (max ?b ?a))) ==> (* ?a (max ?b ?a)) if (&& (< ?b ?c) (< ?c 0))
+(< (max ?d (+ ?c ?b)) (max ?a (+ ?a ?a))) ==> (< (max ?d (+ ?c ?b)) (+ ?a ?a)) if (< 0 ?d)
+(< (+ ?d (max ?c ?b)) (max ?d (+ ?a ?a))) ==> (< (+ ?d (max ?c ?b)) (+ ?a ?a)) if (< 0 ?b)
+(< (+ ?d (max ?b ?c)) (max ?d (max ?b ?a))) ==> (< (+ ?d (max ?b ?c)) (max ?b ?a)) if (< 0 ?c)
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?b ?c) (< ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?c 0) (< ?b ?c))
+(< (max ?d (+ ?c ?b)) (max ?c (max ?b ?a))) ==> (< (max ?d (+ ?c ?b)) (max ?b ?a)) if (< 0 ?b)
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (< ?c 0) (< ?b ?c))
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?b ?a)) if (&& (< ?b ?c) (< ?c 0))
+(< (max ?d (+ ?d ?d)) (max ?c (max ?b ?a))) ==> (< (+ ?d ?d) (max ?c (max ?b ?a))) if (< 0 ?b)
+(< (+ ?d (max ?c ?b)) (max ?d (max ?b ?a))) ==> (< (+ ?d (max ?c ?b)) (max ?b ?a)) if (< 0 ?b)
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?b ?c) (<= ?c 0))
+(max (* ?b ?a) (min ?c ?a)) ==> (max ?c (* ?b ?a)) if (&& (< ?b ?c) (< ?c 0))
+(< (max ?b (+ ?d ?c)) (max ?d (+ ?b ?a))) ==> (< (max ?b (+ ?d ?c)) (+ ?b ?a)) if (< 0 ?c)
+(< (max ?d (+ ?c ?b)) (max ?c (+ ?a ?a))) ==> (< (max ?d (+ ?c ?b)) (+ ?a ?a)) if (< 0 ?b)
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (< ?b 0) (< ?c ?b))
+(< (+ ?d (max ?d ?c)) (max ?c (+ ?b ?a))) ==> (< (+ ?d ?d) (max ?c (+ ?b ?a))) if (< ?c 0)
+(< (+ ?c (+ ?b ?b)) (max ?c (+ ?a ?d))) ==> (< (+ ?c ?b) (max ?c (+ ?b ?a))) if (< ?b 0)
+(< (max ?c (+ ?b ?d)) (+ ?d (+ ?b ?a))) ==> (< (max ?b (max ?d ?c)) (+ ?b ?a)) if (< ?a 0)
+(max (* ?c ?b) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (&& (< ?c ?b) (< ?b 0))
+(< (+ ?a (+ ?b ?b)) (max ?a (+ ?d ?c))) ==> (< (+ ?b ?b) (max ?b (+ ?a ?a))) if (< ?b 0)
+(< (+ ?d (+ ?b ?c)) (+ ?b (max ?b ?a))) ==> (< (+ ?d (max ?b ?c)) (max ?b ?a)) if (< ?d 0)
+(< (+ ?a (+ ?b ?b)) (max ?a (+ ?d ?c))) ==> (< (+ ?a (+ ?b ?b)) (max ?b ?a)) if (< ?b 0)
+(< (+ ?c (+ ?b ?b)) (max ?c (max ?a ?d))) ==> (< (+ ?c ?b) (max ?c (+ ?b ?a))) if (< ?b 0)
+(< (+ ?b (max ?a ?d)) (max ?a (max ?d ?c))) ==> (< (+ ?b (+ ?b ?b)) (max ?b ?a)) if (< ?b 0)
+(< (max ?b (max ?d ?c)) (+ ?b (max ?c ?a))) ==> (< (max ?b (max ?d ?c)) (+ ?b ?a)) if (< ?b 0)
+(min ?c (* ?c (min ?b ?a))) ==> ?c if (&& (<= ?b 0) (< ?c ?b))
+(< (max ?d (max ?c ?b)) (+ ?b (max ?c ?a))) ==> (< (max ?d (max ?c ?b)) (+ ?b ?a)) if (< ?c 0)
+(min ?a (* ?c (min ?a ?b))) ==> ?a if (&& (<= ?a 0) (< ?c ?a))
+(min ?a (* ?a (min ?c ?b))) ==> ?a if (&& (<= ?a ?c) (< ?c 0))
+(* (min ?b ?a) (max ?b ?a)) <=> (* ?b ?a)
+(min (/ ?a ?b) (* ?a ?a)) <=> (/ ?a ?b)
+(< ?b (max ?c (+ ?b ?a))) ==> 1 if (< 0 ?a)
+(< ?b (+ ?c (max ?b ?a))) ==> 1 if (< 0 ?c)
+(< ?c (+ ?c (max ?b ?a))) ==> 1 if (< 0 ?a)
+(min ?c (max ?a (min ?b ?c))) ==> (min ?c (max ?b ?a))
+(min ?c (* ?b (max ?c ?a))) ==> (min ?c (* ?b ?a)) if (&& (< ?b ?c) (< ?c 0))
+(min (max ?b ?c) (max ?a ?c)) ==> (max ?c (min ?b ?a))
+(< (max ?a (+ ?b ?c)) (+ ?a ?c)) ==> (< (+ ?a ?b) (+ ?a ?a)) if (< 0 ?c)
+(< (+ ?c (max ?b ?a)) (+ ?c (+ ?b ?a))) ==> (< ?c (+ ?c ?b)) if (< 0 ?a)
+(< (max ?a (max ?c ?b)) (+ ?a (max ?c ?b))) ==> (< ?a (+ ?a ?a)) if (< 0 ?b)
+(< (max ?b (max ?a ?c)) (+ ?a (max ?b ?c))) ==> (< ?b (+ ?b ?a)) if (< 0 ?c)
+(< (max ?b (max ?a ?c)) (+ ?a (max ?a ?c))) ==> (< ?b (+ ?b ?a)) if (< ?b 0)
+(< (max ?b ?a) (+ ?c (max ?b ?a))) ==> (< ?b (+ ?b (max ?a ?c))) if (< ?a 0)
+(< (+ ?c (+ ?b ?b)) (+ ?a (max ?b ?a))) ==> (< (+ ?c ?b) ?a) if (< ?c 0)
+(< (max ?b (max ?c ?a)) (+ ?b (max ?b ?a))) ==> (< ?b (+ ?b ?b)) if (< ?c 0)
+(< (max ?a (+ ?c ?b)) (+ ?c (+ ?b ?a))) ==> (< ?c (+ ?b (+ ?c ?c))) if (< 0 ?a)
+(< (max ?b (max ?a ?c)) (+ ?c (max ?b ?a))) ==> (< ?b (+ ?b (max ?b ?a))) if (< 0 ?c)
+(< (+ ?a (+ ?b ?c)) (max ?c (+ ?a ?b))) ==> (< (+ ?b (+ ?a ?a)) ?a) if (< 0 ?c)
+(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (max ?c ?a)) if (&& (< ?c 0) (< ?b ?c))
+(max ?c (* ?c (min ?b ?a))) ==> (* ?c (min ?b ?a)) if (&& (<= ?b 0) (< ?c ?b))
+(max ?c (* ?b (min ?b ?a))) ==> (* ?b (min ?b ?a)) if (&& (<= ?c 0) (< ?b ?c))
+(< (max ?c (+ ?b ?a)) (max ?b (+ ?a ?a))) ==> (< ?c (max ?b (+ ?a ?a))) if (< ?b 0)
+(< (max ?b (+ ?a ?a)) (max ?c (+ ?b ?a))) ==> (< (max ?b (+ ?a ?a)) ?c) if (< ?b 0)
+(< (max ?c (+ ?c ?b)) (+ ?b (max ?b ?a))) ==> (< ?c (+ ?b (max ?b ?a))) if (< ?c 0)
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?c 0) (<= ?b ?c))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (< ?b 0) (<= ?c ?b))
+(< (+ ?c (+ ?c ?c)) (max ?c (max ?b ?a))) ==> (< (+ ?c (+ ?c ?c)) (max ?b ?a)) if (< 0 ?a)
+(< (max ?a (+ ?b ?c)) (max ?c (+ ?a ?c))) ==> (< (+ ?a ?b) (max ?a (+ ?a ?a))) if (< 0 ?c)
+(min ?b (* ?b (max ?c ?a))) ==> (min ?b (* ?b ?a)) if (&& (<= ?c 0) (< ?b ?c))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (<= ?b 0) (< ?c ?b))
+(min (* ?c ?b) (* ?c ?a)) ==> (* ?c (max ?b ?a)) if (&& (< ?c ?b) (<= ?b 0))
+(< (max ?b (+ ?b ?b)) (+ ?c (max ?a ?c))) ==> (< (+ ?b ?b) (+ ?c (max ?b ?a))) if (< 0 ?c)
+(max (* ?c ?b) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (&& (< ?c ?b) (<= ?b 0))
+(max ?c (* ?b (min ?b ?a))) ==> (* ?b (min ?b ?a)) if (&& (< ?c 0) (<= ?b ?c))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b ?c) (< ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?b ?c) (<= ?c 0))
+(< (+ ?a (max ?b ?c)) (max ?b (max ?c ?a))) ==> (< (+ ?b (max ?c ?a)) (max ?b ?a)) if (< ?c 0)
+(< (+ ?c (+ ?a ?a)) (max ?b (+ ?a ?a))) ==> (< (+ ?a ?c) (max ?c (+ ?a ?a))) if (< ?c 0)
+(< (+ ?c (max ?b ?a)) (+ ?c (+ ?b ?a))) ==> (< (max ?c (max ?b ?a)) (+ ?b ?a)) if (< ?c 0)
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?b ?a)) if (&& (< ?b ?c) (<= ?c 0))
+(< (+ ?b (+ ?c ?a)) (max ?b (max ?c ?a))) ==> (< (+ ?b (+ ?c ?a)) (max ?b ?a)) if (< ?c 0)
+(< (max ?c (+ ?b ?b)) (+ ?b (max ?c ?a))) ==> (< (max ?c (+ ?b ?b)) (+ ?b ?a)) if (< ?c 0)
+(< (max ?b (max ?c ?a)) (+ ?b (max ?b ?a))) ==> (< (max ?b ?c) (+ ?b (+ ?b ?b))) if (< ?c 0)
+(< (+ ?b (max ?c ?a)) (max ?b (+ ?a ?a))) ==> (< (+ ?b ?c) (max ?b (+ ?a ?a))) if (< ?b 0)
+(< (max ?b (+ ?c ?c)) (+ ?b (max ?c ?a))) ==> (< (max ?b (+ ?c ?c)) (+ ?b ?a)) if (< ?b 0)
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?b ?a)) if (&& (<= ?c 0) (< ?b ?c))
+(max (* ?c ?b) (* ?b ?a)) ==> (* ?b (min ?c ?a)) if (&& (<= ?c 0) (< ?b ?c))
+(max ?a (/ ?a (* ?b ?a))) ==> (max ?a (/ 1 ?b)) if (< ?b 0)
+(min ?c (* ?b (max ?c ?a))) ==> (min ?c (* ?b ?a)) if (&& (< ?b ?c) (<= ?c 0))
+(/ ?a (min ?b (* ?b ?a))) ==> (/ (min ?a 1) ?b) if (< ?b 0)
+(/ (min ?b (* ?b ?a)) ?a) ==> (/ ?b (min ?a 1)) if (< ?b 0)
+(min ?b (/ (min ?a ?b) ?a)) ==> (/ ?b (max ?b 1)) if (< ?a 0)
+(/ (max ?a (* ?a ?b)) ?a) ==> (/ ?b (max ?b 1)) if (< ?a 0)
+(min ?a (/ ?b (min ?b ?a))) ==> (/ ?a (max ?a 1)) if (< ?b 0)
+(max ?a (/ ?a (min ?b ?a))) ==> (/ ?a (min ?a 1)) if (< 0 ?b)
+(max ?a (/ (min ?b ?a) ?a)) ==> (/ ?a (min ?a 1)) if (< 0 ?b)
+(/ ?a (max ?b (* ?b ?a))) ==> (/ (min ?a 1) ?b) if (< 0 ?b)
+(min ?a (/ ?a (* ?b ?a))) ==> (min ?a (/ 1 ?b)) if (< 0 ?b)
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (< ?b 0) (<= ?c ?b))
+(/ (max ?b (* ?b ?a)) ?a) ==> (/ ?b (min ?a 1)) if (< 0 ?b)
+(min ?a (* ?c (min ?a ?b))) ==> ?a if (&& (< ?c ?a) (<= ?a 0))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (<= ?b 0) (< ?c ?b))
+(/ (min ?a (* ?a ?b)) ?a) ==> (/ ?b (max ?b 1)) if (< 0 ?a)
+(max ?c (* ?a (max ?b ?a))) ==> (* ?a (max ?b ?a)) if (&& (< ?b ?c) (<= ?c 0))
+(max ?c (* ?a (max ?b ?a))) ==> (* ?a (max ?b ?a)) if (&& (<= ?b ?c) (< ?c 0))
+(min ?a (* ?c (min ?c ?b))) ==> ?a if (&& (<= ?c ?a) (< ?a 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?c 0) (< ?b ?c))
+(max ?c (/ ?a (* ?b ?a))) ==> ?c if (< 0 ?c)
+(min ?a (/ ?b (* ?c ?b))) ==> ?a if (< ?a 0)
+(max (min ?c ?b) (/ ?a ?a)) ==> (/ ?a ?a) if (< ?c 0)
+(max (min ?c ?b) (* ?a ?a)) ==> (* ?a ?a) if (< ?c 0)
+(max (/ ?b ?c) (min ?b ?a)) ==> (/ ?b ?c) if (< ?b 0)
+(min ?c (* ?a (max ?b ?a))) ==> ?c if (&& (< ?c 0) (<= ?b ?c))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (< ?c ?b) (<= ?b 0))
+(max ?a (+ ?a ?b)) ==> ?a if (< ?b 0)
+(/ (min ?c (* ?a ?b)) ?a) ==> (min ?b (/ ?c ?a)) if (< 0 ?a)
+(< (+ ?b (+ ?b ?b)) (max ?b ?a)) ==> (< (+ ?b ?b) ?b) if (< ?a 0)
+(< (+ ?b (+ ?b ?b)) (+ ?a (max ?b ?a))) ==> (< (+ ?b ?b) ?a) if (< ?a 0)
+(min (* ?c ?b) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (< 0 ?c)
+(max (* ?c ?b) (* ?c ?a)) ==> (* ?c (max ?b ?a)) if (< 0 ?c)
+(< (max ?a (+ ?b ?b)) (+ ?b (+ ?a ?a))) ==> (< ?a (+ ?b (+ ?a ?a))) if (< ?b 0)
+(max ?b (/ (min ?c ?b) ?a)) ==> (max ?b (/ ?b ?a)) if (< 0 ?c)
+(min ?c (/ ?b (* ?b ?a))) ==> (/ ?b (* ?b ?a)) if (< 0 ?c)
+(min ?c (/ (min ?b ?c) ?a)) ==> (min ?c (/ ?b ?a)) if (< ?b 0)
+(< (max ?b (+ ?b ?b)) (+ ?a (+ ?a ?a))) ==> (< ?b (+ ?a (+ ?a ?a))) if (< ?a 0)
+(< (+ ?b (max ?b ?a)) (+ ?a (+ ?a ?a))) ==> (< ?b (+ ?a (max ?b ?a))) if (< ?b 0)
+(min ?b (/ (max ?c ?b) ?a)) ==> (min ?b (/ ?b ?a)) if (< ?c 0)
+(min ?a (max ?c (* ?b ?a))) ==> ?a if (&& (< ?c ?b) (< 0 ?c))
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?b ?a)) if (&& (<= ?b ?c) (< ?c 0))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (< ?c 0) (<= ?b ?c))
+(< (max ?d (+ ?c ?b)) (max ?d ?a)) ==> (< (max ?d (+ ?c ?b)) ?a)
+(max ?c (/ ?b (* ?b ?a))) ==> (/ ?b (* ?b ?a)) if (< ?c 0)
+(max (min ?c ?b) (* ?a ?a)) ==> (* ?a (* ?a 1)) if (< ?c 0)
+(max (min ?c ?b) (/ ?a ?a)) ==> (* 1 (/ ?a ?a)) if (< ?c 0)
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (<= ?c 0) (< ?b ?c))
+(max (* ?c ?a) (min ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (<= ?c ?b) (< ?b 0))
+(< (+ ?b (max ?a ?d)) (max ?c (+ ?b ?a))) ==> (< (+ ?b (max ?a ?d)) ?c)
+(< (max ?d (+ ?b ?c)) (+ ?b (max ?c ?a))) ==> (< (max ?d (+ ?b ?c)) (+ ?b ?a))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?b ?c) (<= ?c 0))
+(min ?c (* ?a (max ?b ?a))) ==> ?c if (&& (<= ?c 0) (<= ?b ?c))
+(< (+ ?b (max ?d ?c)) (+ ?c (max ?b ?a))) ==> (< (+ ?b (max ?d ?c)) (+ ?c ?a))
+(< (+ ?b (max ?d ?c)) (+ ?b (max ?c ?a))) ==> (< (+ ?b (max ?d ?c)) (+ ?b ?a))
+(min ?c (* ?c (max ?b ?a))) ==> ?c if (&& (< ?b ?c) (< 0 ?b))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (< ?b 0) (<= ?c ?b))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (< ?c ?b) (<= ?b 0))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (<= ?c ?b) (< ?b 0))
+(min ?c (* ?b (max ?b ?a))) ==> ?c if (&& (< ?c ?b) (< 0 ?c))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?a)) if (&& (<= ?c ?b) (< ?b 0))
+(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (max ?c ?a)) if (&& (<= ?c 0) (< ?b ?c))
+(max ?c (* ?b (min ?b ?a))) ==> (* ?b (min ?b ?a)) if (&& (<= ?c 0) (<= ?b ?c))
+(min ?a (* ?a (min ?c ?b))) ==> ?a if (&& (<= ?a ?c) (<= ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b ?c) (<= ?c 0))
+(< (+ ?c (+ ?b ?b)) (max ?c (+ ?b ?a))) ==> (< (+ ?c ?b) (max ?c ?a))
+(< (max ?b (+ ?c ?a)) (+ ?b (+ ?a ?a))) ==> (< (max ?b ?c) (+ ?b ?a))
+(min ?a (* ?c (max ?b ?a))) ==> ?a if (&& (< ?b ?c) (< 0 ?b))
+(< (+ ?c (max ?c ?b)) (+ ?a (max ?b ?a))) ==> (< (+ ?c ?b) (+ ?b ?a))
+(max (* ?c ?b) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (&& (<= ?c ?b) (<= ?b 0))
+(< (+ ?b (max ?c ?b)) (+ ?a (max ?b ?a))) ==> (< (+ ?b (max ?c ?b)) (+ ?a ?a))
+(max ?c (* ?a (max ?b ?a))) ==> (* ?a (max ?b ?a)) if (&& (<= ?b ?c) (<= ?c 0))
+(min ?a (* ?c (min ?a ?b))) ==> ?a if (&& (<= ?c ?a) (<= ?a 0))
+(< (max ?c (+ ?b ?b)) (+ ?a (max ?b ?a))) ==> (< (max ?c (+ ?b ?b)) (+ ?a ?a))
+(min (* ?b ?c) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (&& (< ?b ?c) (< 0 ?b))
+(< (+ ?b (+ ?a ?a)) (max ?c (+ ?b ?a))) ==> (< (+ ?b (+ ?a ?a)) (max ?b ?c))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (<= ?c 0) (<= ?b ?c))
+(< (+ ?c (max ?c ?a)) (max ?b (+ ?a ?a))) ==> (< (+ ?c ?c) (max ?b (+ ?a ?a)))
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?b ?a)) if (&& (<= ?b ?c) (<= ?c 0))
+(< (+ ?c (max ?c ?b)) (+ ?b (max ?b ?a))) ==> (< (+ ?c ?c) (+ ?b (max ?c ?a)))
+(< (max ?c (+ ?b ?a)) (+ ?b (+ ?a ?a))) ==> (< (max ?c ?b) (+ ?b (+ ?a ?a)))
+(min ?a (* ?a (max ?a ?b))) ==> ?a if (< 0 ?a)
+(min ?a (* ?b (max ?b ?a))) ==> ?a if (< 0 ?b)
+(min ?a (* ?b (* ?a ?a))) ==> ?a if (< 0 ?b)
+(max ?b (* ?a (/ ?b ?a))) ==> ?b if (< 0 ?b)
+(min ?a (max ?b (* ?b ?a))) ==> ?a if (< 0 ?b)
+(max ?a (* ?a (* ?b ?a))) ==> ?a if (< ?b 0)
+(/ ?a (max ?b (/ ?a ?a))) ==> ?a if (< ?b 0)
+(min ?a (* ?a (max ?b ?a))) ==> ?a if (< ?b 0)
+(* (min ?b ?a) 1) ==> (min ?b ?a) if (!= ?a 0)
+(max ?b ?a) ==> (* (max ?b ?a) 1) if (!= ?a 0)
+(max (/ ?b ?b) (* ?a ?a)) ==> (* ?a ?a) if (!= ?a 0)
+(min ?b (/ 1 ?a)) ==> (/ 1 ?a) if (< 0 ?b)
+(/ ?b (/ ?b (/ ?b ?a))) ==> (/ ?b ?a) if (< 0 ?a)
+(max ?b (min ?a (* ?b ?a))) ==> (max ?b ?a) if (< 0 ?b)
+(/ ?b (/ ?b (/ ?b ?a))) ==> (/ ?b ?a) if (< 0 ?b)
+(max ?b (/ 1 ?a)) ==> (/ 1 ?a) if (< ?b 0)
+(max ?a (min ?b (/ ?a ?b))) ==> (max ?b ?a) if (< ?b 0)
+(max ?b ?a) ==> (max ?a (min ?b (* ?b ?a))) if (< ?b 0)
+(max ?a (/ ?b (max ?b ?a))) ==> (max ?a 1) if (< 0 ?b)
+(/ (/ ?b ?a) (max ?b ?a)) ==> (/ 1 ?a) if (< 0 ?b)
+(/ (min ?b ?a) (* ?a ?a)) ==> (/ 1 ?a) if (< 0 ?b)
+(/ ?b (* ?a (min ?b ?a))) ==> (/ 1 ?a) if (< ?b 0)
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (<= ?b 0) (<= ?c ?b))
+(min ?a (/ (max ?b ?a) ?a)) ==> (min ?a 1) if (< ?b 0)
+(/ (max ?b ?a) (* ?a ?a)) ==> (/ 1 ?a) if (< ?b 0)
+(min ?a (/ ?b (min ?b ?a))) ==> (min ?a 1) if (< ?b 0)
+(* ?a (max ?b (/ ?a ?a))) ==> (* ?a 1) if (< ?b 0)
+(max ?a (* ?b (* ?a ?a))) ==> (* ?a 1) if (< ?b 0)
+(min ?a (/ ?a (max ?b ?a))) ==> (min ?a 1) if (< ?b 0)
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (<= ?c ?b) (<= ?b 0))
+(* ?b (/ ?a (* ?b ?a))) ==> (/ ?a (* ?b ?a)) if (< 0 ?b)
+(max (* ?b ?a) (min ?c ?a)) ==> (max ?c (* ?b ?a)) if (&& (<= ?b ?c) (<= ?c 0))
+(max (/ ?a ?b) (/ ?a ?a)) ==> (/ ?a (min ?b ?a)) if (< 0 ?b)
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (<= ?b 0) (<= ?c ?b))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (< ?b ?c) (< 0 ?b))
+(/ (min ?b ?a) (/ ?b ?a)) ==> (/ ?a (/ ?b ?a)) if (< 0 ?b)
+(< (+ ?a ?b) (max ?b (+ ?a ?b))) ==> (< (+ ?a ?a) ?a)
+(< ?b ?a) <=> (< (max ?b (+ ?b ?b)) (max ?a (+ ?a ?a)))
+(/ ?b (* ?a (min ?b ?a))) ==> (/ ?b (* ?a ?a)) if (< 0 ?b)
+(min ?b (* ?a (min ?b ?a))) ==> (min ?b (* ?a ?a)) if (< 0 ?b)
+(< (+ ?a (+ ?b ?b)) (max ?a (+ ?a ?a))) ==> (< (+ ?b ?b) (max ?b ?a))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?c 0) (<= ?b ?c))
+(min ?a (* ?a (max ?b ?a))) ==> (min ?a (* ?b ?a)) if (< 0 ?b)
+(max ?b (/ (max ?b ?a) ?a)) ==> (/ (max ?b ?a) ?a) if (< ?b 0)
+(min ?a (* ?c (max ?b ?a))) ==> ?a if (&& (< ?b ?c) (<= 0 ?b))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?a (* ?b ?a)) if (&& (< ?c ?b) (< 0 ?c))
+(max (/ ?a ?b) (/ ?a ?a)) ==> (/ ?a (max ?b ?a)) if (< ?b 0)
+(< (+ ?b (max ?a ?b)) (max ?b (+ ?a ?b))) ==> (< (+ ?a (max ?a ?b)) ?a)
+(min ?b (* ?b (min ?c ?a))) ==> (min ?b (* ?b ?a)) if (&& (< ?c ?b) (< 0 ?c))
+(min ?a (* ?c (max ?a ?b))) ==> ?a if (&& (<= ?a ?c) (< 0 ?a))
+(min ?a (/ ?b (min ?a ?b))) ==> (min ?a (/ ?b ?a)) if (< ?a 0)
+(< (max ?b (+ ?b ?b)) (+ ?b (+ ?a ?a))) ==> (< (max ?b ?a) (+ ?a ?a))
+(min ?c (* ?b (max ?b ?a))) ==> ?c if (&& (< ?c ?b) (<= 0 ?c))
+(min ?a (* ?c (max ?b ?a))) ==> ?a if (&& (<= ?b ?c) (< 0 ?b))
+(< (max ?b (+ ?b ?b)) (+ ?a (+ ?b ?b))) ==> (< (max ?b ?a) (+ ?b (+ ?a ?a)))
+(min ?b (* ?a (min ?c ?a))) ==> (min ?b (* ?a ?a)) if (&& (< ?b ?c) (< 0 ?b))
+(< (min ?b (min ?d ?c)) (+ ?b ?a)) ==> 1 if (< 0 ?a)
+(min ?b (max ?a (/ ?b ?b))) ==> (min ?b (max ?a 1)) if (!= ?a 0)
+(max ?b (/ ?a (* ?a ?a))) ==> (max ?b (/ 1 ?a)) if (!= ?b 0)
+(< (+ ?d (min ?c ?b)) (min ?c (min ?b ?a))) ==> 0 if (< 0 ?d)
+(< (min ?d (+ ?c ?b)) (+ ?c (+ ?b ?a))) ==> 1 if (< 0 ?a)
+(< (+ ?b (+ ?c ?d)) (+ ?c (min ?b ?a))) ==> 0 if (< 0 ?d)
+(< (+ ?c (min ?d ?b)) (+ ?c (+ ?b ?a))) ==> 1 if (< 0 ?a)
+(< (+ ?b (+ ?a ?d)) (min ?c (+ ?b ?a))) ==> 0 if (< 0 ?d)
+(< (min ?c ?b) (min ?a (+ ?a ?d))) ==> (< (min ?c ?b) ?a) if (< 0 ?d)
+(< (min ?c ?b) (min ?a (+ ?b ?d))) ==> (< (min ?c ?b) ?a) if (< 0 ?d)
+(min ?a (max ?c (* ?b ?a))) ==> ?a if (&& (< ?c ?b) (<= 0 ?c))
+(< (min ?b ?c) (+ ?b (min ?a ?d))) ==> (< (min ?b ?c) (+ ?b ?a)) if (< 0 ?d)
+(< (+ ?d ?c) (min ?c (+ ?b ?a))) ==> (< (+ ?d ?c) (+ ?b ?a)) if (< ?d 0)
+(min ?a (/ ?a (max ?b ?a))) ==> (min ?a (/ ?a ?a)) if (== ("%" ?a ?b) 0)
+(min ?a (/ (max ?b ?a) ?a)) ==> (min ?a (/ ?a ?a)) if (== ("%" ?a ?b) 0)
+(min ?b (/ (min ?a ?b) ?a)) ==> (min ?b (/ ?a ?a)) if (== ("%" ?b ?a) 0)
+(min ?a (/ (min ?b ?a) ?a)) ==> (min ?a (/ ?b ?a)) if (== ("%" ?a ?b) 0)
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (<= ?b 0) (<= ?c ?b))
+(* ?a (max ?b (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (== ("%" ?a ?b) 0)
+(min ?b (* ?b (/ ?a ?a))) ==> (min ?b (* ?a ?a)) if (== ("%" ?a ?b) 0)
+(max ?a (/ ?a (min ?b ?a))) ==> (max ?a (/ ?a ?a)) if (== ("%" ?a ?b) 0)
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (<= ?b 0) (<= ?c ?b))
+(max ?a (/ (min ?b ?a) ?a)) ==> (max ?a (/ ?a ?a)) if (== ("%" ?a ?b) 0)
+(min ?a (/ ?b (min ?b ?a))) ==> (min ?a (/ ?b ?b)) if (== ("%" ?a ?b) 0)
+(/ ?a (max ?b (* ?a ?a))) ==> (/ ?a (* ?a ?a)) if (== ("%" ?a ?b) 0)
+(max (/ ?b ?a) (/ ?a ?a)) ==> (/ ?a ?a) if (== ("%" ?a ?b) 0)
+(/ ?b (min ?a (* ?b ?b))) ==> (/ ?b ?a) if (== ("%" ?b ?a) 0)
+(max (/ ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (== ("%" ?a ?b) 0)
+(max (/ ?a ?a) (/ ?a ?b)) ==> (/ ?a ?a) if (== ("%" ?b ?a) 0)
+(* ?b ?a) ==> (min (* ?b ?a) (* ?a ?a)) if (== ("%" ?a ?b) 0)
+(* ?b ?a) ==> (* ?a (min ?b (* ?a ?a))) if (== ("%" ?a ?b) 0)
+(/ ?b ?a) ==> (/ (min ?b (* ?a ?a)) ?a) if (== ("%" ?a ?b) 0)
+(/ (max ?b (* ?a ?a)) ?a) ==> ?a if (== ("%" ?a ?b) 0)
+(min ?a (max ?c (* ?b ?a))) ==> ?a if (&& (<= ?c ?b) (< 0 ?c))
+(min ?b (* ?c (max ?b ?a))) ==> ?b if (&& (< ?b ?c) (<= 0 ?b))
+(< (+ ?b (min ?d ?c)) (min ?b ?a)) ==> (< (+ ?b (min ?d ?c)) ?a) if (< ?c 0)
+(< (min ?d ?c) (+ ?c (min ?b ?a))) ==> (< ?d (+ ?c (min ?b ?a))) if (< ?a 0)
+(< (min ?d (+ ?c ?b)) (min ?c (+ ?b ?a))) ==> (< ?d (min ?c (+ ?b ?a))) if (< 0 ?b)
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?a (* ?b ?a)) if (&& (< ?c ?b) (<= 0 ?c))
+(< (min ?d (min ?c ?b)) (min ?a (+ ?b ?b))) ==> (< (min ?d (min ?c ?b)) ?a) if (< 0 ?b)
+(min ?b (* ?b (min ?c ?a))) ==> (min ?b (* ?b ?a)) if (&& (<= ?c ?b) (< 0 ?c))
+(min ?c (* ?a (max ?b ?a))) ==> (min ?c (* ?b ?a)) if (&& (<= ?c ?b) (< 0 ?c))
+(min ?a (* ?c (max ?c ?b))) ==> ?a if (&& (<= ?a ?c) (< 0 ?a))
+(< (+ ?d (min ?a ?b)) (min ?d (+ ?d ?c))) ==> (< (+ ?a (min ?a ?b)) ?a) if (< 0 ?c)
+(< (min ?d (+ ?c ?b)) (min ?c (min ?b ?a))) ==> (< ?d (min ?c (min ?b ?a))) if (< 0 ?b)
+(< (min ?d (min ?c ?b)) (min ?c (+ ?b ?a))) ==> (< ?d (min ?c (+ ?b ?a))) if (< ?a 0)
+(max (* ?b ?c) (* ?c ?a)) ==> (* ?c (max ?b ?a)) if (&& (< ?b ?c) (<= 0 ?b))
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?a ?a)) if (&& (<= ?c ?b) (< 0 ?c))
+(< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) ==> (< (min ?d (+ ?b ?c)) (min ?b ?a)) if (< 0 ?c)
+(< (+ ?b (min ?d ?c)) (+ ?c (+ ?b ?a))) ==> (< (min ?d ?c) (+ ?c (min ?b ?a))) if (< 0 ?b)
+(< (min ?d (min ?c ?b)) (+ ?a (min ?b ?a))) ==> (< (min ?d (min ?c ?b)) (+ ?a ?a)) if (< 0 ?b)
+(min ?a (* ?a (max ?c ?b))) ==> ?a if (&& (<= ?c ?a) (< 0 ?c))
+(min ?c (* ?b (max ?b ?a))) ==> ?c if (&& (<= ?c ?b) (<= 0 ?c))
+(min ?b (* ?c (max ?b ?a))) ==> ?b if (&& (<= ?b ?c) (<= 0 ?b))
+(< (min ?b (min ?d ?c)) (+ ?c (min ?b ?a))) ==> (< (min ?b ?d) (+ ?c (min ?b ?a))) if (< ?b 0)
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?a (* ?b ?a)) if (&& (<= ?c ?b) (< 0 ?c))
+(< (+ ?d (+ ?c ?b)) (+ ?b (min ?c ?a))) ==> (< (+ ?d (+ ?c ?b)) (+ ?b ?a)) if (< ?d 0)
+(< (min ?c (+ ?b ?d)) (+ ?c (min ?b ?a))) ==> (< (+ ?b ?d) (+ ?c (min ?b ?a))) if (< ?b 0)
+(min ?a (* ?c (min ?a ?b))) ==> ?a if (&& (<= ?a 0) (<= ?c ?a))
+(< (min ?d (min ?c ?a)) (min ?b (+ ?a ?a))) ==> (< (min ?d ?c) (min ?b (+ ?a ?a))) if (< ?b 0)
+(min ?c (* ?b (min ?b ?a))) ==> ?c if (&& (<= ?b ?c) (<= ?c 0))
+(min (* ?b ?c) (* ?c ?a)) ==> (* ?c (min ?b ?a)) if (&& (<= ?b ?c) (< 0 ?b))
+(< (+ ?c (min ?d ?b)) (+ ?c (+ ?b ?a))) ==> (< (+ ?c ?d) (+ ?c (+ ?b ?a))) if (< ?a 0)
+(min ?c (* ?b (min ?c ?a))) ==> (min ?c (* ?b ?a)) if (&& (< ?b ?c) (<= 0 ?b))
+(min ?b (* ?a (min ?c ?a))) ==> (min ?b (* ?a ?a)) if (&& (< ?b ?c) (<= 0 ?b))
+(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (min ?c ?a)) if (&& (< ?c ?b) (<= 0 ?c))
+(< (min ?d (min ?c ?b)) (min ?a (+ ?a ?a))) ==> (< (min ?d (min ?c ?b)) (+ ?a ?a)) if (< ?c 0)
+(< (min ?a (+ ?d ?b)) (min ?c (+ ?b ?a))) ==> (< (+ ?d ?b) (min ?c (+ ?b ?a))) if (< ?b 0)
+(/ ?b (* ?b (min ?a 1))) ==> (/ (max ?a 1) ?a) if (&& (< 0 ?b) (== ("%" ?a ?b) 0))
+(min ?c (* ?a (min ?b ?a))) ==> (min ?c (* ?a ?a)) if (&& (<= ?c ?b) (<= 0 ?c))
+(max ?a (/ ?b (* ?a ?a))) ==> (max ?a (/ 1 ?a)) if (&& (< ?b 0) (== ("%" ?a ?b) 0))
+(max ?a (* ?a (min ?b ?a))) ==> (* ?a (min ?a 1)) if (&& (< ?b 0) (== ("%" ?a ?b) 0))
+(max (* ?b ?c) (* ?c ?a)) ==> (* ?c (max ?b ?a)) if (&& (<= ?b ?c) (<= 0 ?b))
+(< (+ ?c (min ?d ?c)) (min ?c (min ?b ?a))) ==> (< (+ ?c (min ?d ?c)) (min ?b ?a)) if (< ?a 0)
+(/ (max ?a (/ ?b ?a)) ?a) ==> (/ (max ?a 1) ?a) if (&& (< ?b 0) (== ("%" ?a ?b) 0))
+(/ ?b (max ?b (* ?b ?a))) ==> (/ (max ?a 1) ?a) if (&& (< ?b 0) (== ("%" ?a ?b) 0))
+(/ (min ?a (/ ?b ?a)) ?a) ==> (/ (min ?a 1) ?a) if (&& (< 0 ?b) (== ("%" ?a ?b) 0))
+(max ?a (* ?a (max ?b ?a))) ==> (* ?a (max ?a 1)) if (&& (< 0 ?b) (== ("%" ?a ?b) 0))
+(max (/ ?b ?a) (min ?b ?a)) ==> (/ ?b (min ?a 1)) if (&& (< 0 ?b) (== ("%" ?a ?b) 0))
+(min ?a (/ ?b (* ?a ?a))) ==> (min ?a (/ 1 ?a)) if (&& (< 0 ?b) (== ("%" ?a ?b) 0))
+(min ?a (* ?a (min ?c ?b))) ==> ?a if (&& (<= ?c 0) (<= ?a ?c))
+(min ?a (* ?c (max ?a ?b))) ==> ?a if (&& (< ?a ?c) (< 0 ?a))
+(min ?c (* ?b (min ?c ?a))) ==> (min ?c (* ?b ?a)) if (&& (<= ?b ?c) (<= 0 ?b))
+(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (min ?c ?a)) if (&& (<= ?c ?b) (<= 0 ?c))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b 0) (< ?c 0))
+(min ?b ?a) ==> (min ?b (max ?a (* ?b ?a))) if (&& (< 0 ?b) (== ("%" ?a ?b) 0))
+(max ?a (* ?b (min ?a 1))) ==> ?a if (&& (< 0 ?b) (== ("%" ?a ?b) 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?c 0) (< ?b 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?c 0) (< ?b 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?b 0) (< ?c 0))
+(max ?a (min ?c (* ?b ?a))) ==> (max ?c ?a) if (&& (< ?b 0) (<= ?c 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b 0) (<= ?c 0))
+(min ?a (max ?b (* ?c ?a))) ==> (min ?b ?a) if (&& (< 0 ?b) (< ?c 0))
+(/ ?a (* ?c (* ?b ?a))) ==> (/ ?a (* ?b ?a)) if (&& (< 0 ?c) (== ("%" ?b ?c) 0))
+(min ?a ?b) ==> ?a if (<= ?a ?b)
+(max ?b ?a) ==> ?b if (<= ?a ?b)
+(min ?a ?b) ==> ?a if (&& (< ?a 0) (< 0 ?b))
+(max ?a ?b) ==> ?a if (&& (< 0 ?a) (< ?b 0))
+(min ?b ?a) ==> ?a if (&& (< 0 ?b) (< ?a 0))
+(max ?b ?a) ==> ?a if (&& (< ?b 0) (< 0 ?a))
+(min ?a ?b) ==> ?a if (&& (< ?a 0) (<= 0 ?b))
+(max ?a ?b) ==> ?a if (&& (<= 0 ?a) (< ?b 0))
+(min ?b ?a) ==> ?a if (&& (<= 0 ?b) (< ?a 0))
+(max ?b ?a) ==> ?a if (&& (< ?b 0) (<= 0 ?a))
+(min ?a ?b) ==> ?a if (&& (<= ?a 0) (< 0 ?b))
+(max ?a ?b) ==> ?a if (&& (< 0 ?a) (<= ?b 0))
+(min ?b ?a) ==> ?a if (&& (< 0 ?b) (<= ?a 0))
+(max ?b ?a) ==> ?a if (&& (<= ?b 0) (< 0 ?a))
+(min ?a ?b) ==> ?a if (&& (<= ?a 0) (<= 0 ?b))
+(max ?a ?b) ==> ?a if (&& (<= 0 ?a) (<= ?b 0))
+(min ?b ?a) ==> ?a if (&& (<= 0 ?b) (<= ?a 0))
+(max ?b ?a) ==> ?a if (&& (<= ?b 0) (<= 0 ?a))
+?a <=> (+ 0 ?a)
+(+ ?b ?a) <=> (+ ?a ?b)
+?a ==> (min ?a 1) if (<= ?a 0)
+(max 1 (min ?a 0)) ==> 1
+(min 0 (max ?a 1)) ==> 0
+?a <=> (min ?a (+ ?a 1))
+(< (+ ?c (min ?b ?a)) ?a) ==> 1 if (< ?c 0)
+(< (min ?c (+ ?b ?a)) ?a) ==> 1 if (< ?b 0)
+(< (+ ?a (min ?c ?b)) ?a) ==> 1 if (< ?c 0)
+(< (min ?b (+ ?a ?c)) ?a) ==> (< ?b ?a) if (< 0 ?c)
+(< (+ ?a (min ?b ?c)) ?a) ==> (< (+ ?a ?b) ?a) if (< 0 ?c)
+(< (min ?b (+ ?a ?c)) (min ?a (+ ?b ?c))) ==> (< ?b ?a) if (< 0 ?c)
+(min (* ?c ?b) (* ?a ?a)) ==> (* ?c ?b) if (&& (< 0 ?c) (< ?b 0))
+(min (+ ?a ?a) 1) ==> (min ?a 1) if (<= 0 ?a)
+(min ?b (+ ?a 1)) ==> (+ ?a 1) if (< ?a ?b)
+(max ?b (+ ?a 1)) ==> ?b if (< ?a ?b)
+(< (min ?b (min ?a ?c)) (+ ?b ?a)) ==> (< (min ?b ?a) (+ ?b ?a)) if (< 0 ?c)
+(< (+ ?b ?b) (min ?b (min ?a ?c))) ==> (< (+ ?b ?b) (min ?b ?a)) if (< 0 ?c)
+(< (min ?b (min ?a ?c)) (+ ?a (min ?b ?a))) ==> (< ?b (+ ?b ?a)) if (< 0 ?c)
+(min (+ ?b ?a) 1) ==> (min ?a 1) if (&& (<= ?b ?a) (<= 0 ?b))
+(== 0 1) <=> 0
+(min (* ?b ?a) (max ?a ?c)) ==> (* ?b ?a) if (&& (< 0 ?b) (< ?a 0))
+(< (+ ?b (min ?a ?b)) (min ?a (min ?b ?c))) ==> (< (+ ?a ?b) ?a) if (< 0 ?c)
+(< (min ?b (min ?a ?c)) (+ ?a ?a)) ==> (< (min ?b ?a) (+ ?a ?a)) if (< 0 ?c)
+(< (+ ?b (+ ?c ?c)) (min ?b (+ ?b ?a))) ==> (< (+ ?c ?c) ?c) if (< 0 ?a)
+(< (min ?c (+ ?a ?c)) (+ ?c (min ?a ?b))) ==> (< ?a (+ ?a ?a)) if (< 0 ?b)
+(< (min ?b (min ?a ?c)) (+ ?b (min ?b ?a))) ==> (< ?b (+ ?b ?b)) if (< 0 ?c)
+(== (min ?b ?a) (min ?b ?a)) ==> 1
+(== 1 (min ?b ?a)) ==> 0 if (<= ?b 0)
+(== ?b ?a) ==> 0 if (!= ?b ?a)
+(== (min ?c ?a) (min ?b ?a)) ==> (== ?a (min ?c ?a)) if (< ?c ?b)
+(== (min ?c ?b) ?a) ==> (== ?b ?a) if (< ?a ?c)
+(== ?b (min ?a ?c)) ==> (== ?b ?a) if (< ?b ?c)
+(== (min ?c ?b) ?a) ==> 0 if (< ?c ?a)
+(== ?c (min ?b ?a)) ==> 0 if (< ?a ?c)
+(== 0 (min ?b ?a)) ==> 0 if (&& (!= ?a 0) (!= ?b 0))
+(== ?b ?a) ==> 0 if (&& (< ?b 0) (< 0 ?a))
+(== ?b ?a) ==> 0 if (&& (< ?b 0) (<= 0 ?a))
+(== ?b ?a) ==> 0 if (&& (<= ?b 0) (< 0 ?a))
+(== ?c (min ?b ?a)) ==> (== ?c ?b) if (&& (< 0 ?a) (< ?c 0))
+(== ?b (min ?c ?a)) ==> (== ?b ?a) if (&& (< ?b 0) (< 0 ?c))
+(== ?c (min ?b ?a)) ==> (== ?c ?b) if (&& (<= 0 ?a) (< ?c 0))
+(== ?b (min ?c ?a)) ==> (== ?b ?a) if (&& (< ?b 0) (<= 0 ?c))
+(== ?c (min ?b ?a)) ==> (== ?c ?b) if (&& (< 0 ?a) (<= ?c 0))
+(== ?b (min ?c ?a)) ==> (== ?b ?a) if (&& (<= ?b 0) (< 0 ?c))
+(< (+ ?a (min ?a ?c)) (min ?a (min ?c ?b))) ==> (< (+ ?a ?a) ?a) if (< 0 ?b)
+(< (+ ?b (min ?a ?c)) (+ ?b (+ ?a ?a))) ==> (< ?b (+ ?b ?a)) if (< 0 ?c)
+(== ?c (min ?b ?a)) ==> 0 if (&& (< 0 ?c) (< ?a 0))
+(== ?c (min ?b ?a)) ==> 0 if (&& (<= 0 ?c) (< ?a 0))
+(== ?c (min ?b ?a)) ==> 0 if (&& (< 0 ?c) (<= ?a 0))
+(== ?c (min ?b ?a)) ==> 0 if (&& (!= ?c ?b) (!= ?c ?a))
+(< (+ ?b ?a) (min ?b (min ?a ?c))) ==> (< (+ ?b ?a) (min ?b ?a)) if (< 0 ?c)
+(< (min ?a (min ?c ?b)) (+ ?a (min ?c ?b))) ==> (< ?a (+ ?a ?a)) if (< ?c 0)
+(< (min ?b (min ?a ?c)) (+ ?a (min ?b ?c))) ==> (< ?b (+ ?b ?a)) if (< ?b 0)
+(< (+ ?b (min ?b ?c)) (min ?a (+ ?b ?a))) ==> (< (+ ?b (min ?b ?c)) ?a) if (< 0 ?a)
+(< (min ?b (+ ?a ?c)) (min ?a (+ ?b ?a))) ==> (< ?b (min ?a (+ ?b ?a))) if (< 0 ?c)
+(< (min ?c (+ ?a ?b)) (min ?b (+ ?a ?a))) ==> (< ?c (min ?b (+ ?a ?a))) if (< 0 ?b)
+(== (max ?b ?a) (max ?b ?a)) ==> 1
+(== 1 ?a) ==> 0 if (<= ?a 0)
+(== 1 (max ?b ?a)) ==> (== 1 ?a) if (<= ?b 0)
+(== (max ?c ?a) (max ?b ?a)) ==> (== ?a (max ?c ?a)) if (< ?b ?c)
+(== (max ?c ?b) ?a) ==> (== ?b ?a) if (< ?c ?a)
+(== ?b (max ?a ?c)) ==> (== ?b ?a) if (< ?c ?b)
+(== (max ?c ?b) ?a) ==> 0 if (< ?a ?c)
+(== ?c (max ?b ?a)) ==> 0 if (< ?c ?a)
+(== 0 (max ?b ?a)) ==> 0 if (&& (!= ?a 0) (!= ?b 0))
+(== ?b ?a) ==> 0 if (&& (< 0 ?b) (< ?a 0))
+(== ?b ?a) ==> 0 if (&& (<= 0 ?b) (< ?a 0))
+(== ?b ?a) ==> 0 if (&& (< 0 ?b) (<= ?a 0))
+(== ?c (max ?b ?a)) ==> (== ?c ?b) if (&& (< ?a 0) (< 0 ?c))
+(== ?b (max ?c ?a)) ==> (== ?b ?a) if (&& (< 0 ?b) (< ?c 0))
+(== ?c (max ?b ?a)) ==> (== ?c ?b) if (&& (< ?a 0) (<= 0 ?c))
+(== ?b (max ?c ?a)) ==> (== ?b ?a) if (&& (<= 0 ?b) (< ?c 0))
+(== ?c (max ?b ?a)) ==> (== ?c ?b) if (&& (<= ?a 0) (< 0 ?c))
+(== ?b (max ?c ?a)) ==> (== ?b ?a) if (&& (< 0 ?b) (<= ?c 0))
+(< (min ?a (+ ?b ?c)) (min ?b (+ ?a ?a))) ==> (< ?a (min ?b (+ ?a ?a))) if (< 0 ?c)
+(< (min ?b (+ ?a ?c)) (min ?a (+ ?a ?a))) ==> (< ?b (min ?a (+ ?a ?a))) if (< 0 ?c)
+(min (* ?b ?c) (max ?b ?a)) ==> (* ?b ?c) if (&& (< ?b 0) (< 0 ?c))
+(== ?c (max ?b ?a)) ==> 0 if (&& (< ?c 0) (< 0 ?a))
+(== ?c (max ?b ?a)) ==> 0 if (&& (< ?c 0) (<= 0 ?a))
+(== ?c (max ?b ?a)) ==> 0 if (&& (<= ?c 0) (< 0 ?a))
+(== ?c (max ?b ?a)) ==> 0 if (&& (!= ?c ?b) (!= ?c ?a))
+(max ?b (* ?a ?a)) ==> (* ?a ?a) if (<= ?b 0)
+(min ?b (* ?a ?a)) ==> ?b if (<= ?b 0)
+(* ?b ?a) ==> (max ?a (* ?b ?a)) if (&& (< ?b 0) (<= ?a 0))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (<= ?b 0) (< ?a 0))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (<= ?b 0) (<= ?a 0))
+(* ?b ?a) ==> (max ?a (* ?b ?a)) if (&& (<= ?b 0) (<= ?a 0))
+(* ?b ?a) ==> (min ?a (* ?b ?a)) if (&& (< ?b 0) (<= 0 ?a))
+(* ?b ?a) ==> (min ?b (* ?b ?a)) if (&& (<= 0 ?b) (< ?a 0))
+(* ?b ?a) ==> (min ?b (* ?b ?a)) if (&& (<= ?b 0) (< 0 ?a))
+(* ?b ?a) ==> (min ?a (* ?b ?a)) if (&& (< 0 ?b) (<= ?a 0))
+(* ?b ?a) ==> (min ?a (* ?b ?a)) if (&& (<= ?b 0) (<= 0 ?a))
+(* ?b ?a) ==> (min ?b (* ?b ?a)) if (&& (<= 0 ?b) (<= ?a 0))
+(* ?b ?a) ==> (max ?a (* ?b ?a)) if (&& (< 0 ?b) (<= 0 ?a))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (<= 0 ?b) (< 0 ?a))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (< ?b ?a) (<= ?a 0))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (<= ?b 0) (< ?a ?b))
+(* ?b ?a) ==> (max ?a (* ?b ?a)) if (&& (< ?b ?a) (<= ?a 0))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (<= ?b ?a) (<= ?a 0))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (<= ?b 0) (<= ?a ?b))
+(* ?b ?a) ==> (max ?a (* ?b ?a)) if (&& (<= ?b ?a) (<= ?a 0))
+(* ?b ?a) ==> (max ?a (* ?b ?a)) if (&& (<= ?b 0) (<= ?a ?b))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (< ?b ?a) (<= 0 ?b))
+(max ?b (* ?b ?a)) ==> (* ?b ?a) if (&& (<= ?b ?a) (<= 0 ?b))
+(min ?b (* ?b ?a)) ==> ?b if (&& (<= ?b 0) (< ?a 0))
+(min ?a (* ?b ?a)) ==> ?a if (&& (< ?b 0) (<= ?a 0))
+(min ?b (* ?b ?a)) ==> ?b if (&& (<= ?b 0) (<= ?a 0))
+(min ?a (* ?b ?a)) ==> ?a if (&& (<= ?b 0) (<= ?a 0))
+(max ?b (* ?b ?a)) ==> ?b if (&& (<= 0 ?b) (< ?a 0))
+(max ?a (* ?b ?a)) ==> ?a if (&& (< ?b 0) (<= 0 ?a))
+(max ?b (* ?b ?a)) ==> ?b if (&& (<= ?b 0) (< 0 ?a))
+(max ?a (* ?b ?a)) ==> ?a if (&& (< 0 ?b) (<= ?a 0))
+(max ?b (* ?b ?a)) ==> ?b if (&& (<= 0 ?b) (<= ?a 0))
+(max ?a (* ?b ?a)) ==> ?a if (&& (<= ?b 0) (<= 0 ?a))
+(min ?a (* ?a ?b)) ==> ?a if (&& (<= 0 ?a) (< 0 ?b))
+(min ?a (* ?b ?a)) ==> ?a if (&& (< 0 ?b) (<= 0 ?a))
+(min ?b (* ?b ?a)) ==> ?b if (&& (< ?b ?a) (<= ?a 0))
+(min ?b (* ?b ?a)) ==> ?b if (&& (<= ?b 0) (< ?a ?b))
+(min ?a (* ?b ?a)) ==> ?a if (&& (<= ?b 0) (< ?a ?b))
+(min ?a (* ?b ?a)) ==> ?a if (&& (< ?b ?a) (<= ?a 0))
+(min ?b (* ?b ?a)) ==> ?b if (&& (<= ?b 0) (<= ?a ?b))
+(min ?b (* ?b ?a)) ==> ?b if (&& (<= ?b ?a) (<= ?a 0))
+(min ?a (* ?b ?a)) ==> ?a if (&& (<= ?b 0) (<= ?a ?b))
+(min ?a (* ?b ?a)) ==> ?a if (&& (<= ?b ?a) (<= ?a 0))
+(min ?b (* ?b ?a)) ==> ?b if (&& (< ?b ?a) (<= 0 ?b))
+(min ?b (* ?b ?a)) ==> ?b if (&& (<= ?b ?a) (<= 0 ?b))
+(< (+ ?b (+ ?c ?c)) (min ?c (min ?b ?a))) ==> (< (+ ?b (+ ?c ?c)) (min ?c ?b)) if (< 0 ?a)
+(< (+ ?a (min ?b ?c)) (min ?a (+ ?a ?a))) ==> (< (+ ?a ?b) (min ?a (+ ?a ?a))) if (< 0 ?c)
+(< (min ?b (min ?a ?c)) (+ ?b (+ ?a ?a))) ==> (< (min ?b ?a) (+ ?b (+ ?a ?a))) if (< 0 ?c)
+(< (+ ?a (min ?c ?b)) (min ?b (+ ?a ?a))) ==> (< (+ ?a ?c) (min ?b (+ ?a ?a))) if (< 0 ?b)
+(max ?a (* ?b (max ?b ?a))) ==> (* ?b (max ?b ?a)) if (<= ?a 0)
+(max ?b (* ?b (max ?b ?a))) ==> (* ?b (max ?b ?a)) if (<= ?a 0)
+(max (min ?b ?a) (* ?b ?a)) ==> (max ?a (* ?b ?a)) if (<= ?a 0)
+(< (min ?b (min ?c ?a)) (+ ?b (+ ?b ?a))) ==> (< (min ?b ?c) (+ ?b (+ ?b ?a))) if (< 0 ?a)
+(min ?b (* ?a (min ?b ?a))) ==> (min ?b (* ?a ?a)) if (<= ?a 0)
+(min ?b (* ?a (min ?b ?a))) ==> (min ?b (* ?b ?a)) if (<= ?b 0)
+(min ?b (* ?a (min ?b ?a))) ==> (min ?b (* ?a ?a)) if (<= 0 ?b)
+(max ?b ?a) ==> (max ?b (min ?a (* ?b ?a))) if (<= ?a 0)
+(min ?b (* ?b (max ?b ?a))) ==> ?b if (<= ?a 0)
+(min ?b (* ?b (min ?b ?a))) ==> ?b if (<= ?b 0)
+(min ?b (max ?a (* ?b ?a))) ==> ?b if (<= ?b 0)
+(min ?a (* ?a (max ?a ?b))) ==> ?a if (<= 0 ?a)
+(< (+ ?b (+ ?b ?b)) (min ?b (min ?a ?c))) ==> (< (+ ?b (+ ?b ?b)) (min ?b ?a)) if (< 0 ?c)
+(max (* ?c ?a) (* ?b ?a)) ==> (* ?a (min ?c ?b)) if (<= ?a 0)
+(min (* ?c ?a) (* ?b ?a)) ==> (* ?a (max ?c ?b)) if (<= ?a 0)
+(max (* ?c ?a) (* ?b ?a)) ==> (* ?a (max ?c ?b)) if (<= 0 ?a)
+(min (* ?c ?b) (* ?b ?a)) ==> (* ?b (min ?c ?a)) if (<= 0 ?b)
+(< (min ?a (min ?b ?c)) (+ ?a (+ ?a ?a))) ==> (< (min ?a ?b) (+ ?a (+ ?a ?a))) if (< 0 ?c)
+(max (* ?c ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (< 0 ?c) (< ?b 0))
+(min (* ?c ?b) (* ?a ?a)) ==> (* ?c ?b) if (&& (< ?c 0) (< 0 ?b))
+(< (+ ?b (min ?a ?c)) (min ?b (+ ?a ?a))) ==> (< (+ ?b ?a) (min ?b (+ ?a ?a))) if (< 0 ?c)
+(max (* ?c ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?c 0) (< 0 ?b))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?b 0) (<= ?c 0))
+(max ?a (min ?c (* ?b ?a))) ==> (max ?c ?a) if (&& (<= ?b 0) (<= ?c 0))
+(min ?a (max ?b (* ?c ?a))) ==> (min ?b ?a) if (&& (<= 0 ?b) (< ?c 0))
+(min (* ?c ?b) (* ?a ?a)) ==> (* ?c ?b) if (&& (< ?c 0) (<= 0 ?b))
+(max (* ?c ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= 0 ?c) (< ?b 0))
+(min (* ?c ?b) (* ?a ?a)) ==> (* ?c ?b) if (&& (<= 0 ?c) (< ?b 0))
+(max (* ?c ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?c 0) (<= 0 ?b))
+(min ?a (max ?b (* ?c ?a))) ==> (min ?b ?a) if (&& (< 0 ?b) (<= ?c 0))
+(min ?a (max ?b (* ?c ?a))) ==> (min ?b ?a) if (&& (<= 0 ?b) (<= ?c 0))
+(min (* ?c ?b) (* ?a ?a)) ==> (* ?c ?b) if (&& (<= 0 ?c) (<= ?b 0))
+(max (* ?c ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= 0 ?c) (<= ?b 0))
+(min (* ?c ?b) (* ?a ?a)) ==> (* ?c ?b) if (&& (<= ?c 0) (<= 0 ?b))
+(max (* ?c ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?c 0) (<= 0 ?b))
+(max ?b (min ?a (* ?c ?a))) ==> (max ?b ?a) if (&& (< 0 ?b) (< 0 ?c))
+(max ?b (min ?a (* ?c ?a))) ==> (max ?b ?a) if (&& (< 0 ?c) (< 0 ?b))
+(max ?b (min ?a (* ?c ?a))) ==> (max ?b ?a) if (&& (<= 0 ?b) (< 0 ?c))
+(max ?b (min ?a (* ?c ?a))) ==> (max ?b ?a) if (&& (< 0 ?c) (<= 0 ?b))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b 0) (< ?c ?b))
+(min ?a (+ ?b ?a)) ==> ?a if (< 0 ?b)
+(< ?a (min ?b (+ ?a ?a))) ==> 0 if (< ?b 0)
+(< (min ?b ?a) (min ?b (+ ?a ?a))) ==> 0 if (< ?b 0)
+(< (min ?a (+ ?b ?b)) ?b) ==> (< ?a 0) if (< ?a 0)
+(< (min ?b (+ ?a ?a)) (min ?a (+ ?b ?a))) ==> (< (min ?b ?a) ?b) if (< ?a 0)
+(max ?a (min ?c (* ?b ?a))) ==> (max ?c ?a) if (&& (< ?b ?c) (< ?c 0))
+(max ?a (min ?c (* ?b ?a))) ==> (max ?c ?a) if (&& (< ?b ?c) (<= ?c 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b 0) (<= ?c ?b))
+(< (+ ?b (+ ?b ?b)) (min ?a (+ ?b ?a))) ==> (< (+ ?b ?b) ?a) if (< ?a 0)
+(< (min ?a (+ ?b ?b)) (+ ?a (+ ?a ?a))) ==> (< (+ ?b ?b) (+ ?a (+ ?a ?a))) if (< ?b 0)
+(< (+ ?b (+ ?b ?b)) (+ ?a (min ?b ?a))) ==> (< (+ ?b (+ ?b ?b)) (+ ?a ?a)) if (< ?a 0)
+(< (+ ?b (+ ?b ?b)) (min ?b (+ ?a ?a))) ==> (< (+ ?b (+ ?b ?b)) (+ ?a ?a)) if (< ?a 0)
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?b 0) (< ?c ?b))
+(max ?a (min ?c (* ?b ?a))) ==> (max ?c ?a) if (&& (<= ?b ?c) (< ?c 0))
+(max ?b (min ?a (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b ?c) (< 0 ?b))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?b 0) (<= ?c ?b))
+(min ?a (* ?b (* ?b ?a))) ==> (* ?b (* ?b ?a)) if (&& (< ?b 0) (<= ?a 0))
+(min ?b (* ?b (* ?a ?a))) ==> (* ?b (* ?a ?a)) if (&& (<= ?b 0) (< ?a 0))
+(< (min ?b (+ ?d ?c)) (min ?b ?a)) ==> (< (+ ?d ?c) (min ?b ?a))
+(max ?a (min ?c (* ?b ?a))) ==> (max ?c ?a) if (&& (<= ?b ?c) (<= ?c 0))
+(max ?b (min ?a (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b ?c) (<= 0 ?b))
+(min ?a (* ?b (* ?b ?a))) ==> (* ?b (* ?b ?a)) if (&& (!= ?b 0) (<= ?a 0))
+(< (min ?d (+ ?c ?b)) (+ ?c (min ?b ?a))) ==> (< ?d (+ ?c (min ?b ?a)))
+(< (+ ?d (+ ?c ?c)) (+ ?c (min ?b ?a))) ==> (< (+ ?d ?c) (min ?b ?a))
+(max ?a (* ?b (* ?b ?a))) ==> (* ?b (* ?b ?a)) if (&& (!= ?b 0) (<= 0 ?a))
+(max ?b (min ?a (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?b ?c) (< 0 ?b))
+(min ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (< ?a ?b) (< ?b 0))
+(min ?b (* ?b (* ?a ?a))) ==> (* ?b (* ?a ?a)) if (&& (<= ?b ?a) (< ?a 0))
+(< (+ ?d (+ ?c ?b)) (+ ?b (min ?b ?a))) ==> (< (+ ?d ?c) (min ?b ?a))
+(min ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (< ?a ?b) (<= ?b 0))
+(min ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (<= ?a ?b) (< ?b 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?b 0) (< ?c 0))
+(< (+ ?c (min ?d ?c)) (+ ?c (+ ?b ?a))) ==> (< (min ?d ?c) (+ ?b ?a))
+(min ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (< ?b 0) (<= ?a ?b))
+(min ?a (max ?b (* ?c ?b))) ==> ?a if (&& (< ?a 0) (< ?c 0))
+(min ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (<= ?a ?b) (<= ?b 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?b 0) (<= ?c 0))
+(max ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (< ?b ?a) (< 0 ?b))
+(< (+ ?b (min ?d ?c)) (+ ?b (+ ?b ?a))) ==> (< (min ?d ?c) (+ ?b ?a))
+(max ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (< ?b ?a) (<= 0 ?b))
+(max ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (<= ?b ?a) (< 0 ?b))
+(< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) ==> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
+(max ?b (* ?a (* ?a ?a))) ==> (* ?a (* ?a ?a)) if (&& (<= ?b ?a) (<= 0 ?b))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?c 0) (< ?b 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?b 0) (< ?c 0))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?b 0) (< ?a ?b))
+(max (* ?a ?a) (* ?b ?b)) ==> (* ?a ?a) if (&& (< ?a ?b) (< ?b 0))
+(min (* ?a ?a) (* ?b ?b)) ==> (* ?a ?a) if (&& (< ?a 0) (< ?b ?a))
+(min (* ?b ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?b ?a) (< ?a 0))
+(max (* ?a ?a) (* ?b ?b)) ==> (* ?a ?a) if (&& (<= ?a ?b) (< ?b 0))
+(max (* ?b ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?b 0) (< ?a ?b))
+(min (* ?b ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?b ?a) (< ?a 0))
+(min (* ?b ?b) (* ?a ?a)) ==> (* ?b ?b) if (&& (<= ?b 0) (< ?a ?b))
+(max (* ?b ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?b 0) (<= ?a ?b))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?b 0) (<= ?a ?b))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?b 0) (< ?a ?b))
+(max (* ?b ?b) (* ?a ?a)) ==> (* ?b ?b) if (&& (< ?b ?a) (<= ?a 0))
+(min (* ?b ?b) (* ?a ?a)) ==> (* ?b ?b) if (&& (< ?b 0) (<= ?a ?b))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?b 0) (<= ?a ?b))
+(max (* ?a ?a) (* ?b ?b)) ==> (* ?a ?a) if (&& (<= ?a ?b) (<= ?b 0))
+(min (* ?a ?a) (* ?b ?b)) ==> (* ?a ?a) if (&& (< ?a ?b) (< 0 ?a))
+(min (* ?a ?a) (* ?b ?b)) ==> (* ?a ?a) if (&& (<= ?a 0) (<= ?b ?a))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?b ?a) (< 0 ?b))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (< ?b ?a) (<= 0 ?b))
+(min (* ?b ?b) (* ?a ?a)) ==> (* ?b ?b) if (&& (<= ?b ?a) (< 0 ?b))
+(* ?b (min ?a (* ?b ?a))) ==> (* ?b ?a) if (&& (< ?b ?a) (<= 0 ?b))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?b ?a) (< 0 ?b))
+(min (* ?b ?b) (* ?a ?a)) ==> (* ?b ?b) if (&& (< ?b ?a) (<= 0 ?b))
+(min (* ?a ?a) (* ?b ?b)) ==> (* ?a ?a) if (&& (<= ?a ?b) (<= 0 ?a))
+(max (* ?b ?a) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?b ?a) (<= 0 ?b))
+(* ?b (min ?a (* ?b ?a))) ==> (* ?b ?a) if (&& (<= ?b ?a) (<= 0 ?b))
+(max (* ?b ?b) (* ?a ?a)) ==> (* ?a ?a) if (&& (<= ?b ?a) (<= 0 ?b))
+(min ?a (* ?a (* ?b ?b))) ==> ?a if (&& (<= 0 ?a) (< ?b 0))
+(max ?a (* ?b (* ?b ?a))) ==> ?a if (&& (!= ?b 0) (<= ?a 0))
+(max ?a (* ?a (* ?b ?b))) ==> ?a if (&& (<= ?a 0) (!= ?b 0))
+(min ?a (* ?a (* ?b ?b))) ==> ?a if (&& (<= 0 ?a) (!= ?b 0))
+(min ?a (* ?b (* ?b ?a))) ==> ?a if (&& (!= ?b 0) (<= 0 ?a))
+(max ?a (* ?b (* ?b ?a))) ==> ?a if (&& (< ?b 0) (< ?a ?b))
+(max ?a (* ?a (* ?b ?b))) ==> ?a if (&& (< ?a ?b) (< ?b 0))
+(max ?a (* ?b (* ?b ?a))) ==> ?a if (&& (< ?b 0) (<= ?a ?b))
+(max ?b (* ?b (* ?a ?a))) ==> ?b if (&& (<= ?b ?a) (< ?a 0))
+(max ?a (* ?b (* ?a ?a))) ==> ?a if (&& (< ?b ?a) (<= ?b 0))
+(max ?a (* ?b (* ?a ?a))) ==> ?a if (&& (<= ?b ?a) (<= ?b 0))
+(< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) ==> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
+(< (+ ?b (min ?d ?a)) (min ?c (+ ?b ?a))) ==> (< (+ ?b ?d) (min ?c (+ ?b ?a)))
+(min ?a (max ?b (* ?c ?b))) ==> ?a if (&& (< ?a 0) (<= ?c 0))
+(min ?c (* ?b (* ?a ?a))) ==> ?c if (&& (< 0 ?b) (< ?c 0))
+(max ?a (min ?b (* ?c ?b))) ==> ?a if (&& (< ?c 0) (< 0 ?a))
+(< ?c (min ?c (min ?b ?a))) ==> 0
+(< (+ ?a (min ?c ?b)) (+ ?b ?a)) ==> (< ?c ?b)
+(max ?a (* ?c (min ?b ?a))) ==> ?a if (&& (< 0 ?c) (< ?b 0))
+(< (+ ?a (+ ?b ?c)) (+ ?a ?c)) ==> (< (+ ?a (+ ?b ?b)) ?a)
+(< (+ ?a (min ?c ?b)) (+ ?b ?a)) ==> (< (+ ?c ?c) (+ ?b ?b))
+(max ?a (min ?c (* ?b ?a))) ==> ?a if (&& (< ?c 0) (< 0 ?b))
+(max ?a (min ?c (* ?b ?a))) ==> ?a if (&& (< 0 ?b) (< ?a 0))
+(max ?a (min ?c (* ?b ?a))) ==> ?a if (&& (< 0 ?b) (< ?c 0))
+(max ?a (* ?a (max ?c ?b))) ==> ?a if (&& (< ?a 0) (< 0 ?c))
+(max ?b (* ?c (min ?b ?a))) ==> ?b if (&& (< 0 ?c) (< ?b 0))
+(max ?a (* ?c (min ?a ?b))) ==> ?a if (&& (< ?a 0) (< 0 ?c))
+(max ?a (* ?a (max ?c ?b))) ==> ?a if (&& (< 0 ?c) (< ?a 0))
+(max ?c (min ?a (* ?b ?a))) ==> ?c if (&& (< 0 ?c) (< ?b 0))
+(< (+ ?c (min ?b ?a)) (+ ?a (+ ?a ?c))) ==> (< (min ?b ?a) (+ ?a ?a))
+(max ?b (min ?c (* ?b ?a))) ==> ?b if (&& (< ?b 0) (< 0 ?a))
+(< (+ ?c (+ ?b ?b)) (min ?c (+ ?b ?a))) ==> (< (+ ?b ?c) (min ?c ?a))
+(< (+ ?c (min ?b ?a)) (+ ?b (+ ?a ?c))) ==> (< (min ?b ?a) (+ ?b ?a))
+(< (min ?b (+ ?c ?a)) (+ ?b (+ ?a ?a))) ==> (< (min ?b ?c) (+ ?b ?a))
+(max ?a (* ?c (min ?b ?a))) ==> ?a if (&& (< ?b 0) (< 0 ?c))
+(< (+ ?b (+ ?a ?c)) (+ ?c (min ?b ?a))) ==> (< (+ ?b ?a) (min ?b ?a))
+(min ?c (* ?b (* ?a ?a))) ==> ?c if (&& (< ?c 0) (< 0 ?b))
+(< (+ ?c (min ?c ?b)) (+ ?a (min ?b ?a))) ==> (< (+ ?c ?b) (+ ?b ?a))
+(max ?c (* ?b (* ?a ?a))) ==> ?c if (&& (< ?b 0) (< 0 ?c))
+(< (+ ?b (+ ?c ?c)) (+ ?b (+ ?a ?a))) ==> (< (+ ?c ?b) (+ ?b ?a))
+(< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) ==> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
+(max ?c (* ?b (* ?a ?a))) ==> ?c if (&& (< 0 ?c) (< ?b 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?c 0) (<= ?b 0))
+(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) ==> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?b 0) (<= ?c 0))
+(< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) ==> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
+(max ?a (min ?b (* ?c ?b))) ==> ?a if (&& (<= 0 ?a) (< ?c 0))
+(< (+ ?c (min ?c ?a)) (min ?b (+ ?a ?a))) ==> (< (+ ?c ?c) (min ?b (+ ?a ?a)))
+(< (+ ?b (+ ?a ?c)) (min ?c (+ ?a ?c))) ==> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
+(< (+ ?a (min ?c ?b)) (min ?a (+ ?b ?a))) ==> (< (+ ?c ?b) (min ?b (+ ?b ?b)))
+(max ?a (min ?b (* ?c ?b))) ==> ?a if (&& (< ?c 0) (<= 0 ?a))
+(< (+ ?c (min ?c ?b)) (+ ?b (min ?b ?a))) ==> (< (+ ?c ?c) (+ ?b (min ?c ?a)))
+(max ?a (* ?c (* ?b ?b))) ==> ?a if (&& (< ?c 0) (<= 0 ?a))
+(min ?c (* ?b (* ?a ?a))) ==> ?c if (&& (< ?c 0) (<= 0 ?b))
+(< (min ?c (+ ?b ?a)) (+ ?b (+ ?a ?a))) ==> (< (min ?c ?b) (+ ?b (+ ?a ?a)))
+(min ?c (* ?b (* ?a ?a))) ==> ?c if (&& (<= 0 ?b) (< ?c 0))
+(max ?c (* ?b (* ?a ?a))) ==> ?c if (&& (<= 0 ?c) (< ?b 0))
+(min ?a (* ?c (* ?b ?b))) ==> ?a if (&& (<= ?a 0) (< 0 ?c))
+(min ?c (* ?b (* ?a ?a))) ==> ?c if (&& (< 0 ?b) (<= ?c 0))
+(max ?a (min ?b (* ?c ?b))) ==> ?a if (&& (<= ?c 0) (< 0 ?a))
+(max ?a (* ?c (min ?b ?a))) ==> ?a if (&& (< 0 ?c) (<= ?b 0))
+(max ?a (min ?c (* ?b ?a))) ==> ?a if (&& (< 0 ?b) (<= ?c 0))
+(max ?c (* ?b (* ?a ?a))) ==> ?c if (&& (< 0 ?c) (<= ?b 0))
+(max ?a (min ?b (* ?c ?b))) ==> ?a if (&& (< 0 ?a) (<= ?c 0))
+(max ?a (min ?c (* ?b ?a))) ==> ?a if (&& (<= ?c 0) (< 0 ?b))
+(max ?a (* ?c (min ?b ?a))) ==> ?a if (&& (<= ?b 0) (< 0 ?c))
+(max ?c (* ?b (* ?a ?a))) ==> ?c if (&& (<= ?b 0) (< 0 ?c))
+(min ?b (max ?c (* ?b ?a))) ==> ?b if (&& (<= ?b ?a) (<= 0 ?c))
+(min ?a (max ?c (* ?a ?b))) ==> ?a if (&& (<= 0 ?c) (<= ?a ?b))
+(min ?b (max ?c (* ?b ?a))) ==> ?b if (&& (<= ?b ?a) (< 0 ?c))
+(min ?a (max ?c (* ?a ?b))) ==> ?a if (&& (< 0 ?c) (<= ?a ?b))
+(min ?b (max ?c (* ?b ?a))) ==> ?b if (&& (< ?b ?a) (<= 0 ?c))
+(min ?a (max ?c (* ?a ?b))) ==> ?a if (&& (<= 0 ?c) (< ?a ?b))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?b ?a) (<= ?c 0))
+(min ?b (max ?c (* ?b ?a))) ==> ?b if (&& (< 0 ?c) (< ?b ?a))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?c 0) (<= ?b ?a))
+(min ?a (max ?c (* ?a ?b))) ==> ?a if (&& (< ?a ?b) (< 0 ?c))
+(min ?a (max ?b (* ?c ?b))) ==> ?a if (&& (< ?c ?b) (<= ?a 0))
+(min ?a (max ?b (* ?c ?b))) ==> ?a if (&& (<= ?a 0) (< ?c ?b))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (<= ?b ?a) (< ?c 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?c 0) (<= ?b ?a))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?b ?a) (< ?c 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?c 0) (< ?b ?a))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?b ?c) if (&& (<= ?b ?a) (<= 0 ?c))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?c ?b) if (&& (<= 0 ?c) (<= ?b ?a))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?b ?c) if (&& (<= ?b ?a) (< 0 ?c))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?c ?b) if (&& (< 0 ?c) (<= ?b ?a))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?b ?c) if (&& (< ?b ?a) (<= 0 ?c))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?c ?b) if (&& (<= 0 ?c) (< ?b ?a))
+(max ?b (min ?a (* ?c ?b))) ==> (max ?b ?a) if (&& (<= ?c ?b) (<= ?a 0))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?b ?c) if (&& (< ?b ?a) (< 0 ?c))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?b 0) (<= ?c ?a))
+(max ?c (min ?b (* ?b ?a))) ==> (max ?c ?b) if (&& (< 0 ?c) (< ?b ?a))
+(max ?b (min ?a (* ?c ?b))) ==> (max ?b ?a) if (&& (< ?c ?b) (<= ?a 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (<= ?b 0) (< ?c ?a))
+(max ?b (min ?a (* ?c ?b))) ==> (max ?b ?a) if (&& (<= ?c ?b) (< ?a 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b 0) (<= ?c ?a))
+(max ?b (min ?a (* ?c ?b))) ==> (max ?b ?a) if (&& (< ?c ?b) (< ?a 0))
+(max ?a (min ?b (* ?c ?a))) ==> (max ?b ?a) if (&& (< ?b 0) (< ?c ?a))
+(max (* ?a ?c) (min ?b ?a)) ==> (max ?a (* ?a ?c)) if (&& (<= 0 ?b) (<= ?a ?c))
+(max ?a (* ?c (* ?b ?b))) ==> ?a if (&& (<= ?c 0) (<= 0 ?a))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?c ?b) (<= 0 ?a))
+(min ?a (* ?c (* ?b ?b))) ==> ?a if (&& (<= ?a 0) (<= 0 ?c))
+(min ?b (* ?a (max ?b ?c))) ==> (min ?b (* ?b ?a)) if (&& (<= 0 ?b) (<= ?c ?a))
+(max ?c (max ?b (* ?b ?a))) ==> (max ?c (* ?b ?a)) if (&& (<= 0 ?c) (<= ?b ?a))
+(max ?c (* ?b (* ?a ?a))) ==> ?c if (&& (<= 0 ?c) (<= ?b 0))
+(max (* ?b ?c) (min ?b ?a)) ==> (max ?b (* ?b ?c)) if (&& (<= ?b ?c) (<= 0 ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?a)) if (&& (<= ?b ?c) (< 0 ?a))
+(max ?a (min ?b (* ?c ?b))) ==> ?a if (&& (<= 0 ?a) (<= ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?c ?b) (< 0 ?a))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?a ?c)) if (&& (< 0 ?b) (<= ?a ?c))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?a ?c)) if (&& (< 0 ?b) (<= ?a ?c))
+(max (* ?b ?c) (min ?b ?a)) ==> (max ?b (* ?b ?c)) if (&& (<= ?b ?c) (< 0 ?a))
+(min ?b (* ?a (max ?b ?c))) ==> (min ?b (* ?b ?a)) if (&& (< 0 ?b) (<= ?c ?a))
+(max ?c (max ?b (* ?b ?a))) ==> (max ?c (* ?b ?a)) if (&& (< 0 ?c) (<= ?b ?a))
+(max ?b (max ?c (* ?b ?a))) ==> (max ?c (* ?b ?a)) if (&& (<= ?b ?a) (< 0 ?c))
+(min ?c (* ?c (min ?b ?a))) ==> (min ?c (* ?a ?c)) if (&& (< 0 ?b) (<= ?a ?c))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (<= ?b ?c) (< 0 ?a))
+(max (* ?b ?a) (min ?c ?b)) ==> (max ?b (* ?b ?a)) if (&& (< 0 ?c) (<= ?b ?a))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (< 0 ?b) (<= ?a ?c))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (<= ?b ?c) (< 0 ?a))
+(min ?a (* ?a (max ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (< 0 ?b) (<= ?c ?a))
+(min ?a (* ?a (min ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b ?a) (< 0 ?c))
+(max (* ?a ?c) (min ?b ?a)) ==> (max ?a (* ?a ?c)) if (&& (<= 0 ?b) (< ?a ?c))
+(min ?a (* ?c (* ?b ?b))) ==> ?a if (&& (<= 0 ?c) (<= ?a 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?c ?b) (<= 0 ?a))
+(max ?c (min ?a (* ?b ?a))) ==> ?c if (&& (<= ?b 0) (<= 0 ?c))
+(min ?b (* ?a (max ?b ?c))) ==> (min ?b (* ?b ?a)) if (&& (<= 0 ?b) (< ?c ?a))
+(max ?c (max ?b (* ?b ?a))) ==> (max ?c (* ?b ?a)) if (&& (<= 0 ?c) (< ?b ?a))
+(min ?a (max ?c (* ?b ?a))) ==> ?a if (&& (< 0 ?c) (< 0 ?b))
+(max (* ?b ?c) (min ?b ?a)) ==> (max ?b (* ?b ?c)) if (&& (< ?b ?c) (<= 0 ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?a)) if (&& (<= ?b 0) (<= ?c ?a))
+(max (* ?a ?c) (min ?b ?a)) ==> (max ?a (* ?a ?c)) if (&& (< 0 ?b) (< ?a ?c))
+(min ?a (max ?c (* ?b ?a))) ==> ?a if (&& (< 0 ?b) (< 0 ?c))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (< ?b ?c) (< 0 ?a))
+(max (* ?b ?c) (min ?b ?a)) ==> (max ?b (* ?b ?c)) if (&& (< ?b ?c) (< 0 ?a))
+(min ?a (* ?c (max ?b ?a))) ==> ?a if (&& (< 0 ?c) (<= 0 ?b))
+(min ?a (max ?c (* ?b ?a))) ==> ?a if (&& (<= 0 ?c) (< 0 ?b))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (<= ?b 0) (<= ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?b)) if (&& (<= ?c ?b) (<= ?a 0))
+(min ?a (* ?c (max ?b ?a))) ==> ?a if (&& (<= 0 ?b) (< 0 ?c))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (<= ?b 0) (<= ?c ?a))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?b)) if (&& (<= ?c ?b) (<= ?a 0))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (<= ?c ?b) (<= ?a 0))
+(min ?a (max ?c (* ?b ?a))) ==> ?a if (&& (< 0 ?b) (<= 0 ?c))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?a ?c)) if (&& (< 0 ?b) (< ?a ?c))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (<= ?c 0) (<= ?b ?a))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (<= ?b 0) (<= ?c ?a))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (< ?b ?c) (< 0 ?a))
+(min ?c (* ?c (min ?b ?a))) ==> (min ?c (* ?a ?c)) if (&& (< 0 ?b) (< ?a ?c))
+(max ?a (max ?c (* ?b ?a))) ==> (max ?a (* ?b ?a)) if (&& (<= ?b ?a) (<= ?c 0))
+(min ?c (* ?c (min ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (<= ?c ?b) (<= ?a 0))
+(min ?c (* ?a (min ?b ?c))) ==> (min ?c (* ?b ?a)) if (&& (< ?b ?a) (< 0 ?c))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (< 0 ?b) (< ?a ?c))
+(min ?a (* ?a (min ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b 0) (<= ?a ?c))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (< 0 ?b) (< ?a ?c))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (< ?b ?c) (< 0 ?a))
+(min ?a (* ?a (max ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (< 0 ?b) (< ?c ?a))
+(min ?a (* ?b (min ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b ?c) (<= ?a 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?b ?c) (< ?c 0))
+(min ?a (* ?a (min ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (< ?b ?a) (< 0 ?c))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (<= ?b 0) (<= ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?a)) if (&& (<= ?b 0) (< ?c ?a))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (<= ?b 0) (< ?c ?a))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?c 0) (< ?b ?c))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (<= ?b 0) (< ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?b)) if (&& (< ?c ?b) (<= ?a 0))
+(min ?a (* ?a (min ?c ?b))) ==> ?a if (&& (< ?c 0) (< ?a ?c))
+(min ?b (* ?b (min ?c ?a))) ==> (min ?b (* ?b ?a)) if (&& (< ?b ?c) (<= ?a 0))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (< ?c ?b) (<= ?a 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (< ?c ?b) (<= ?a 0))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (<= ?b 0) (< ?c ?a))
+(min ?a (* ?c (min ?c ?b))) ==> ?a if (&& (< ?c ?a) (< ?a 0))
+(min ?b (* ?b (max ?a ?c))) ==> (min ?b (* ?b ?a)) if (&& (< ?b ?a) (<= ?c 0))
+(max ?a (max ?c (* ?b ?a))) ==> (max ?a (* ?b ?a)) if (&& (< ?b ?a) (<= ?c 0))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (<= ?b 0) (< ?c ?a))
+(min ?a (* ?a (min ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b 0) (< ?a ?c))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (<= ?b 0) (< ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?a)) if (&& (< ?b 0) (<= ?c ?a))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (< ?b 0) (<= ?c ?a))
+(min ?a (* ?a (min ?c ?b))) ==> ?a if (&& (< ?a ?c) (< ?c 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (< ?b 0) (<= ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?b)) if (&& (<= ?c ?b) (< ?a 0))
+(min ?a (* ?b (max ?c ?b))) ==> ?a if (&& (< ?a 0) (< ?c ?a))
+(min ?b (* ?b (min ?c ?a))) ==> (min ?b (* ?b ?a)) if (&& (<= ?b ?c) (< ?a 0))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (<= ?c ?b) (< ?a 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (<= ?c ?b) (< ?a 0))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (< ?b 0) (<= ?c ?a))
+(min ?a (* ?c (min ?a ?b))) ==> ?a if (&& (< ?a 0) (< ?c ?a))
+(min ?b (* ?b (max ?a ?c))) ==> (min ?b (* ?b ?a)) if (&& (<= ?b ?a) (< ?c 0))
+(max ?a (max ?c (* ?b ?a))) ==> (max ?a (* ?b ?a)) if (&& (<= ?b ?a) (< ?c 0))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (< ?b 0) (<= ?c ?a))
+(min ?a (* ?a (min ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (< ?b 0) (<= ?a ?c))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (< ?b 0) (<= ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?a)) if (&& (< ?b 0) (< ?c ?a))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (< ?b 0) (< ?c ?a))
+(min ?a (* ?c (min ?a ?b))) ==> ?a if (&& (< ?c ?a) (< ?a 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (< ?b 0) (< ?c ?a))
+(min ?b (* ?c (max ?b ?a))) ==> (min ?b (* ?c ?b)) if (&& (< ?c ?b) (< ?a 0))
+(min ?a (* ?a (min ?c ?b))) ==> ?a if (&& (< ?a ?c) (<= ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?b 0) (< ?c 0))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (< ?b 0) (< ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?c 0) (< ?b 0))
+(max ?c (max ?a (* ?b ?a))) ==> (max ?a (* ?b ?a)) if (&& (< ?b 0) (< ?c 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (< ?c 0) (< ?b 0))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (< ?c 0) (< ?b 0))
+(max (* ?c ?a) (min ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (< ?c 0) (< ?b 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (< ?b 0) (< ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b 0) (< ?c 0))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (<= ?b 0) (< ?c 0))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (< ?b 0) (<= ?c 0))
+(max ?c (max ?a (* ?b ?a))) ==> (max ?a (* ?b ?a)) if (&& (<= ?b 0) (< ?c 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (< ?c 0) (<= ?b 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (< ?b 0) (<= ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (< ?b 0) (<= ?c 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (<= ?c 0) (< ?b 0))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (< ?c 0) (<= ?b 0))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (<= ?c 0) (< ?b 0))
+(max (* ?c ?a) (min ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (< ?c 0) (<= ?b 0))
+(max (* ?c ?a) (min ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (<= ?c 0) (< ?b 0))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (< ?b 0) (<= ?c 0))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (<= ?b 0) (< ?c 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (<= ?b 0) (< ?c 0))
+(min ?b (* ?b (min ?c ?a))) ==> (min ?b (* ?b ?a)) if (&& (< ?b ?c) (< ?a 0))
+(min ?a (* ?c (max ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (< ?c ?b) (< ?a 0))
+(max ?a (* ?c (min ?b ?a))) ==> (max ?a (* ?c ?a)) if (&& (< ?c 0) (< 0 ?b))
+(min (* ?c ?a) (max ?b ?a)) ==> (min ?b (* ?c ?a)) if (&& (< ?c 0) (< 0 ?b))
+(max ?a (* ?b (min ?c ?a))) ==> (max ?a (* ?b ?a)) if (&& (< 0 ?c) (< ?b 0))
+(min ?b (* ?c (min ?b ?a))) ==> (* ?c (min ?b ?a)) if (&& (< ?b 0) (< 0 ?c))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?a)) if (&& (< ?c ?b) (< ?a 0))
+(max ?a (* ?c (max ?b ?a))) ==> (max ?a (* ?b ?c)) if (&& (< 0 ?b) (< ?c 0))
+(min (* ?c ?a) (max ?b ?a)) ==> (min ?b (* ?c ?a)) if (&& (< 0 ?b) (< ?c 0))
+(min ?b (* ?c (min ?b ?a))) ==> (min ?b (* ?b ?c)) if (&& (< ?b 0) (< ?c ?a))
+(max ?b (* ?c (max ?b ?a))) ==> (max ?b (* ?c ?a)) if (&& (< ?b 0) (< 0 ?c))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?b 0) (<= ?c 0))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (<= ?b 0) (<= ?c 0))
+(min ?a (* ?b (max ?c ?a))) ==> (min ?a (* ?b ?a)) if (&& (<= ?c 0) (<= ?b 0))
+(max ?c (max ?a (* ?b ?a))) ==> (max ?a (* ?b ?a)) if (&& (<= ?b 0) (<= ?c 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?c ?b)) if (&& (<= ?c 0) (<= ?b 0))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?c (* ?b ?a)) if (&& (<= ?c 0) (<= ?b 0))
+(max (* ?c ?a) (min ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (<= ?c 0) (<= ?b 0))
+(min ?a (* ?c (min ?b ?a))) ==> (min ?a (* ?b ?c)) if (&& (<= ?b 0) (<= ?c 0))
+(max ?b (* ?c (max ?b ?a))) ==> (max ?b (* ?c ?a)) if (&& (<= 0 ?c) (< ?b 0))
+(max ?c (* ?b (* ?a ?a))) ==> (* ?b (* ?a ?a)) if (&& (<= 0 ?b) (< ?c 0))
+(max ?a (* ?c (min ?b ?a))) ==> (max ?a (* ?c ?a)) if (&& (< ?c 0) (<= 0 ?b))
+(min (* ?c ?a) (max ?b ?a)) ==> (min ?b (* ?c ?a)) if (&& (< ?c 0) (<= 0 ?b))
+(max ?a (* ?b (min ?c ?a))) ==> (max ?a (* ?b ?a)) if (&& (<= 0 ?c) (< ?b 0))
+(max ?b (* ?c (min ?b ?a))) ==> (max ?b (* ?c ?b)) if (&& (<= 0 ?c) (< ?b 0))
+(min ?c (max ?a (* ?b ?a))) ==> ?c if (&& (< ?c 0) (<= ?b ?c))
+(max ?a (* ?c (max ?b ?a))) ==> (max ?a (* ?b ?c)) if (&& (<= 0 ?b) (< ?c 0))
+(max ?c (* ?b (* ?a ?a))) ==> (* ?b (* ?a ?a)) if (&& (< ?c 0) (<= 0 ?b))
+(min ?b (* ?b (max ?a ?c))) ==> (min ?b (* ?b ?a)) if (&& (< ?b ?a) (< ?c 0))
+(max ?b (* ?c (max ?b ?a))) ==> (max ?b (* ?c ?a)) if (&& (< ?b 0) (<= 0 ?c))
+(max ?c (* ?b (* ?a ?a))) ==> (* ?b (* ?a ?a)) if (&& (< 0 ?b) (<= ?c 0))
+(min (* ?c ?a) (max ?b ?a)) ==> (min ?b (* ?c ?a)) if (&& (<= ?c 0) (< 0 ?b))
+(max ?a (max ?c (* ?b ?a))) ==> (max ?a (* ?b ?a)) if (&& (< ?b ?a) (< ?c 0))
+(min ?c (* ?c (max ?b ?a))) ==> (min ?c (* ?c ?a)) if (&& (< ?b 0) (< ?c ?a))
+(min ?a (* ?a (min ?b ?c))) ==> (min ?a (* ?b ?a)) if (&& (< ?b 0) (< ?a ?c))
+(min (* ?c ?a) (max ?b ?a)) ==> (min ?b (* ?c ?a)) if (&& (< 0 ?b) (<= ?c 0))
+(max ?b (* ?c (max ?b ?a))) ==> (max ?b (* ?c ?a)) if (&& (<= 0 ?c) (<= ?b 0))
+(max ?a (* ?c (min ?b ?a))) ==> (max ?a (* ?c ?a)) if (&& (<= ?c 0) (<= 0 ?b))
+(min (* ?c ?a) (max ?b ?a)) ==> (min ?b (* ?c ?a)) if (&& (<= ?c 0) (<= 0 ?b))
+(max ?a (* ?b (min ?c ?a))) ==> (max ?a (* ?b ?a)) if (&& (<= 0 ?c) (<= ?b 0))
+(max ?b (* ?c (min ?b ?a))) ==> (max ?b (* ?c ?b)) if (&& (<= 0 ?c) (<= ?b 0))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?a (* ?c ?a)) if (&& (< ?b 0) (< ?c ?a))
+(max ?a (* ?c (max ?b ?a))) ==> (max ?a (* ?b ?c)) if (&& (<= 0 ?b) (<= ?c 0))
+(min (* ?c ?a) (max ?b ?a)) ==> (min ?b (* ?c ?a)) if (&& (<= 0 ?b) (<= ?c 0))
+(max ?b (* ?c (max ?b ?a))) ==> (max ?b (* ?c ?a)) if (&& (<= ?b 0) (<= 0 ?c))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (< 0 ?b) (< 0 ?c))
+(max (min ?c ?a) (* ?b ?a)) ==> (max ?a (* ?b ?a)) if (&& (< 0 ?c) (< 0 ?b))
+(max (* ?b ?a) (min ?c ?a)) ==> (max ?a (* ?b ?a)) if (&& (< 0 ?b) (< 0 ?c))
+(max ?c (max ?a (* ?b ?a))) ==> (max ?c (* ?b ?a)) if (&& (< 0 ?b) (< 0 ?c))
+(max (* ?c ?a) (max ?b ?a)) ==> (max ?b (* ?c ?a)) if (&& (<= 0 ?b) (< 0 ?c))
+(min ?c (* ?c (min ?b ?a))) ==> ?c if (&& (< ?b 0) (<= ?c ?b))
+"#;
+
+        let mut ruleset: Ruleset<Pred> = Default::default();
+        for r in rules.lines() {
+            let r = r.trim();
+            if r.is_empty() {
+                continue;
+            }
+            match Rule::from_string(r) {
+                Ok((l, r)) => {
+                    ruleset.add(l);
+                    if let Some(r) = r {
+                        ruleset.add(r);
+                    }
+                }
+                Err(e) => {
+                    panic!("Failed to parse rule '{}': {}", r, e);
+                }
+            }
+        }
+
+        let initial_len = ruleset.len();
+
+        let mut should_remove: Ruleset<Pred> = Default::default();
+
+        for (_, r) in &ruleset {
+            let lhs = r.lhs.clone();
+            let rhs = r.rhs.clone();
+            let lhs_cost = AstSize.cost_rec(&lhs.ast) as i32;
+            let rhs_cost = AstSize.cost_rec(&rhs.ast) as i32;
+            if lhs_cost >= 5 && rhs_cost >= lhs_cost {
+                // remove the rule.
+                should_remove.add(r.clone());
+            }
+        }
+
+        ruleset.remove_all(should_remove);
+
+
+        ruleset.pretty_print();
+        println!("Started with {} rules, ended with {} ({} difference)", initial_len, ruleset.len(), initial_len - ruleset.len());
+
+        // 1. Using these rules, how many Caviar rules can we derive?
+
+        let expected: Vec<Rule<Pred>> = CAVIAR_RULES
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .map(|l| Rule::from_string(l).unwrap().0)
+            .collect();
+
+        // all conditional rules for which r.is_valid()
+        let expected_valid = expected.clone().into_iter().filter(|r| r.cond.is_some() && r.is_valid()).collect::<Vec<_>>();
+
+        // 2. Base implications
+        let wkld = get_condition_workload();
+        let mut base_implications = ImplicationSet::default();
+
+        // and the "and" rules here.
+        let and_implies_left: Implication<Pred> = Implication::new(
+            "and_implies_left".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        let and_implies_right: Implication<Pred> = Implication::new(
+            "and_implies_right".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?b".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        base_implications.add(and_implies_left);
+        base_implications.add(and_implies_right);
+
+        let other_implications = time_fn_call!(
+            "find_base_implications",
+            run_implication_workload(
+                &wkld,
+                &["a".to_string(), "b".to_string(), "c".to_string()],
+                &base_implications,
+                &Default::default()
+            )
+        );
+
+        base_implications.add_all(other_implications);
+
+        let mut can = vec![];
+        let mut cannot = vec![];
+
+        for e in expected_valid {
+            let result = ruleset.can_derive_cond(
+                ruler::DeriveType::LhsAndRhs,
+                &e,
+                Limits::deriving(),
+                &base_implications.to_egg_rewrites()
+            );
+            if result {
+                println!("Can derive: {}", e);
+                can.push(e);
+            } else {
+                println!("Cannot derive: {}", e);
+                cannot.push(e);
+            }
+        }
+
+        // write to out/special-derive.json.
+        
+        
+            
+
+
+        
+    }
+
+
+        
+        
 }
