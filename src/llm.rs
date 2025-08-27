@@ -599,7 +599,7 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
     let prompt =
         GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text).replace("<categories>", &used_categories);
 
-    println!("prompt: {}", prompt);
+    // println!("prompt: {}", prompt);
 
     // Build the request payload
     let request_body = json!({
