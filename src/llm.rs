@@ -45,7 +45,6 @@ candidates_text
 "#;
 
 const GROUP_RULES_PROMPT: &str = r#"
-const GROUP_RULES_PROMPT: &str = r#"
 You are the world’s leading expert in program optimization and algebraic reasoning.
 You are helping organize rewrite rules for use in an equality saturation system.
 
@@ -63,6 +62,9 @@ Your goal:
   - Remove rules which just look like noise.
   - Strive to capture semantic differences clearly, even if that results in more categories than before.
   - Avoid redundant categories; rules that are semantically similar should be grouped together.
+
+For this workload, here are some categories you have used so far:
+<categories>
 
 Format your output like this:
 
@@ -331,23 +333,12 @@ pub async fn sort_rule_candidates<L: SynthLanguage>(
     batch_size: usize,
 ) -> CategorizedRuleset<L> {
     let candidates_text = candidates.to_str_vec().join("\n");
-    let prompt = GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
     let mut result: CategorizedRuleset<L> = Default::default();
-
-    println!("Prompt: {}", prompt);
-
-    // Build the request payload
-    let request_body = json!({
-        "model": "gpt-4o",
-        "messages": [
-            { "role": "system", "content": prompt }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 1500
-    });
 
     // Batch the candidates:
     let mut candidates = candidates.clone();
+    // A running list of categories the LLM has chosen.
+    let mut categories = vec![];
     while !candidates.is_empty() {
         // 1. Make a batch of up to `batch_size` candidates.
         let batch = candidates.iter().take(batch_size).collect::<Vec<_>>();
@@ -361,7 +352,7 @@ pub async fn sort_rule_candidates<L: SynthLanguage>(
         candidates.remove_all(batch_ruleset.clone());
 
         // 2. Send the batch to the LLM for categorization.
-        let current_categorized = send_group_rules_request(&client, &batch_ruleset)
+        let current_categorized = send_group_rules_request(&client, &batch_ruleset, &categories)
             .await
             .map_err(|e| {
                 eprintln!("Error sending request: {}", e);
@@ -374,6 +365,7 @@ pub async fn sort_rule_candidates<L: SynthLanguage>(
 
         // 4. Merge the categorized rules into the result.
         for (category, ruleset) in categorized {
+            categories.push(category.trim().to_string());
             let entry = result.entry(category).or_default();
             entry.extend(ruleset);
         }
@@ -593,12 +585,19 @@ pub fn soup_to_workload<L: SynthLanguage>(
 pub async fn send_group_rules_request<L: SynthLanguage>(
     client: &Client,
     candidate_rules: &Ruleset<L>,
+    used_categories: &[String],
 ) -> Result<String, String> {
     // Build the prompt with existing rules + candidates
     let candidates_text = candidate_rules.to_str_vec().join("\n");
 
+    let used_categories = if used_categories.is_empty() {
+        "".into()
+    } else {
+        used_categories.join("\n")
+    };
+
     let prompt =
-        GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
+        GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text).replace("<categories>", &used_categories);
 
     println!("prompt: {}", prompt);
 

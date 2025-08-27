@@ -1017,12 +1017,12 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
     }
 }
 
-pub fn og_recipe() -> Ruleset<Pred> {
+pub async fn og_recipe() -> Ruleset<Pred> {
     log::info!("LOG: Starting recipe.");
     let use_llm = std::env::var("USE_LLM").is_ok();
 
     let start_time = std::time::Instant::now();
-    let wkld = conditions::generate::get_condition_workload();
+    let wkld = conditions::generate::get_condition_workload().await;
     let mut all_rules = Ruleset::default();
     let mut base_implications = ImplicationSet::default();
     // and the "and" rules here.
@@ -1117,7 +1117,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Limits::minimize(),
         true,
         use_llm,
-    );
+    ).await;
 
     all_rules.extend(base_comps.clone());
 
@@ -1132,7 +1132,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         Limits::minimize(),
         true,
         use_llm,
-    );
+    ).await;
 
     all_rules.extend(and_comps_rules.clone());
 
@@ -1154,7 +1154,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         base_implications.clone(),
         wkld.clone(),
         use_llm,
-    );
+    ).await;
 
     all_rules.extend(simp_comps.clone());
 
@@ -1172,7 +1172,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             base_implications.clone(),
             wkld.clone(),
             use_llm
-        )
+        ).await
     );
     all_rules.extend(arith_basic.clone());
 
@@ -1243,7 +1243,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         base_implications.clone(),
         cond_workload,
         false,
-    );
+    ).await;
 
     all_rules.extend(mul_div_rules);
 
@@ -1319,7 +1319,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             wkld.clone(),
             use_llm
         )
-    );
+    ).await;
 
     all_rules.extend(min_max.clone());
 
@@ -1334,7 +1334,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             wkld.clone(),
             use_llm
         )
-    );
+    ).await;
 
     all_rules.extend(min_max_add.clone());
 
@@ -1363,7 +1363,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 Limits::minimize(),
                 true,
                 use_llm
-            )
+            ).await
         );
 
         all_rules.extend(eq_simp);
@@ -1380,7 +1380,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
             wkld.clone(),
             use_llm,
         )
-    );
+    ).await;
 
     all_rules.extend(min_max_mul);
 
@@ -1424,7 +1424,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
                 true,
                 false
             )
-        );
+        ).await;
 
         all_rules.extend(rules);
     }

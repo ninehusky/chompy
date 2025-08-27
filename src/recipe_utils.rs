@@ -219,6 +219,11 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
     allow_empty: bool,
     use_llm: bool,
 ) -> Ruleset<L> {
+if use_llm {
+    println!("We're using LLM!");
+} else {
+    println!("We're NOT using LLM!");
+}
     let prior: Ruleset<L> = state.chosen().clone();
     let cond_workload = state.predicates().clone();
 
@@ -241,10 +246,44 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
     let mut chosen: Ruleset<L> = prior.clone();
 
     // 3. Shrink the total candidates to a minimal set using the existing rules.
-    let (chosen_total, _) =
+    let (mut chosen_total, _) =
         total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
 
+        if chosen_total.len() > MAX_RULE_SIZE {
+            if use_llm {
+            println!("[run_workload] Using LLM to filter chosen conditional rules");
+            let client = reqwest::Client::new();
+            let sorted_candidates = sort_rule_candidates(&client, chosen_total.clone(), 20).await;
+            println!("here are the sorted candidates:");
+            let mut final_choices: Ruleset<L> = Ruleset::default();
+            for key in sorted_candidates.keys() {
+                let rules = sorted_candidates.get(key).unwrap().clone();
+                println!("  {key}");
+                for rule in sorted_candidates.get(key).unwrap().iter() {
+                    println!("    {rule}");
+                }
+                // if there are many rules in this category, pick the top 5.
+                // otherwise, pick the top 1.
+                let num_to_select = if rules.len() > 5 { 5 } else { 1 };
+                let top = rules.clone().select(num_to_select, &mut Default::default());
+                final_choices.extend(top);
+            }
+            chosen_total = final_choices;
+            } else {
+                println!("Not using LLM, so we will keep all {} candidates",
+                    chosen_total.len());
+
+            }
+
+        } else {
+            println!("Candidate size smaller than {}, so we will keep all {} candidates",
+                MAX_RULE_SIZE,
+                chosen_total.len()
+            );
+        }
     chosen.extend(chosen_total.clone());
+
+
 
     // 4. Using the rules that we've just discovered, shrink the egraph again.
     let compressed = Scheduler::Compress(prior_limits).run(&compressed, &chosen);
@@ -298,22 +337,24 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
 
         if chosen_cond.len() > MAX_RULE_SIZE {
             if use_llm {
-            println!("[run_workload] Using LLM to filter chosen conditional rules");
-            let client = reqwest::Client::new();
-            let sorted_candidates = sort_rule_candidates(&client, chosen_cond.clone(), 20).await;
-            println!("here are the sorted candidates:");
-            let mut final_choices: Ruleset<L> = Ruleset::default();
-            for key in sorted_candidates.keys() {
-                let rules = sorted_candidates.get(key).unwrap().clone();
-                println!("  {key}");
-                for rule in sorted_candidates.get(key).unwrap().iter() {
-                    println!("    {rule}");
+                println!("[run_workload] Using LLM to filter chosen conditional rules");
+                let client = reqwest::Client::new();
+                let sorted_candidates = sort_rule_candidates(&client, chosen_cond.clone(), 20).await;
+                println!("here are the sorted candidates:");
+                let mut final_choices: Ruleset<L> = Ruleset::default();
+                for key in sorted_candidates.keys() {
+                    let rules = sorted_candidates.get(key).unwrap().clone();
+                    println!("  {key}");
+                    for rule in sorted_candidates.get(key).unwrap().iter() {
+                        println!("    {rule}");
+                    }
+                    // if there are many rules in this category, pick the top 5.
+                    // otherwise, pick the top 1.
+                    let num_to_select = if rules.len() > 5 { 5 } else { 1 };
+                    let top = rules.clone().select(num_to_select, &mut Default::default());
+                    final_choices.extend(top);
                 }
-                // choose the top 5 for each category.
-                let top = rules.clone().select(5, &mut Default::default());
-                final_choices.extend(top);
-            }
-            chosen_cond = final_choices;
+                chosen_cond = final_choices;
             } else {
                 println!("Not using LLM, so we will keep all {} candidates",
                     chosen_cond.len());
@@ -356,7 +397,7 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
 ///     2. If there are prior rules, compress the e-graph using them
 ///     3. Find candidates via CVec matching
 ///     4. Minimize the candidates with respect to the prior rules
-pub fn run_workload<L: SynthLanguage>(
+pub async fn run_workload<L: SynthLanguage>(
     workload: Workload,
     cond_workload: Option<Workload>,
     prior: Ruleset<L>,
@@ -375,14 +416,14 @@ pub fn run_workload<L: SynthLanguage>(
         prior_impls,
     );
 
-    let res = run_workload_internal(
+    let res = run_workload_internal_llm(
         &mut state,
         prior_limits,
         minimize_limits,
         fast_match,
         true,
         use_llm,
-    );
+    ).await;
 
     println!(
         "[run_workload] Finished workload in {:.2}s",
@@ -466,7 +507,7 @@ impl Lang {
 
 /// Incrementally construct a ruleset by running rule inference up to a size bound,
 /// using previously-learned rules at each step.
-pub fn recursive_rules_cond<L: SynthLanguage>(
+pub async fn recursive_rules_cond<L: SynthLanguage>(
     metric: Metric,
     n: usize,
     lang: Lang,
@@ -478,15 +519,18 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     if n < 1 {
         Ruleset::default()
     } else {
-        let mut rec = recursive_rules_cond(
-            metric,
-            n - 1,
-            lang.clone(),
-            prior.clone(),
-            prior_impls.clone(),
-            conditions.clone(),
-            use_llm,
-        );
+
+    // Box the recursive async call
+    let mut rec: Ruleset<L> = Box::pin(recursive_rules_cond(
+        metric,
+        n - 1,
+        lang.clone(),
+        prior.clone(),
+        prior_impls.clone(),
+        conditions.clone(),
+        use_llm,
+    ))
+    .await;
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
         } else {
@@ -508,14 +552,14 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
         let mut state: ChompyState<L> =
             ChompyState::new(wkld, rec.clone(), conditions.clone(), prior_impls);
 
-        let new_rules = run_workload_internal(
+        let new_rules = run_workload_internal_llm(
             &mut state,
             Limits::synthesis(),
             Limits::minimize(),
             true,
             allow_empty,
             use_llm,
-        );
+        ).await;
         let mut all = new_rules;
         all.extend(rec);
         all
@@ -524,7 +568,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
 
 /// Incrementally construct a ruleset by running rule inference up to a size bound,
 /// using previously-learned rules at each step.
-pub fn recursive_rules<L: SynthLanguage>(
+pub async fn recursive_rules<L: SynthLanguage>(
     metric: Metric,
     n: usize,
     lang: Lang,
@@ -539,7 +583,7 @@ pub fn recursive_rules<L: SynthLanguage>(
         ImplicationSet::default(),
         Workload::empty(),
         use_llm,
-    )
+    ).await
 }
 
 /// Util function for making a grammar with variables, values, and operators with up to n arguments.

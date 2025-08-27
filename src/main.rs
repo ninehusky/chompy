@@ -83,12 +83,10 @@ pub async fn main() {
                 (None, _) => panic!("no recipe type provided."),
             }
         }
-        ChompyMode::LLMAlphabetSoup => run_gpt_eval().await,
-        ChompyMode::LLMRecipe => {
-            todo!("Not implemented yet.");
-        }
+        // ChompyMode::LLMAlphabetSoup => run_gpt_eval().await,
+        _ => todo!("Not implemented yet.")
     };
-    rules.to_file(output_file.to_str().unwrap());
+    rules.await.to_file(output_file.to_str().unwrap());
 }
 
 pub async fn run_gpt_eval() -> Ruleset<Pred> {

@@ -8,7 +8,7 @@ use crate::{
     Limits,
 };
 
-pub fn get_condition_workload() -> Workload {
+pub async fn get_condition_workload() -> Workload {
     // we're going to do conjunctions of ==, != with
     // variables and 0.
     let start = std::time::Instant::now();
@@ -48,7 +48,7 @@ pub fn get_condition_workload() -> Workload {
         ),
         Ruleset::default(),
         false,
-    );
+    ).await;
 
     eq_rules.extend(new_rules);
 
@@ -61,7 +61,8 @@ pub fn get_condition_workload() -> Workload {
         Limits::minimize(),
         true,
         false,
-    );
+    )
+    .await;
 
     let branches_better = compress(&branches, rules.clone());
 
