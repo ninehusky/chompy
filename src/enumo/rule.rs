@@ -96,6 +96,10 @@ impl<L: SynthLanguage> Rule<L> {
 
             if s.contains("<=>") {
                 let backwards_name = make_name(&r_pat, &l_pat, cond.clone());
+                // Let's make sure to not add this in the final version.
+                if cond.is_some() {
+                    return Ok((forwards, None));
+                }
                 assert!(
                     cond.is_none(),
                     "Conditional bidirectional rules not supported."

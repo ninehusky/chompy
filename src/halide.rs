@@ -1177,27 +1177,75 @@ pub fn og_recipe() -> Ruleset<Pred> {
     all_rules.extend(arith_basic.clone());
 
     let cond_workload = Workload::new(&[
-        "(< 0 b)",
-        "(< 0 a)",
-        "(&& (< 0 b) (== (% a b) 0))",
-        "(&& (< 0 a) (== (% a b) 0))",
+        "(&& (< 0 a) (== (% b a) 0))",
+        "(&& (< 0 a) (== (% b a) 0))",
+        "(&& (< a 0) (== (% b a) 0))",
+        "(&& (< a 0) (== (% b a) 0))",
+        "(!= a 0)",
+        "(!= b 0)",
+        "(!= c 0)",
         "(== c c)",
     ]);
 
-    let mul_div_mod = time_fn_call!(
-        "mul_div_mod",
-        recursive_rules_cond(
-            Metric::Atoms,
-            5,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
-            Ruleset::default(),
-            base_implications.clone(),
-            cond_workload,
-            false,
+    let mut mul_implications = ImplicationSet::default();
+
+    // and the "and" rules here.
+    let and_implies_left: Implication<Pred> = Implication::new(
+        "and_implies_left".into(),
+        Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        Assumption::new_unsafe("?a".to_string()).unwrap(),
+    )
+    .unwrap();
+
+    let and_implies_right: Implication<Pred> = Implication::new(
+        "and_implies_right".into(),
+        Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        Assumption::new_unsafe("?b".to_string()).unwrap(),
+    )
+    .unwrap();
+
+    mul_implications.add(and_implies_left);
+    mul_implications.add(and_implies_right);
+
+    let other_implications = time_fn_call!(
+        "find_base_implications",
+        run_implication_workload(
+            &wkld,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &base_implications,
+            &Default::default()
         )
     );
 
-    all_rules.extend(mul_div_mod);
+    mul_implications.add_all(other_implications);
+
+    println!("# mul implications: {}", base_implications.len());
+
+    for i in base_implications.iter() {
+        println!("implication: {}", i.name());
+    }
+
+    let mut all_rules: Ruleset<Pred> = Ruleset::default();
+
+    // These are useful because they let us flip the sides of the condition.
+    // (We only learn rules dealing with *, /, and min, not < and <=.
+    //  To be able to derive rules of the form l ~> r if (> p q), we need
+    //  to rewrite the `>` to `<`.)
+    all_rules.add(Rule::from_string("(!= ?a ?b) ==> (!= ?b ?a)").unwrap().0);
+    all_rules.add(Rule::from_string("(> ?a ?b) ==> (< ?b ?a)").unwrap().0);
+    all_rules.add(Rule::from_string("(>= ?a ?b) ==> (<= ?b ?a)").unwrap().0);
+
+    let mul_div_rules = recursive_rules_cond(
+        Metric::Atoms,
+        7,
+        Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
+        all_rules.clone(),
+        base_implications.clone(),
+        cond_workload,
+        false,
+    );
+
+    all_rules.extend(mul_div_rules);
 
     for line in r#"
 (/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
