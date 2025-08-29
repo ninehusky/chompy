@@ -962,6 +962,8 @@ impl<L: SynthLanguage> Ruleset<L> {
     ///         2. filter out candidates that are redundant given the addition of the selected rule
     pub fn minimize(&mut self, prior: Ruleset<L>, scheduler: Scheduler) -> (Self, Self) {
         let start_time = std::time::Instant::now();
+        println!("Minimizing:");
+        self.pretty_print();
         println!(
             "[minimize] Minimizing {} rules with {} prior rules",
             self.len(),
@@ -972,9 +974,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
-            for s in selected.iter() {
-                println!("[minimize] Selected: {s}");
-            }
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
         }

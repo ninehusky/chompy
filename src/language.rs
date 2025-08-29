@@ -527,25 +527,27 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         [
             // // 1. prefer LHS bigger than RHS
             // (AstSize.cost_rec(&rhs.ast) as i32) - (AstSize.cost_rec(&lhs.ast) as i32),
-            // 2. prefer more variables
-            -(vars.len() as i32),
-            // 3. prefer smaller overall AST cost
+            // 2. prefer smaller overall AST cost
             l_cost + r_cost + c_cost,
+            // 3. prefer more variables
+            -(vars.len() as i32),
             // 4. prefer larger true_count
             -(true_count.unwrap_or(i32::MAX as usize) as i32),
         ]
     }
 
-    #[allow(dead_code)]
     fn score_original(
         lhs: &Pattern<Self>,
         rhs: &Pattern<Self>,
-        cond: &Option<Pattern<Self>>,
-    ) -> [i32; 5] {
+        cond: &Option<Assumption<Self>>,
+        true_count: Option<usize>,
+    ) -> [i32; 6] {
         if let Some(cond) = cond {
+            let cond = cond.chop_assumption();
             let c_size = AstSize.cost_rec(&cond.ast) as i32;
             let l_size = AstSize.cost_rec(&lhs.ast) as i32;
             let r_size = AstSize.cost_rec(&rhs.ast) as i32;
+            let tc = true_count.unwrap_or(0) as i32;
             let mut vars: HashSet<Var> = Default::default();
             vars.extend(lhs.vars());
             vars.extend(rhs.vars());
@@ -582,6 +584,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                 -i32::max(l_size, -i32::max(r_size, c_size)),
                 -(l_size + r_size + c_size),
                 -(ops.len() as i32),
+                tc,
             ]
         } else {
             let l_size = AstSize.cost_rec(&lhs.ast) as i32;
@@ -614,6 +617,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
                 -i32::max(l_size, r_size),
                 -(l_size + r_size),
                 -(ops.len() as i32),
+                0,
             ]
         }
     }
