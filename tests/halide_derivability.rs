@@ -148,6 +148,7 @@ const CAVIAR_RULES: &str = r#"
 (% (* ?c0 ?x) ?c1) ==> 0 if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
 "#;
 
+#[allow(dead_code)]
 fn override_total_rules<L: SynthLanguage>(
     keep_total: &Ruleset<L>,
     keep_cond: &Ruleset<L>,
@@ -264,13 +265,13 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
         let can_derive = match &desired_rule.cond {
             Some(_) => candidates.can_derive_cond(
                 ruler::DeriveType::LhsAndRhs,
-                &desired_rule,
+                desired_rule,
                 Limits::deriving(),
                 &vec![],
             ),
             None => candidates.can_derive(
                 ruler::DeriveType::LhsAndRhs,
-                &desired_rule,
+                desired_rule,
                 Limits::deriving(),
             ),
         };
@@ -376,7 +377,7 @@ pub mod halide_derive_tests {
 
         all_rules.extend(rules);
 
-        let mut should_derive: Ruleset<Pred> = Default::default();
+        let should_derive: Ruleset<Pred> = Default::default();
         for line in r#"
 (/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
 (/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
@@ -400,7 +401,7 @@ pub mod halide_derive_tests {
                     Limits::deriving(),
                     &base_implications.to_egg_rewrites())
                 {
-                    println!("Hey.. we weren't able to derive this rule: {}", rule);
+                    println!("Hey.. we weren't able to derive this rule: {rule}");
                     continue;
                 }
                     
@@ -411,14 +412,14 @@ pub mod halide_derive_tests {
 
             let mut egraph: EGraph<Pred, SynthAnalysis> =
                 EGraph::default().with_explanations_enabled();
-            let l_id = egraph.add_expr(&l_expr);
-            let r_id = egraph.add_expr(&r_expr);
+            egraph.add_expr(&l_expr);
+            egraph.add_expr(&r_expr);
 
             let c_assumption = Assumption::new(c_expr.to_string()).unwrap();
             c_assumption.insert_into_egraph(&mut egraph);
 
             // 0. run the implications.
-            let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
+            let runner: Runner<Pred, SynthAnalysis> = Runner::default()
                 .with_explanations_enabled()
                 .with_egraph(egraph.clone())
                 .run(base_implications.to_egg_rewrites().iter());
@@ -550,7 +551,7 @@ let start_time = std::time::Instant::now();
             println!("The rule was derived: (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)");
             println!("Here's the proof:");
             let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
-            println!("\n{}", proof);
+            println!("\n{proof}");
         } else {
             println!("The rule was NOT derived.");
         }
@@ -702,7 +703,7 @@ let start_time = std::time::Instant::now();
                 println!("Derived the rule!");
                 println!("Here's the proof:");
                 let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
-                println!("\n{}", proof);
+                println!("\n{proof}");
             } else {
                 panic!("The rule was NOT derived.");
             }

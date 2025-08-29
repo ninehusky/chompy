@@ -5,7 +5,7 @@ use egg::{AstSize, EGraph, Extractor, Runner};
 use crate::{
     conditions::implication_set::ImplicationSet,
     enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
-    llm::{sort_rule_candidates, CategorizedRuleset},
+    llm::sort_rule_candidates,
     Limits, SynthAnalysis, SynthLanguage,
 };
 

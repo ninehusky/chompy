@@ -298,9 +298,8 @@ fn parse_categorization_response<L: SynthLanguage>(response: String) -> Categori
             continue;
         }
 
-        if line.starts_with("Category:") {
-            // Start a new category
-            current_category = Some(line["Category:".len()..].trim().to_string());
+        if let Some(stripped) = line.strip_prefix("Category:") {
+            current_category = Some(stripped.trim().to_string());
         } else if let Some(ref category) = current_category {
             let ruleset = result.entry(category.clone()).or_default();
             // Treat it as a rule
@@ -313,13 +312,13 @@ fn parse_categorization_response<L: SynthLanguage>(response: String) -> Categori
                 },
                 Err(e) => {
                     // Handle parsing error, could log warning
-                    eprintln!("Error parsing rule '{}': {}", line, e);
+                    eprintln!("Error parsing rule '{line}': {e}");
                     continue; // Skip this line
                 }
             }
         } else {
             // Line outside of a category, could log warning
-            eprintln!("Warning: rule found outside of a category: {}", line);
+            eprintln!("Warning: rule found outside of a category: {line}");
         }
     }
     result
@@ -330,21 +329,7 @@ pub async fn sort_rule_candidates<L: SynthLanguage>(
     candidates: Ruleset<L>,
     batch_size: usize,
 ) -> CategorizedRuleset<L> {
-    let candidates_text = candidates.to_str_vec().join("\n");
-    let prompt = GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
     let mut result: CategorizedRuleset<L> = Default::default();
-
-    println!("Prompt: {}", prompt);
-
-    // Build the request payload
-    let request_body = json!({
-        "model": "gpt-4o",
-        "messages": [
-            { "role": "system", "content": prompt }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 1500
-    });
 
     // Batch the candidates:
     let mut candidates = candidates.clone();
@@ -361,10 +346,10 @@ pub async fn sort_rule_candidates<L: SynthLanguage>(
         candidates.remove_all(batch_ruleset.clone());
 
         // 2. Send the batch to the LLM for categorization.
-        let current_categorized = send_group_rules_request(&client, &batch_ruleset)
+        let current_categorized = send_group_rules_request(client, &batch_ruleset)
             .await
             .map_err(|e| {
-                eprintln!("Error sending request: {}", e);
+                eprintln!("Error sending request: {e}");
                 e
             })
             .unwrap();
@@ -600,7 +585,7 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
     let prompt =
         GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
 
-    println!("prompt: {}", prompt);
+    println!("prompt: {prompt}");
 
     // Build the request payload
     let request_body = json!({
@@ -625,9 +610,9 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
-        .await.map_err(|e| format!("Failed: {}", e))?;
+        .await.map_err(|e| format!("Failed: {e}"))?;
 
-    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
     let text_output = response_json["choices"][0]["message"]["content"]
@@ -674,9 +659,9 @@ pub async fn send_score_rules_request<L: SynthLanguage>(
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
-        .await.map_err(|e| format!("Failed: {}", e))?;
+        .await.map_err(|e| format!("Failed: {e}"))?;
 
-    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
     let text_output = response_json["choices"][0]["message"]["content"]
@@ -700,7 +685,7 @@ pub async fn send_filter_rules_request<L: SynthLanguage>(
     let prompt =
         FILTER_RULES_PROMPT.replace("prior_text", &prior_text).replace("candidates_text", &candidates_text).replace("keep_max", &keep_max.to_string());
 
-    println!("Prompt: {}", prompt);
+    println!("Prompt: {prompt}");
 
     // Build the request payload
     let request_body = json!({
@@ -725,9 +710,9 @@ pub async fn send_filter_rules_request<L: SynthLanguage>(
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
-        .await.map_err(|e| format!("Failed: {}", e))?;
+        .await.map_err(|e| format!("Failed: {e}"))?;
 
-    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
     let text_output = response_json["choices"][0]["message"]["content"]
@@ -822,12 +807,12 @@ pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset
                 scored_rules.extend(local_scored_rules);
 
                 for scored_rule in &scored_rules {
-                    println!("Scored rule: {:?}", scored_rule);
+                    println!("Scored rule: {scored_rule:?}");
                 }
 
             }
             Err(e) => {
-                eprintln!("Error scoring rules: {}", e);
+                eprintln!("Error scoring rules: {e}");
             }
         }
     }
@@ -838,7 +823,7 @@ pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset
     let filtered_response = send_filter_rules_request(client, prior, &scored_rules, keep_max).await;
 
     if let Ok(r) = filtered_response {
-        println!("the filtered response: {}", r);
+        println!("the filtered response: {r}");
     }
 
 
@@ -847,8 +832,10 @@ pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset
 
 }
 
+#[allow(unused_imports)]
 pub mod rule_filter_tests {
-    use crate::{enumo::{Rule, Ruleset}, halide::Pred, llm::{filter_rules_llm, send_group_rules_request, send_score_rules_request, sort_rule_candidates}};
+    use super::*;
+    use crate::{enumo::{Rule, Ruleset}, llm::{filter_rules_llm, sort_rule_candidates}};
 
     // TODO: move to `parse` tests in `src/rule.rs`
     #[test]
@@ -891,11 +878,11 @@ async fn group_rules_request() {
             if !rule_str.is_empty() {
                 match Rule::from_string(rule_str) {
                     Ok((f, _)) => {
-                        println!("adding rule: {}", f);
+                        println!("adding rule: {f}");
                         candidate_rules.add(f);
                     }
                     Err(e) => {
-                        println!("Error parsing rule '{}': {}", rule_str, e);
+                        println!("Error parsing rule '{rule_str}': {e}");
 
                     }
                 };
@@ -903,12 +890,13 @@ async fn group_rules_request() {
         }
 
         let categorized_rules = sort_rule_candidates::<Pred>(&client, candidate_rules, 10).await;
+
         println!("Here's the categorized rules:");
         for key in categorized_rules.keys() {
-            println!("Category: {}", key);
+            println!("Category: {key}");
             let ruleset = categorized_rules.get(key).unwrap();
             for rule in ruleset.iter() {
-                println!("  - {}", rule);
+                println!("  - {rule}");
             }
         }
 }
@@ -939,7 +927,7 @@ async fn group_rules_request() {
 (max ?b ?a) ==> ?a if (== ?b ?a)"#;
         let client = reqwest::Client::new();
 
-        let mut prior_rules: Ruleset<Pred> = Default::default();
+        let prior_rules: Ruleset<Pred> = Default::default();
         let mut candidate_rules: Ruleset<Pred> = Default::default();
 
         for line in candidates_str.lines() {
@@ -947,11 +935,11 @@ async fn group_rules_request() {
             if !rule_str.is_empty() {
                 match Rule::from_string(rule_str) {
                     Ok((f, _)) => {
-                        println!("adding rule: {}", f);
+                        println!("adding rule: {f}");
                         candidate_rules.add(f);
                     }
                     Err(e) => {
-                        println!("Error parsing rule '{}': {}", rule_str, e);
+                        println!("Error parsing rule '{rule_str}': {e}");
 
                     }
                 };
@@ -1027,7 +1015,7 @@ async fn group_rules_request() {
 
         let client = reqwest::Client::new();
 
-        let mut prior_rules: Ruleset<Pred> = Default::default();
+        let prior_rules: Ruleset<Pred> = Default::default();
 
         let mut candidate_rules: Ruleset<Pred> = Default::default();
 
@@ -1035,7 +1023,7 @@ async fn group_rules_request() {
             let rule_str = line.trim();
             if !rule_str.is_empty() {
                 let rule: Rule<Pred> = Rule::from_string(rule_str).unwrap().0;
-                println!("Adding rule: {}", rule);
+                println!("Adding rule: {rule}");
                 candidate_rules.add(rule);
             }
         }
@@ -1043,7 +1031,7 @@ async fn group_rules_request() {
         let result = send_score_rules_request(&client, &prior_rules, &candidate_rules).await;
         assert!(result.is_ok());
         let text = result.unwrap();
-        println!("Response: {}", text);
+        println!("Response: {text}");
 
     }
 
@@ -1051,9 +1039,6 @@ async fn group_rules_request() {
     #[test]
     fn filter_rules_keeps_important_ones() {
         todo!()
-
-
-
     }
 }
 
