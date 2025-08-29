@@ -748,8 +748,9 @@ let start_time = std::time::Instant::now();
         // total caviar rules.
         let forward_result =
             run_derivability_tests(&chompy_rules, &caviar_rules, &implication_rules);
-        let backward_result =
-            run_derivability_tests(&caviar_rules, &chompy_rules, &implication_rules);
+        // NOTE: cutting this because too expensive.
+        // let backward_result =
+        //     run_derivability_tests(&caviar_rules, &chompy_rules, &implication_rules);
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({
@@ -760,7 +761,7 @@ let start_time = std::time::Instant::now();
 
         let to_write = serde_json::json!({
             "forwards": to_json(forward_result),
-            "backwards": to_json(backward_result),
+            // "backwards": to_json(backward_result),
         });
         std::fs::write(out_path, to_write.to_string())
             .expect("Failed to write derivability results to file");
@@ -799,7 +800,7 @@ let start_time = std::time::Instant::now();
 
         let cond_workload = Workload::new(&["(OP V V)"])
             .plug("OP", &Workload::new(&["<", "<="]))
-            .plug("V", &Workload::new(&["a", "b", "c", "0"]));
+            .plug("V", &Workload::new(&["a", "b", "c", "0", "1"]));
 
         let rules = run_workload(
             cond_workload.clone(),
@@ -860,6 +861,8 @@ let start_time = std::time::Instant::now();
                 .unwrap()
                 .0,
         );
+
+        min_max_rules.pretty_print();
 
         let mut matches = 0;
         for r in against.iter() {

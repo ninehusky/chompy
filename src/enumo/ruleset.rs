@@ -6,8 +6,8 @@ use std::{fmt::Display, io::Write, sync::Arc};
 
 use crate::{
     conditions::{assumption::Assumption, implication_set::ImplicationSet},
-    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
-    SynthAnalysis, SynthLanguage,
+    time_fn_call, CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits,
+    PVec, Signature, SynthAnalysis, SynthLanguage,
 };
 
 use super::{Rule, Scheduler};
@@ -214,7 +214,8 @@ impl<L: SynthLanguage> Ruleset<L> {
         F: Fn(&Rule<L>) -> bool + std::marker::Sync,
     {
         let rules: Vec<&Rule<L>> = self.0.values().collect();
-        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_par_iter().partition(|rule| f(rule));
+        // Remove parallelism, as a brief test.
+        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_iter().partition(|rule| f(rule));
         let mut yes = Ruleset::default();
         let mut no = Ruleset::default();
         yes.add_all(yeses);
@@ -1069,7 +1070,9 @@ impl<L: SynthLanguage> Ruleset<L> {
                     "an assume node merged with somethin else!"
                 );
             }
-            l_id == r_id
+            let res = l_id == r_id;
+            println!("can I derive {}?: {}", rule.name, res);
+            res
         } else {
             false
         }
@@ -1120,18 +1123,22 @@ impl<L: SynthLanguage> Ruleset<L> {
     ) -> (Self, Self) {
         against.partition(|rule| {
             println!("attempting to derive: {}", rule.name);
+            let name = rule.name.clone();
             if rule.cond.is_some() {
                 if condition_propagation_rules.is_none() {
                     panic!("Condition propagation rules required for conditional rules. You gave me: {:?}", rule);
                 }
-                self.can_derive_cond(
-                    derive_type,
-                    rule,
-                    limits,
-                    condition_propagation_rules.as_ref().unwrap(),
-                )
+                let res = time_fn_call!(
+                    format!("can_derive_{name}"),
+                    self.can_derive_cond(derive_type, rule, limits, condition_propagation_rules.as_ref().unwrap())
+                );
+                res
             } else {
-                self.can_derive(derive_type, rule, limits)
+                let res = time_fn_call!(
+                    format!("can_derive_{name}"),
+                    self.can_derive(derive_type, rule, limits)
+                );
+                res
             }
         })
     }
