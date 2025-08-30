@@ -918,6 +918,7 @@ pub mod implication_switch_tests {
             Some(20),
         );
 
+        // 2 should come before 1, with our new scoring way.
         assert!(score2.cmp(&score1) == std::cmp::Ordering::Less);
 
         let mut rules: Ruleset<Pred> = Default::default();
