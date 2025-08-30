@@ -67,8 +67,17 @@ impl<L: SynthLanguage> Rule<L> {
             }
         };
         if let Some((l, r)) = s.split_once("=>") {
-            let l_pat: Pattern<L> = l.parse().unwrap();
-            let r_pat: Pattern<L> = r.parse().unwrap();
+            let l_pat: Result<Pattern<L>, _> = l.parse();
+            let r_pat: Result<Pattern<L>, _> = r.parse();
+            if l_pat.is_err() || r_pat.is_err() {
+                return Err(format!(
+                    "Failed to parse patterns: lhs: {:?}, rhs: {:?}",
+                    l_pat, r_pat
+                ));
+            }
+
+            let l_pat = l_pat.unwrap();
+            let r_pat = r_pat.unwrap();
 
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
@@ -96,10 +105,13 @@ impl<L: SynthLanguage> Rule<L> {
 
             if s.contains("<=>") {
                 let backwards_name = make_name(&r_pat, &l_pat, cond.clone());
-                assert!(
-                    cond.is_none(),
-                    "Conditional bidirectional rules not supported."
-                );
+                if cond.is_none() {
+                    return Ok((forwards, None));
+                }
+                // assert!(
+                //     cond.is_none(),
+                //     "Conditional bidirectional rules not supported."
+                // );
                 let backwards = Self {
                     name: backwards_name.clone().into(),
                     lhs: r_pat.clone(),

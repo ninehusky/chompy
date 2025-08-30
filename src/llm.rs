@@ -45,7 +45,6 @@ candidates_text
 "#;
 
 const GROUP_RULES_PROMPT: &str = r#"
-const GROUP_RULES_PROMPT: &str = r#"
 You are the world’s leading expert in program optimization and algebraic reasoning.
 You are helping organize rewrite rules for use in an equality saturation system.
 
