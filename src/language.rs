@@ -519,13 +519,11 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         }
 
         [
-            // // 1. prefer LHS bigger than RHS
-            // (AstSize.cost_rec(&rhs.ast) as i32) - (AstSize.cost_rec(&lhs.ast) as i32),
-            // 2. prefer more variables
+            // 1. prefer more variables
             -(vars.len() as i32),
-            // 3. prefer smaller overall AST cost
+            // 2. prefer smaller overall AST cost
             l_cost + r_cost + c_cost,
-            // 4. prefer larger true_count
+            // 3. prefer larger true_count
             -(true_count.unwrap_or(i32::MAX as usize) as i32),
         ]
     }
@@ -920,7 +918,7 @@ pub mod implication_switch_tests {
             Some(20),
         );
 
-        assert!(score1.cmp(&score2) == std::cmp::Ordering::Less);
+        assert!(score2.cmp(&score1) == std::cmp::Ordering::Less);
 
         let mut rules: Ruleset<Pred> = Default::default();
         rules.add_cond_from_recexprs(
