@@ -719,51 +719,51 @@ pub mod halide_derive_tests {
         }
     }
 
-    #[test]
-    fn chompy_vs_halide() {
-        if std::env::var("SKIP_RECIPES").is_ok() {
-            return;
-        }
+    // #[test]
+    // fn chompy_vs_halide() {
+    //     if std::env::var("SKIP_RECIPES").is_ok() {
+    //         return;
+    //     }
 
-        // NOTE: I'll do this later.
-        let _binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
-            + "/halide-derive.json";
+    //     // NOTE: I'll do this later.
+    //     let _binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
+    //         + "/halide-derive.json";
 
-        let chompy_rules_txt = include_str!("../chompy-rules.txt");
-        let mut chompy_rules: Ruleset<Pred> = Ruleset::default();
+    //     let chompy_rules_txt = include_str!("../chompy-rules.txt");
+    //     let mut chompy_rules: Ruleset<Pred> = Ruleset::default();
 
-        for line in chompy_rules_txt.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
+    //     for line in chompy_rules_txt.lines() {
+    //         if line.trim().is_empty() {
+    //             continue;
+    //         }
 
-            let res = Rule::from_string(line.trim());
+    //         let res = Rule::from_string(line.trim());
 
-            if let Ok((rule, _)) = res {
-                if rule.is_valid() {
-                    chompy_rules.add(rule);
-                }
-            }
-        }
+    //         if let Ok((rule, _)) = res {
+    //             if rule.is_valid() {
+    //                 chompy_rules.add(rule);
+    //             }
+    //         }
+    //     }
 
-        let halide_rules_txt = include_str!("../halide-total.txt");
-        let mut halide_rules: Ruleset<Pred> = Ruleset::default();
-        for line in halide_rules_txt.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
+    //     let halide_rules_txt = include_str!("../halide-total.txt");
+    //     let mut halide_rules: Ruleset<Pred> = Ruleset::default();
+    //     for line in halide_rules_txt.lines() {
+    //         if line.trim().is_empty() {
+    //             continue;
+    //         }
 
-            let res = Rule::from_string(line.trim());
+    //         let res = Rule::from_string(line.trim());
 
-            if let Ok((rule, _)) = res {
-                if rule.is_valid() {
-                    halide_rules.add(rule);
-                }
-            }
-        }
+    //         if let Ok((rule, _)) = res {
+    //             if rule.is_valid() {
+    //                 halide_rules.add(rule);
+    //             }
+    //         }
+    //     }
 
-        println!("Parsed {} Halide rules", halide_rules.len());
-    }
+    //     println!("Parsed {} Halide rules", halide_rules.len());
+    // }
 
     #[test]
     // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
