@@ -7,7 +7,6 @@ use ruler::{
     Limits, SynthLanguage,
 };
 
-
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
     cannot: Ruleset<L>,
@@ -292,7 +291,17 @@ pub mod halide_derive_tests {
 
     use egg::{EGraph, RecExpr, Runner};
     use ruler::{
-        conditions::{generate::{get_condition_workload, compress}, implication_set::run_implication_workload}, enumo::{ChompyState, Filter, Metric}, halide::og_recipe, recipe_utils::{base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm, Lang}, time_fn_call, SynthAnalysis
+        conditions::{
+            generate::{compress, get_condition_workload},
+            implication_set::run_implication_workload,
+        },
+        enumo::{ChompyState, Filter, Metric},
+        halide::og_recipe,
+        recipe_utils::{
+            base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm,
+            Lang,
+        },
+        time_fn_call, SynthAnalysis,
     };
 
     use super::*;
@@ -304,7 +313,6 @@ pub mod halide_derive_tests {
 
     #[test]
     fn mul_div_workload() {
-        let start_time = std::time::Instant::now();
         if std::env::var("RUN_ME").is_err() {
             return;
         }
@@ -364,11 +372,14 @@ pub mod halide_derive_tests {
 
         all_rules.add(Rule::from_string("(!= ?a ?b) ==> (!= ?b ?a)").unwrap().0);
 
-
         let rules = recursive_rules_cond(
             Metric::Atoms,
             3,
-            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
+            Lang::new(
+                &["0", "1"],
+                &["a", "b", "c"],
+                &[&[], &["*", "/", "min", "max"]],
+            ),
             all_rules.clone(),
             base_implications.clone(),
             cond_workload,
@@ -377,7 +388,6 @@ pub mod halide_derive_tests {
 
         all_rules.extend(rules);
 
-        let should_derive: Ruleset<Pred> = Default::default();
         for line in r#"
 (/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
 (/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
@@ -396,15 +406,14 @@ pub mod halide_derive_tests {
                 .0;
             assert!(rule.is_valid());
             if !all_rules.can_derive_cond(
-                    ruler::DeriveType::LhsAndRhs,
-                    &rule,
-                    Limits::deriving(),
-                    &base_implications.to_egg_rewrites())
-                {
-                    println!("Hey.. we weren't able to derive this rule: {rule}");
-                    continue;
-                }
-                    
+                ruler::DeriveType::LhsAndRhs,
+                &rule,
+                Limits::deriving(),
+                &base_implications.to_egg_rewrites(),
+            ) {
+                println!("Hey.. we weren't able to derive this rule: {rule}");
+                continue;
+            }
 
             let l_expr = Pred::instantiate(&rule.lhs);
             let r_expr = Pred::instantiate(&rule.rhs);
@@ -444,7 +453,7 @@ pub mod halide_derive_tests {
 
     #[tokio::test]
     async fn op_min_max_workload_with_llm() {
-let start_time = std::time::Instant::now();
+        let start_time = std::time::Instant::now();
         if std::env::var("RUN_ME").is_err() {
             println!("Not running op_min_max_workload_with_llm test because RUN_ME is not set.");
             return;
@@ -526,7 +535,8 @@ let start_time = std::time::Instant::now();
             true,
             true,
             true,
-        ).await;
+        )
+        .await;
 
         // (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
         let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
@@ -555,7 +565,6 @@ let start_time = std::time::Instant::now();
         } else {
             println!("The rule was NOT derived.");
         }
-
     }
 
     /// This takes a long time if we don't adjust the Limits and the Scheduler.
@@ -716,7 +725,8 @@ let start_time = std::time::Instant::now();
             return;
         }
 
-        let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
+        // NOTE: I'll do this later.
+        let _binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
             + "/halide-derive.json";
 
         let chompy_rules_txt = include_str!("../chompy-rules.txt");
@@ -736,7 +746,6 @@ let start_time = std::time::Instant::now();
             }
         }
 
-
         let halide_rules_txt = include_str!("../halide-total.txt");
         let mut halide_rules: Ruleset<Pred> = Ruleset::default();
         for line in halide_rules_txt.lines() {
@@ -754,9 +763,7 @@ let start_time = std::time::Instant::now();
         }
 
         println!("Parsed {} Halide rules", halide_rules.len());
-
     }
-        
 
     #[test]
     // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?

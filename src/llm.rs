@@ -191,7 +191,6 @@ candidates_text
 
 "#;
 
-
 const ENUMERATE_TERMS_PROMPT: &str = r#"
 You are an expert in generating a list of terms for a given
 programming language. The syntax of the programming language
@@ -308,7 +307,7 @@ fn parse_categorization_response<L: SynthLanguage>(response: String) -> Categori
                     if let Some(bkwd) = bkwd {
                         ruleset.add(bkwd);
                     }
-                },
+                }
                 Err(e) => {
                     // Handle parsing error, could log warning
                     eprintln!("Error parsing rule '{line}': {e}");
@@ -365,7 +364,6 @@ pub async fn sort_rule_candidates<L: SynthLanguage>(
     // 5. Return the final categorized ruleset.
     result
 }
-
 
 pub async fn generate_alphabet_soup(
     term_recipe: &Recipe,
@@ -581,8 +579,7 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
     // Build the prompt with existing rules + candidates
     let candidates_text = candidate_rules.to_str_vec().join("\n");
 
-    let prompt =
-        GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
+    let prompt = GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
 
     println!("prompt: {prompt}");
 
@@ -609,9 +606,13 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
-        .await.map_err(|e| format!("Failed: {e}"))?;
+        .await
+        .map_err(|e| format!("Failed: {e}"))?;
 
-    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {e}"))?;
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
     let text_output = response_json["choices"][0]["message"]["content"]
@@ -622,7 +623,6 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
     Ok(text_output)
 }
 
-
 pub async fn send_score_rules_request<L: SynthLanguage>(
     client: &Client,
     prior_rules: &Ruleset<L>,
@@ -632,8 +632,9 @@ pub async fn send_score_rules_request<L: SynthLanguage>(
     let prior_text = prior_rules.to_str_vec().join("\n");
     let candidates_text = candidate_rules.to_str_vec().join("\n");
 
-    let prompt =
-        SCORE_RULES_PROMPT.replace("prior_text", &prior_text).replace("candidates_text", &candidates_text);
+    let prompt = SCORE_RULES_PROMPT
+        .replace("prior_text", &prior_text)
+        .replace("candidates_text", &candidates_text);
 
     // Build the request payload
     let request_body = json!({
@@ -658,9 +659,13 @@ pub async fn send_score_rules_request<L: SynthLanguage>(
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
-        .await.map_err(|e| format!("Failed: {e}"))?;
+        .await
+        .map_err(|e| format!("Failed: {e}"))?;
 
-    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {e}"))?;
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
     let text_output = response_json["choices"][0]["message"]["content"]
@@ -679,10 +684,16 @@ pub async fn send_filter_rules_request<L: SynthLanguage>(
 ) -> Result<String, String> {
     // Build the prompt with existing rules + candidates
     let prior_text = prior_rules.to_str_vec().join("\n");
-    let candidates_text = candidate_rules.iter().map(|r| r.to_string()).collect::<Vec<_>>().join("\n");
+    let candidates_text = candidate_rules
+        .iter()
+        .map(|r| r.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
 
-    let prompt =
-        FILTER_RULES_PROMPT.replace("prior_text", &prior_text).replace("candidates_text", &candidates_text).replace("keep_max", &keep_max.to_string());
+    let prompt = FILTER_RULES_PROMPT
+        .replace("prior_text", &prior_text)
+        .replace("candidates_text", &candidates_text)
+        .replace("keep_max", &keep_max.to_string());
 
     println!("Prompt: {prompt}");
 
@@ -709,9 +720,13 @@ pub async fn send_filter_rules_request<L: SynthLanguage>(
         .header("Content-Type", "application/json")
         .json(&request_body)
         .send()
-        .await.map_err(|e| format!("Failed: {e}"))?;
+        .await
+        .map_err(|e| format!("Failed: {e}"))?;
 
-    let response_json: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse response: {e}"))?;
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
     let text_output = response_json["choices"][0]["message"]["content"]
@@ -722,11 +737,10 @@ pub async fn send_filter_rules_request<L: SynthLanguage>(
     Ok(text_output)
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ScoredRule<L: SynthLanguage> {
-    pub rule: Rule<L>,      // your rule type
-    pub core: u8,     // 0–5
+    pub rule: Rule<L>,  // your rule type
+    pub core: u8,       // 0–5
     pub importance: u8, // 0–5
     pub novelty: u8,    // 0–5
 }
@@ -741,8 +755,7 @@ impl<L: SynthLanguage> Display for ScoredRule<L> {
     }
 }
 
-pub fn parse_scored_rules<L: SynthLanguage>(text: &str) -> Vec<ScoredRule<L>>
-{
+pub fn parse_scored_rules<L: SynthLanguage>(text: &str) -> Vec<ScoredRule<L>> {
     let mut results = Vec::new();
 
     for line in text.lines() {
@@ -781,8 +794,13 @@ pub fn parse_scored_rules<L: SynthLanguage>(text: &str) -> Vec<ScoredRule<L>>
     results
 }
 
-
-pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset<L>, candidates: &Ruleset<L>, keep_max: usize, batch_size: usize) -> Ruleset<L> {
+pub async fn filter_rules_llm<L: SynthLanguage>(
+    client: &Client,
+    prior: &Ruleset<L>,
+    candidates: &Ruleset<L>,
+    keep_max: usize,
+    batch_size: usize,
+) -> Ruleset<L> {
     let mut candidates = candidates.clone();
     let mut scored_rules = vec![];
     while !candidates.is_empty() {
@@ -808,7 +826,6 @@ pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset
                 for scored_rule in &scored_rules {
                     println!("Scored rule: {scored_rule:?}");
                 }
-
             }
             Err(e) => {
                 eprintln!("Error scoring rules: {e}");
@@ -825,222 +842,211 @@ pub async fn filter_rules_llm<L: SynthLanguage>(client: &Client, prior: &Ruleset
         println!("the filtered response: {r}");
     }
 
-
     Default::default()
-
-
 }
 
-#[allow(unused_imports)]
-pub mod rule_filter_tests {
-    use super::*;
-    use crate::{enumo::{Rule, Ruleset}, llm::{filter_rules_llm, sort_rule_candidates}};
-
-    // TODO: move to `parse` tests in `src/rule.rs`
-    #[test]
-    fn read_rule_without_crashing() {
-        let rule: Rule<Pred> = Rule::from_string("(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))").unwrap().0;
-    }
-
-
-    #[tokio::test]
-async fn group_rules_request() {
-        let candidates_str: &str = r#"?a ==> (max ?a ?b) if (<= ?b ?a)
-(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
-(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
-(< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
-(< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
-(< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
-(< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
-(< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
-(< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
-(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
-(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
-(< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
-(< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
-(< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
-(< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
-(< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
-(< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
-(< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
-(< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
-(< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
-(< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
-(max ?b ?a) ==> ?a if (== ?b ?a)"#;
-
-        let client = reqwest::Client::new();
-
-        let mut candidate_rules: Ruleset<Pred> = Default::default();
-
-        for line in candidates_str.lines() {
-            let rule_str = line.trim();
-            if !rule_str.is_empty() {
-                match Rule::from_string(rule_str) {
-                    Ok((f, _)) => {
-                        println!("adding rule: {f}");
-                        candidate_rules.add(f);
-                    }
-                    Err(e) => {
-                        println!("Error parsing rule '{rule_str}': {e}");
-
-                    }
-                };
-            }
-        }
-
-        let categorized_rules = sort_rule_candidates::<Pred>(&client, candidate_rules, 10).await;
-
-        println!("Here's the categorized rules:");
-        for key in categorized_rules.keys() {
-            println!("Category: {key}");
-            let ruleset = categorized_rules.get(key).unwrap();
-            for rule in ruleset.iter() {
-                println!("  - {rule}");
-            }
-        }
-}
-
-    #[tokio::test]
-    async fn score_rules_request_doesnt_filter_out_important_rules() {
-        let candidates_str: &str = r#"?a ==> (max ?a ?b) if (<= ?b ?a)
-(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
-(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
-(< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
-(< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
-(< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
-(< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
-(< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
-(< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
-(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
-(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
-(< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
-(< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
-(< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
-(< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
-(< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
-(< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
-(< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
-(< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
-(< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
-(< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
-(max ?b ?a) ==> ?a if (== ?b ?a)"#;
-        let client = reqwest::Client::new();
-
-        let prior_rules: Ruleset<Pred> = Default::default();
-        let mut candidate_rules: Ruleset<Pred> = Default::default();
-
-        for line in candidates_str.lines() {
-            let rule_str = line.trim();
-            if !rule_str.is_empty() {
-                match Rule::from_string(rule_str) {
-                    Ok((f, _)) => {
-                        println!("adding rule: {f}");
-                        candidate_rules.add(f);
-                    }
-                    Err(e) => {
-                        println!("Error parsing rule '{rule_str}': {e}");
-
-                    }
-                };
-            }
-        }
-
-        let result = filter_rules_llm(&client, &prior_rules, &candidate_rules, 50, 10).await;
+// NOTE: @ninehusky here! I am going to comment out the tests for here until I can think of
+//       a more rigorous way of testing.
+// #[allow(unused_imports)]
+// pub mod rule_filter_tests {
+//     use super::*;
+//     use crate::{
+//         enumo::{Rule, Ruleset},
+//         llm::{filter_rules_llm, sort_rule_candidates},
+//     };
 
 
-    }
+//     #[tokio::test]
+//     async fn group_rules_request() {
+//         let candidates_str: &str = r#"?a ==> (max ?a ?b) if (<= ?b ?a)
+// (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+// (< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
+// (< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
+// (< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
+// (< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
+// (< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
+// (< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
+// (< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
+// (< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
+// (< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
+// (< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
+// (< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
+// (< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
+// (< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
+// (< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
+// (< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
+// (< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
+// (< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
+// (< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
+// (< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
+// (max ?b ?a) ==> ?a if (== ?b ?a)"#;
 
-    #[tokio::test]
-    async fn score_rules_request_ok() {
-        let candidates_str: &str = r#"(< (+ ?b (+ ?c ?a)) (min ?a (+ ?b ?a))) ==> (< (+ ?b (+ ?c ?c)) (min ?b ?c))
-(< (+ ?b ?a) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?a) (+ ?a (min ?b ?c)))
-(< (+ ?b ?a) (+ ?b (min ?a ?c))) ==> (< (+ ?b ?a) (min ?b (+ ?b ?a)))
-(< (min ?b (+ ?c ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?b ?c) (+ ?b ?a))
-(< (min ?b (+ ?a ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?b ?a))
-(< (min ?b (+ ?b ?b)) (+ ?b (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a ?a))
-(< (min ?d (+ ?c ?b)) (+ ?c (min ?b ?a))) <=> (< ?d (+ ?c (min ?b ?a)))
-(< (min ?c (+ ?b ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?c ?b) (+ ?b (+ ?a ?a)))
-(< (min ?a (+ ?a ?b)) (+ ?b (+ ?a ?a))) <=> (< (min ?a ?b) (+ ?b (+ ?a ?a)))
-(< (+ ?b (+ ?c ?c)) (+ ?b (+ ?a ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?b ?a))
-(< (+ ?b (min ?d ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?d) (min ?c (+ ?b ?a)))
-(< (+ ?c (+ ?b ?b)) (min ?c (+ ?b ?a))) <=> (< (min ?c (+ ?b ?c)) (min ?c ?a))
-(< (min ?b (+ ?b ?b)) (+ ?a (+ ?b ?b))) <=> (< (min ?b ?a) (+ ?b (+ ?a ?a)))
-(< (+ ?c (min ?c ?b)) (+ ?b (min ?c ?a))) <=> (< (+ ?c ?c) (+ ?b (min ?b ?a)))
-(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
-(< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
-(< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
-(< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
-(< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
-(< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
-(< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
-(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
-(< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
-(< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
-(< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
-(< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
-(< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
-(< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
-(< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
-(< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
-(< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
-(< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
-(< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
-(< (min ?b (+ ?c ?b)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?a ?a)))
-(< (min ?c (+ ?d ?d)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?d) (min ?c (+ ?b ?a)))
-(< (min ?b (+ ?b ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?b (+ ?b ?b)) (+ ?a (+ ?a ?a)))
-(< (+ ?b (+ ?b ?b)) (+ ?a (+ ?a ?a))) <=> (< (min ?b (+ ?b ?a)) (min ?a (+ ?a ?a)))
-(< (min ?c (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c (min ?c ?b)) (+ ?a (min ?b ?a)))
-(< (+ ?b (+ ?c ?c)) (+ ?b (+ ?a ?a))) <=> (< (+ ?c (min ?c ?b)) (+ ?a (min ?b ?a)))
-(< (min ?c (+ ?b ?a)) (+ ?b (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?b (min ?b ?a)))
-(< (+ ?b (+ ?a ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?a (+ ?b ?b)))
-(< (+ ?c (+ ?b ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c (+ ?b ?b)) (min ?c (+ ?c ?a)))
-(< (min ?b (+ ?b ?c)) (min ?b (+ ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (min ?b (+ ?b ?a)))
-(< (min ?b (+ ?a ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?a (+ ?b ?b)) (+ ?a (+ ?b ?b)))
-(< (+ ?b (min ?c ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?b (+ ?b ?c)) (+ ?b (+ ?a ?a)))
-(< (min ?b (+ ?b ?c)) (+ ?c (min ?b ?a))) <=> (< (min ?b (+ ?c ?a)) (+ ?c (min ?b ?a)))
-(< (min ?c (+ ?b ?c)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (min ?c (+ ?b ?a)))
-(< (+ ?b (min ?b ?a)) (min ?b (+ ?a ?a))) <=> (< (min ?a (+ ?b ?a)) (min ?a (+ ?a ?a)))
-(< (min ?b (+ ?b ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?a (+ ?b ?a)) (min ?a (+ ?a ?a)))
-(< (min ?b (+ ?b ?a)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b (min ?b ?a)))
-(< (min ?b (+ ?c ?d)) (min ?c (min ?b ?a))) <=> (< (min ?c (+ ?c ?d)) (min ?c (min ?b ?a)))
-(< (+ ?a (+ ?b ?b)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (+ ?a (min ?a ?b)))
-(< (+ ?a (min ?b ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?c (min ?b ?a)))
-(< (min ?a (+ ?b ?b)) (+ ?b (min ?b ?a))) <=> (< (min ?a (+ ?b ?a)) (+ ?b (min ?b ?a)))
-(< (+ ?b (min ?c ?a)) (min ?a (+ ?b ?a))) <=> (< (min ?a (+ ?b ?c)) (min ?a (+ ?b ?a)))
-(< (+ ?a (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?a (min ?b ?a)) (min ?c (+ ?b ?b)))
-(< (min ?b (+ ?c ?c)) (min ?b (+ ?a ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b (+ ?c ?a)))
-(< (+ ?c (min ?b ?c)) (+ ?b (min ?b ?a))) <=> (< (+ ?c (min ?b ?c)) (+ ?b (min ?c ?a)))
-(< (min ?b (+ ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a)))"#;
+//         let client = reqwest::Client::new();
 
-        let client = reqwest::Client::new();
+//         let mut candidate_rules: Ruleset<Pred> = Default::default();
 
-        let prior_rules: Ruleset<Pred> = Default::default();
+//         for line in candidates_str.lines() {
+//             let rule_str = line.trim();
+//             if !rule_str.is_empty() {
+//                 match Rule::from_string(rule_str) {
+//                     Ok((f, _)) => {
+//                         println!("adding rule: {f}");
+//                         candidate_rules.add(f);
+//                     }
+//                     Err(e) => {
+//                         println!("Error parsing rule '{rule_str}': {e}");
+//                     }
+//                 };
+//             }
+//         }
 
-        let mut candidate_rules: Ruleset<Pred> = Default::default();
+//         let categorized_rules = sort_rule_candidates::<Pred>(&client, candidate_rules, 10).await;
 
-        for line in candidates_str.lines() {
-            let rule_str = line.trim();
-            if !rule_str.is_empty() {
-                let rule: Rule<Pred> = Rule::from_string(rule_str).unwrap().0;
-                println!("Adding rule: {rule}");
-                candidate_rules.add(rule);
-            }
-        }
+//         println!("Here's the categorized rules:");
+//         for key in categorized_rules.keys() {
+//             println!("Category: {key}");
+//             let ruleset = categorized_rules.get(key).unwrap();
+//             for rule in ruleset.iter() {
+//                 println!("  - {rule}");
+//             }
+//         }
+//     }
 
-        let result = send_score_rules_request(&client, &prior_rules, &candidate_rules).await;
-        assert!(result.is_ok());
-        let text = result.unwrap();
-        println!("Response: {text}");
+//     #[tokio::test]
+//     async fn score_rules_request_doesnt_filter_out_important_rules() {
+//         let candidates_str: &str = r#"?a ==> (max ?a ?b) if (<= ?b ?a)
+// (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+// (< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
+// (< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
+// (< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
+// (< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
+// (< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
+// (< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
+// (< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
+// (< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
+// (< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
+// (< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
+// (< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
+// (< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
+// (< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
+// (< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
+// (< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
+// (< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
+// (< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
+// (< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
+// (< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
+// (max ?b ?a) ==> ?a if (== ?b ?a)"#;
+//         let client = reqwest::Client::new();
 
-    }
+//         let prior_rules: Ruleset<Pred> = Default::default();
+//         let mut candidate_rules: Ruleset<Pred> = Default::default();
 
+//         for line in candidates_str.lines() {
+//             let rule_str = line.trim();
+//             if !rule_str.is_empty() {
+//                 match Rule::from_string(rule_str) {
+//                     Ok((f, _)) => {
+//                         println!("adding rule: {f}");
+//                         candidate_rules.add(f);
+//                     }
+//                     Err(e) => {
+//                         println!("Error parsing rule '{rule_str}': {e}");
+//                     }
+//                 };
+//             }
+//         }
 
-    #[test]
-    fn filter_rules_keeps_important_ones() {
-        todo!()
-    }
-}
+//         let result = filter_rules_llm(&client, &prior_rules, &candidate_rules, 50, 10).await;
+//     }
 
+//     #[tokio::test]
+//     async fn score_rules_request_ok() {
+//         let candidates_str: &str = r#"(< (+ ?b (+ ?c ?a)) (min ?a (+ ?b ?a))) ==> (< (+ ?b (+ ?c ?c)) (min ?b ?c))
+// (< (+ ?b ?a) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?a) (+ ?a (min ?b ?c)))
+// (< (+ ?b ?a) (+ ?b (min ?a ?c))) ==> (< (+ ?b ?a) (min ?b (+ ?b ?a)))
+// (< (min ?b (+ ?c ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?b ?c) (+ ?b ?a))
+// (< (min ?b (+ ?a ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?b ?a))
+// (< (min ?b (+ ?b ?b)) (+ ?b (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a ?a))
+// (< (min ?d (+ ?c ?b)) (+ ?c (min ?b ?a))) <=> (< ?d (+ ?c (min ?b ?a)))
+// (< (min ?c (+ ?b ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?c ?b) (+ ?b (+ ?a ?a)))
+// (< (min ?a (+ ?a ?b)) (+ ?b (+ ?a ?a))) <=> (< (min ?a ?b) (+ ?b (+ ?a ?a)))
+// (< (+ ?b (+ ?c ?c)) (+ ?b (+ ?a ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?b ?a))
+// (< (+ ?b (min ?d ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?d) (min ?c (+ ?b ?a)))
+// (< (+ ?c (+ ?b ?b)) (min ?c (+ ?b ?a))) <=> (< (min ?c (+ ?b ?c)) (min ?c ?a))
+// (< (min ?b (+ ?b ?b)) (+ ?a (+ ?b ?b))) <=> (< (min ?b ?a) (+ ?b (+ ?a ?a)))
+// (< (+ ?c (min ?c ?b)) (+ ?b (min ?c ?a))) <=> (< (+ ?c ?c) (+ ?b (min ?b ?a)))
+// (< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))
+// (< (min ?b (+ ?a ?a)) (+ ?a (+ ?a ?a))) <=> (< (min ?b ?a) (+ ?a (+ ?a ?a)))
+// (< (min ?a (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b ?a))
+// (< (+ ?b (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b ?b) (min ?c (+ ?a ?a)))
+// (< (+ ?b (+ ?a ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (+ ?a ?a)) (min ?b ?c))
+// (< (+ ?b (min ?b ?c)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?a ?a))
+// (< (+ ?b (+ ?d ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?d ?c)) (min ?b ?a))
+// (< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?a)) (+ ?a ?a))
+// (< (min ?c (+ ?b ?b)) (+ ?a (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?a ?a))
+// (< (+ ?b (min ?d ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?d) (+ ?c (min ?b ?a)))
+// (< (+ ?b (min ?a ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b ?a) (+ ?c (min ?b ?a)))
+// (< (+ ?c (min ?d ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c ?d) (+ ?c (min ?b ?a)))
+// (< (min ?c (+ ?d ?b)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?b) (min ?c (+ ?b ?a)))
+// (< (min ?b (+ ?c ?b)) (min ?b (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?b ?a)))
+// (< (+ ?b (+ ?c ?c)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b ?a))
+// (< (+ ?b (min ?c ?b)) (+ ?a (min ?b ?a))) <=> (< (+ ?b (min ?c ?b)) (+ ?a ?a))
+// (< (min ?c (min ?a ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?c ?a) (min ?b (+ ?a ?a)))
+// (< (min ?a (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c ?b) (min ?a (+ ?b ?a)))
+// (< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?a) (min ?b (+ ?a ?a)))
+// (< (min ?b (+ ?c ?b)) (min ?b (+ ?a ?a))) <=> (< (+ ?c ?b) (min ?b (+ ?a ?a)))
+// (< (min ?c (+ ?d ?d)) (min ?c (+ ?b ?a))) <=> (< (+ ?d ?d) (min ?c (+ ?b ?a)))
+// (< (min ?b (+ ?b ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?b (+ ?b ?b)) (+ ?a (+ ?a ?a)))
+// (< (+ ?b (+ ?b ?b)) (+ ?a (+ ?a ?a))) <=> (< (min ?b (+ ?b ?a)) (min ?a (+ ?a ?a)))
+// (< (min ?c (+ ?c ?b)) (min ?a (+ ?b ?a))) <=> (< (+ ?c (min ?c ?b)) (+ ?a (min ?b ?a)))
+// (< (+ ?b (+ ?c ?c)) (+ ?b (+ ?a ?a))) <=> (< (+ ?c (min ?c ?b)) (+ ?a (min ?b ?a)))
+// (< (min ?c (+ ?b ?a)) (+ ?b (min ?b ?a))) <=> (< (min ?c (+ ?b ?b)) (+ ?b (min ?b ?a)))
+// (< (+ ?b (+ ?a ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?a (+ ?b ?b)))
+// (< (+ ?c (+ ?b ?b)) (+ ?c (min ?b ?a))) <=> (< (+ ?c (+ ?b ?b)) (min ?c (+ ?c ?a)))
+// (< (min ?b (+ ?b ?c)) (min ?b (+ ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (min ?b (+ ?b ?a)))
+// (< (min ?b (+ ?a ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?a (+ ?b ?b)) (+ ?a (+ ?b ?b)))
+// (< (+ ?b (min ?c ?a)) (+ ?b (+ ?a ?a))) <=> (< (min ?b (+ ?b ?c)) (+ ?b (+ ?a ?a)))
+// (< (min ?b (+ ?b ?c)) (+ ?c (min ?b ?a))) <=> (< (min ?b (+ ?c ?a)) (+ ?c (min ?b ?a)))
+// (< (min ?c (+ ?b ?c)) (min ?c (+ ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (min ?c (+ ?b ?a)))
+// (< (+ ?b (min ?b ?a)) (min ?b (+ ?a ?a))) <=> (< (min ?a (+ ?b ?a)) (min ?a (+ ?a ?a)))
+// (< (min ?b (+ ?b ?b)) (min ?b (+ ?a ?a))) <=> (< (min ?a (+ ?b ?a)) (min ?a (+ ?a ?a)))
+// (< (min ?b (+ ?b ?a)) (+ ?b (min ?b ?a))) <=> (< (min ?b (+ ?b ?b)) (+ ?b (min ?b ?a)))
+// (< (min ?b (+ ?c ?d)) (min ?c (min ?b ?a))) <=> (< (min ?c (+ ?c ?d)) (min ?c (min ?b ?a)))
+// (< (+ ?a (+ ?b ?b)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (+ ?a (min ?a ?b)))
+// (< (+ ?a (min ?b ?c)) (+ ?c (min ?b ?a))) <=> (< (+ ?b (min ?c ?a)) (+ ?c (min ?b ?a)))
+// (< (min ?a (+ ?b ?b)) (+ ?b (min ?b ?a))) <=> (< (min ?a (+ ?b ?a)) (+ ?b (min ?b ?a)))
+// (< (+ ?b (min ?c ?a)) (min ?a (+ ?b ?a))) <=> (< (min ?a (+ ?b ?c)) (min ?a (+ ?b ?a)))
+// (< (+ ?a (min ?b ?a)) (min ?c (+ ?b ?a))) <=> (< (+ ?a (min ?b ?a)) (min ?c (+ ?b ?b)))
+// (< (min ?b (+ ?c ?c)) (min ?b (+ ?a ?a))) <=> (< (min ?b (+ ?c ?c)) (min ?b (+ ?c ?a)))
+// (< (+ ?c (min ?b ?c)) (+ ?b (min ?b ?a))) <=> (< (+ ?c (min ?b ?c)) (+ ?b (min ?c ?a)))
+// (< (min ?b (+ ?c ?a)) (min ?b (+ ?a ?a))) <=> (< (+ ?a (min ?c ?a)) (min ?b (+ ?a ?a)))"#;
+
+//         let client = reqwest::Client::new();
+
+//         let prior_rules: Ruleset<Pred> = Default::default();
+
+//         let mut candidate_rules: Ruleset<Pred> = Default::default();
+
+//         for line in candidates_str.lines() {
+//             let rule_str = line.trim();
+//             if !rule_str.is_empty() {
+//                 let rule: Rule<Pred> = Rule::from_string(rule_str).unwrap().0;
+//                 println!("Adding rule: {rule}");
+//                 candidate_rules.add(rule);
+//             }
+//         }
+
+//         let result = send_score_rules_request(&client, &prior_rules, &candidate_rules).await;
+//         assert!(result.is_ok());
+//         let text = result.unwrap();
+//         println!("Response: {text}");
+//     }
+
+//     #[test]
+//     fn filter_rules_keeps_important_ones() {
+//         todo!()
+//     }
+// }
 
 pub mod tests {
 

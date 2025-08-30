@@ -71,8 +71,7 @@ impl<L: SynthLanguage> Rule<L> {
             let r_pat: Result<Pattern<L>, _> = r.parse();
             if l_pat.is_err() || r_pat.is_err() {
                 return Err(format!(
-                    "Failed to parse patterns: lhs: {:?}, rhs: {:?}",
-                    l_pat, r_pat
+                    "Failed to parse patterns: lhs: {l_pat:?}, rhs: {r_pat:?}"
                 ));
             }
 
@@ -105,7 +104,8 @@ impl<L: SynthLanguage> Rule<L> {
 
             if s.contains("<=>") {
                 let backwards_name = make_name(&r_pat, &l_pat, cond.clone());
-                if cond.is_none() {
+                if cond.is_some() {
+                    println!("[Rule::from_string] Ignoring bidirectional rule condition: {cond:?}");
                     return Ok((forwards, None));
                 }
                 // assert!(
@@ -349,6 +349,18 @@ mod test {
 
     use super::halide::Pred;
     use super::ImplicationSwitch;
+
+    #[test]
+    fn read_rule_without_crashing() {
+        let rule: Result<(Rule<Pred>, _), _> = Rule::from_string(
+            "(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))",
+        );
+        assert!(rule.is_ok());
+        let (fw, bw) = rule.unwrap();
+        assert!(fw.is_valid());
+        assert!(bw.is_some());
+        assert!(bw.unwrap().is_valid());
+    }
 
     #[test]
     fn parse() {

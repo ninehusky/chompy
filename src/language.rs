@@ -518,12 +518,6 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             vars.extend(cond_pat.vars());
         }
 
-        let lhs_bigger = if AstSize.cost_rec(&lhs.ast) as i32 > AstSize.cost_rec(&rhs.ast) as i32 {
-            1
-        } else {
-            0
-        };
-
         [
             // // 1. prefer LHS bigger than RHS
             // (AstSize.cost_rec(&rhs.ast) as i32) - (AstSize.cost_rec(&lhs.ast) as i32),

@@ -10,11 +10,11 @@ use ruler::{
     time_fn_call, DeriveType, Limits,
 };
 
-/// This test is a minimal example of how unsound merges can arise from
-/// rules which all are locally sound, but somehow explode in a terrible
-/// turn of events.
+/// This test, as far as we can tell, used to document a situation where
+/// a ruleset of rules which are all locally sound could somehow derive
+/// an unsound rule.
 #[test]
-fn unsound_merge_trigger() {
+fn avoid_unsound_merge() {
     let wkld = conditions::generate::get_condition_workload();
     let mut base_implications: ImplicationSet<Pred> = ImplicationSet::default();
     // // and the "and" rules here.
@@ -37,7 +37,7 @@ fn unsound_merge_trigger() {
         )
     );
 
-    // base_implications.add_all(other_implications);
+    base_implications.add_all(other_implications);
 
     println!("# base implications: {}", base_implications.len());
     let rules = r#"(< 0 ?a) <=> (> ?a 0)
@@ -86,6 +86,5 @@ fn unsound_merge_trigger() {
     let against: Rule<Pred> = Rule::from_string("(/ (max ?x ?y) ?z) ==> 0").unwrap().0;
     assert!(!against.is_valid());
 
-    // ...yet this rule can be derived from the ruleset. Shoot!
     assert!(!ruleset.can_derive(DeriveType::LhsAndRhs, &against, Limits::deriving()));
 }

@@ -120,8 +120,6 @@ fn run_workload_internal<L: SynthLanguage>(
         }
     }
 
-
-
     // 2. Discover total candidates using cvec matching.
     let mut total_candidates = if fast_match {
         Ruleset::fast_cvec_match(&compressed, prior.clone())
@@ -183,7 +181,6 @@ fn run_workload_internal<L: SynthLanguage>(
         );
 
         let rws = impl_prop_rules.to_egg_rewrites();
-
 
         let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
 
@@ -293,35 +290,36 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
 
         let rws = impl_prop_rules.to_egg_rewrites();
 
-
         let (mut chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
 
         if chosen_cond.len() > MAX_RULE_SIZE {
             if use_llm {
-            println!("[run_workload] Using LLM to filter chosen conditional rules");
-            let client = reqwest::Client::new();
-            let sorted_candidates = sort_rule_candidates(&client, chosen_cond.clone(), 20).await;
-            println!("here are the sorted candidates:");
-            let mut final_choices: Ruleset<L> = Ruleset::default();
-            for key in sorted_candidates.keys() {
-                let rules = sorted_candidates.get(key).unwrap().clone();
-                println!("  {key}");
-                for rule in sorted_candidates.get(key).unwrap().iter() {
-                    println!("    {rule}");
+                println!("[run_workload] Using LLM to filter chosen conditional rules");
+                let client = reqwest::Client::new();
+                let sorted_candidates =
+                    sort_rule_candidates(&client, chosen_cond.clone(), 20).await;
+                println!("here are the sorted candidates:");
+                let mut final_choices: Ruleset<L> = Ruleset::default();
+                for key in sorted_candidates.keys() {
+                    let rules = sorted_candidates.get(key).unwrap().clone();
+                    println!("  {key}");
+                    for rule in sorted_candidates.get(key).unwrap().iter() {
+                        println!("    {rule}");
+                    }
+                    // choose the top 5 for each category.
+                    let top = rules.clone().select(5, &mut Default::default());
+                    final_choices.extend(top);
                 }
-                // choose the top 5 for each category.
-                let top = rules.clone().select(5, &mut Default::default());
-                final_choices.extend(top);
-            }
-            chosen_cond = final_choices;
+                chosen_cond = final_choices;
             } else {
-                println!("Not using LLM, so we will keep all {} candidates",
-                    chosen_cond.len());
-
+                println!(
+                    "Not using LLM, so we will keep all {} candidates",
+                    chosen_cond.len()
+                );
             }
-
         } else {
-            println!("Candidate size smaller than {}, so we will keep all {} candidates",
+            println!(
+                "Candidate size smaller than {}, so we will keep all {} candidates",
                 MAX_RULE_SIZE,
                 chosen_cond.len()
             );
@@ -356,6 +354,7 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
 ///     2. If there are prior rules, compress the e-graph using them
 ///     3. Find candidates via CVec matching
 ///     4. Minimize the candidates with respect to the prior rules
+#[allow(clippy::too_many_arguments)] // I'm sorry Clippy. I love you.
 pub fn run_workload<L: SynthLanguage>(
     workload: Workload,
     cond_workload: Option<Workload>,
