@@ -855,7 +855,6 @@ pub async fn filter_rules_llm<L: SynthLanguage>(
 //         llm::{filter_rules_llm, sort_rule_candidates},
 //     };
 
-
 //     #[tokio::test]
 //     async fn group_rules_request() {
 //         let candidates_str: &str = r#"?a ==> (max ?a ?b) if (<= ?b ?a)
