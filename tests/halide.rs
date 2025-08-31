@@ -80,6 +80,7 @@ mod div_mod_tests {
         ruleset.add(Rule::from_string("(% 1 2) ==> 1").unwrap().0);
         ruleset.add(Rule::from_string("(% -4 -2) ==> 0").unwrap().0);
         ruleset.add(Rule::from_string("(% 5 2) ==> 1").unwrap().0);
+        ruleset.add(Rule::from_string("(% -5 2) ==> 1").unwrap().0);
         ruleset.add(Rule::from_string("(% -5 -2) ==> 1").unwrap().0);
         ruleset.add(Rule::from_string("(% 1 0) ==> 0").unwrap().0);
 
@@ -157,7 +158,7 @@ fn div_test() {
 
     for (input, expected) in pairs {
         let result = halide_division(&input[0], &input[1]);
-        assert_eq!(result, expected, "Failed for input: {:?}", input);
+        assert_eq!(result, expected, "Failed for input: {input:?}");
     }
 }
 
@@ -174,7 +175,7 @@ fn mod_test() {
 
     for (input, expected) in pairs {
         let result = halide_modulo(&input[0], &input[1]);
-        assert_eq!(result, expected, "Failed for input: {:?}", input);
+        assert_eq!(result, expected, "Failed for input: {input:?}");
     }
 }
 
@@ -191,7 +192,7 @@ fn halide_division(x: &i64, y: &i64) -> i64 {
     let mut q: i64 = ia / ib;
     q += a_neg & (!b_neg - b_neg);
     q &= !b_zero;
-    return q;
+    q
 }
 
 fn halide_modulo(x: &i64, y: &i64) -> i64 {
@@ -204,7 +205,7 @@ fn halide_modulo(x: &i64, y: &i64) -> i64 {
     let mut r = ia % (b | b_zero);
     r += a_neg & ((b ^ b_neg) + !b_neg);
     r &= !b_zero;
-    return r;
+    r
 }
 
 #[allow(unused_imports)]
