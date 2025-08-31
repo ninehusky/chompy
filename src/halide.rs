@@ -286,27 +286,20 @@ impl SynthLanguage for Pred {
             Pred::Sub([x, y]) => map!(get_cvec, x, y => x.checked_sub(*y)),
             Pred::Mul([x, y]) => map!(get_cvec, x, y => x.checked_mul(*y)),
             Pred::Div([x, y]) => map!(get_cvec, x, y => {
-                if *y == zero {
-                    Some(zero)
+                if *y == 0 {
+                    Some(0)
+                } else if *x == i64::MIN && *y == -1 {
+                    // Wraparound case
+                    Some(i64::MIN)
                 } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_div(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_div(*y)
-                    }
+                    Some(x.div_euclid(*y))
                 }
             }),
             Pred::Mod([x, y]) => map!(get_cvec, x, y => {
                 if *y == zero {
                     Some(zero)
                 } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_rem(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_rem(*y)
-                    }
+                    Some(x.rem_euclid(*y))
                 }
             }),
             Pred::Min([x, y]) => map!(get_cvec, x, y => Some(*x.min(y))),
