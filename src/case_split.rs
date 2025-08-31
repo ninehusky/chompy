@@ -249,6 +249,14 @@ fn case_split_internal(
         a.insert_into_egraph(&mut egraph);
     }
 
+    if rule.cond.is_some() {
+        let assumption_from_condition: Assumption<Pred> = Assumption::new(
+            Pred::instantiate(&rule.cond.as_ref().unwrap().chop_assumption()).to_string(),
+        )
+        .expect("Failed to parse condition as assumption");
+        assumption_from_condition.insert_into_egraph(&mut egraph);
+    }
+
     let rules: Vec<Rewrite<Pred, SynthAnalysis>> =
         ruleset.iter().map(|r| r.rewrite.clone()).collect();
 
@@ -363,9 +371,12 @@ pub mod analysis_tests {
         //     println!("Workload term: {}", t);
         // }
 
+        let cond_wkld =
+            Workload::new(&["(< VAR 0)"]).plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+
         let new_rules = run_workload(
             lt_workload,
-            None,
+            Some(cond_wkld),
             baseline.clone(),
             Default::default(),
             Limits::synthesis(),
