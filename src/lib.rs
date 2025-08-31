@@ -12,6 +12,7 @@ pub use util::*;
 pub mod conditions;
 
 mod bv;
+pub mod case_split;
 pub mod enumo;
 pub mod halide;
 pub mod language;
