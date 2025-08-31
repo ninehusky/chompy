@@ -1,13 +1,11 @@
 use egg::{Analysis, AstSize, EClass, Extractor, Language, RecExpr, Rewrite, Runner, Searcher};
 use indexmap::map::{IntoIter, Iter, IterMut, Values, ValuesMut};
-use rayon::iter::IntoParallelIterator;
-use rayon::prelude::ParallelIterator;
 use std::{fmt::Display, io::Write, sync::Arc};
 
 use crate::{
     conditions::{assumption::Assumption, implication_set::ImplicationSet},
-    CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits, PVec, Signature,
-    SynthAnalysis, SynthLanguage,
+    time_fn_call, CVec, DeriveType, EGraph, ExtractableAstSize, HashMap, Id, IndexMap, Limits,
+    PVec, Signature, SynthAnalysis, SynthLanguage,
 };
 
 use super::{Rule, Scheduler};
@@ -214,7 +212,8 @@ impl<L: SynthLanguage> Ruleset<L> {
         F: Fn(&Rule<L>) -> bool + std::marker::Sync,
     {
         let rules: Vec<&Rule<L>> = self.0.values().collect();
-        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_par_iter().partition(|rule| f(rule));
+        // Remove parallelism, as a brief test.
+        let (yeses, nos): (Vec<_>, Vec<_>) = rules.into_iter().partition(|rule| f(rule));
         let mut yes = Ruleset::default();
         let mut no = Ruleset::default();
         yes.add_all(yeses);
@@ -711,9 +710,10 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                     let mini_egraph = runner.egraph;
                     if mini_egraph.find(l) == mini_egraph.find(r) {
+                        let size = egraph.total_size();
                         // e1 and e2 are equivalent in the mini egraph
                         println!(
-                            "skipping {e1} and {e2} because they are equivalent in the mini egraph"
+                            "skipping {e1} and {e2} because they are equivalent in the mini egraph of size {size}"
                         );
                         continue;
                     }
@@ -727,8 +727,7 @@ impl<L: SynthLanguage> Ruleset<L> {
 
     pub fn select(&mut self, step_size: usize, invalid: &mut Ruleset<L>) -> Self {
         let mut chosen = Self::default();
-        self.0
-            .sort_by(|_, rule1, _, rule2| rule1.score().cmp(&rule2.score()));
+        self.0.sort_by(|_, r1, _, r2| r2.score().cmp(&r1.score())); // note r2 vs r1
 
         // 2. insert step_size best candidates into self.new_rws
         let mut selected: Ruleset<L> = Default::default();
@@ -972,6 +971,9 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
+            for s in selected.iter() {
+                println!("[minimize] Selected: {s}");
+            }
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
         }
@@ -1066,7 +1068,9 @@ impl<L: SynthLanguage> Ruleset<L> {
                     "an assume node merged with somethin else!"
                 );
             }
-            l_id == r_id
+            let res = l_id == r_id;
+            println!("can I derive {}?: {}", rule.name, res);
+            res
         } else {
             false
         }
@@ -1117,18 +1121,22 @@ impl<L: SynthLanguage> Ruleset<L> {
     ) -> (Self, Self) {
         against.partition(|rule| {
             println!("attempting to derive: {}", rule.name);
+            let name = rule.name.clone();
             if rule.cond.is_some() {
                 if condition_propagation_rules.is_none() {
                     panic!("Condition propagation rules required for conditional rules. You gave me: {:?}", rule);
                 }
-                self.can_derive_cond(
-                    derive_type,
-                    rule,
-                    limits,
-                    condition_propagation_rules.as_ref().unwrap(),
-                )
+                let res = time_fn_call!(
+                    format!("can_derive_{name}"),
+                    self.can_derive_cond(derive_type, rule, limits, condition_propagation_rules.as_ref().unwrap())
+                );
+                res
             } else {
-                self.can_derive(derive_type, rule, limits)
+                let res = time_fn_call!(
+                    format!("can_derive_{name}"),
+                    self.can_derive(derive_type, rule, limits)
+                );
+                res
             }
         })
     }

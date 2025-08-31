@@ -56,20 +56,40 @@ impl<L: SynthLanguage> Rule<L> {
 
         let (s, cond) = {
             if let Some((l, r)) = s.split_once(" if ") {
-                let cond: Assumption<L> = Assumption::new(r.to_string()).unwrap();
+                let cond: Result<Assumption<L>, _> = Assumption::new(r.to_string());
+                if cond.is_err() {
+                    return Err(format!("Failed to parse condition: {r}"));
+                }
+                let cond = cond.unwrap();
                 (l, Some(cond))
             } else {
                 (s, None)
             }
         };
         if let Some((l, r)) = s.split_once("=>") {
-            let l_pat: Pattern<L> = l.parse().unwrap();
-            let r_pat: Pattern<L> = r.parse().unwrap();
+            let l_pat: Result<Pattern<L>, _> = l.parse();
+            let r_pat: Result<Pattern<L>, _> = r.parse();
+            if l_pat.is_err() || r_pat.is_err() {
+                return Err(format!(
+                    "Failed to parse patterns: lhs: {l_pat:?}, rhs: {r_pat:?}"
+                ));
+            }
+
+            let l_pat = l_pat.unwrap();
+            let r_pat = r_pat.unwrap();
 
             let name = make_name(&l_pat, &r_pat, cond.clone());
 
             let forwards = if cond.is_some() {
-                Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None).unwrap()
+                let try_forwards = Rule::new_cond(&l_pat, &r_pat, &cond.clone().unwrap(), None);
+                match try_forwards {
+                    Some(rule) => rule,
+                    None => {
+                        return Err(format!(
+                            "Failed to create rule with condition: {cond:?} for {s}"
+                        ));
+                    }
+                }
             } else {
                 Self {
                     name: name.clone().into(),
@@ -84,10 +104,14 @@ impl<L: SynthLanguage> Rule<L> {
 
             if s.contains("<=>") {
                 let backwards_name = make_name(&r_pat, &l_pat, cond.clone());
-                assert!(
-                    cond.is_none(),
-                    "Conditional bidirectional rules not supported."
-                );
+                if cond.is_some() {
+                    println!("[Rule::from_string] Ignoring bidirectional rule condition: {cond:?}");
+                    return Ok((forwards, None));
+                }
+                // assert!(
+                //     cond.is_none(),
+                //     "Conditional bidirectional rules not supported."
+                // );
                 let backwards = Self {
                     name: backwards_name.clone().into(),
                     lhs: r_pat.clone(),
@@ -138,7 +162,15 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
             return vec![];
         }
 
+        // println!("I'm applying rule: {} to eclass: {}", self.rhs, matched_id);
+
+        // if egraph.are_explanations_enabled() {
+        //     egraph.union_instantiations(from_pat, to_pat, subst, rule_name)
+
+        // } else {
         egraph.union(id, matched_id);
+
+        // }
         vec![id]
     }
 }
@@ -317,6 +349,18 @@ mod test {
 
     use super::halide::Pred;
     use super::ImplicationSwitch;
+
+    #[test]
+    fn read_rule_without_crashing() {
+        let rule: Result<(Rule<Pred>, _), _> = Rule::from_string(
+            "(< (+ ?b (+ ?a ?a)) (min ?a (+ ?a ?a))) <=> (< (+ ?a (+ ?b ?b)) (min ?b ?a))",
+        );
+        assert!(rule.is_ok());
+        let (fw, bw) = rule.unwrap();
+        assert!(fw.is_valid());
+        assert!(bw.is_some());
+        assert!(bw.unwrap().is_valid());
+    }
 
     #[test]
     fn parse() {

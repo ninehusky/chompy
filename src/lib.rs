@@ -100,6 +100,15 @@ impl Limits {
         }
     }
 
+    // super synthesis
+    pub fn super_synthesis() -> Self {
+        Self {
+            iter: 5,
+            node: 300_000,
+            match_: 200_000,
+        }
+    }
+
     // match oopsla21 limits (oopsla21 did not distinguish between rulefinding and minimize limits)
     pub fn minimize() -> Self {
         Self {

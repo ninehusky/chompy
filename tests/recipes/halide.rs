@@ -12,6 +12,7 @@ pub fn halide_rules_for_caviar_total_only() -> Ruleset<Pred> {
         5,
         Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
         all_rules.clone(),
+        false,
     );
     all_rules.extend(bool_only);
     let rat_only = recursive_rules(
@@ -23,6 +24,7 @@ pub fn halide_rules_for_caviar_total_only() -> Ruleset<Pred> {
             &[&[], &["+", "-", "*", "min", "max"]],
         ),
         all_rules.clone(),
+        false,
     );
     all_rules.extend(rat_only.clone());
     let pred_only = recursive_rules(
@@ -34,6 +36,7 @@ pub fn halide_rules_for_caviar_total_only() -> Ruleset<Pred> {
             &[&[], &["<", "<=", "==", "!="], &[]],
         ),
         all_rules.clone(),
+        false,
     );
     all_rules.extend(pred_only);
 
@@ -52,6 +55,7 @@ pub fn halide_rules_for_caviar_total_only() -> Ruleset<Pred> {
             ],
         ),
         all_rules.clone(),
+        false,
     );
     all_rules.extend(full);
 

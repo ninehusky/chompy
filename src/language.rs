@@ -486,7 +486,7 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         rhs: &Pattern<Self>,
         cond: &Option<Assumption<Self>>,
         true_count: Option<usize>,
-    ) -> [i32; 4] {
+    ) -> [i32; 3] {
         fn sexp_to_cost(sexp: Sexp) -> i32 {
             match sexp {
                 Sexp::Atom(a) => {
@@ -518,17 +518,13 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
             vars.extend(cond_pat.vars());
         }
 
-        let lhs_bigger = if AstSize.cost_rec(&lhs.ast) as i32 > AstSize.cost_rec(&rhs.ast) as i32 {
-            1
-        } else {
-            0
-        };
-
         [
-            (vars.len() as i32),
-            -(l_cost + r_cost + c_cost),
-            (true_count.unwrap_or(i32::MAX as usize) as i32),
-            lhs_bigger,
+            // 1. prefer more variables
+            -(vars.len() as i32),
+            // 2. prefer smaller overall AST cost
+            l_cost + r_cost + c_cost,
+            // 3. prefer larger true_count
+            -(true_count.unwrap_or(i32::MAX as usize) as i32),
         ]
     }
 
@@ -922,7 +918,8 @@ pub mod implication_switch_tests {
             Some(20),
         );
 
-        assert!(score1.cmp(&score2) == std::cmp::Ordering::Less);
+        // 2 should come before 1, with our new scoring way.
+        assert!(score2.cmp(&score1) == std::cmp::Ordering::Less);
 
         let mut rules: Ruleset<Pred> = Default::default();
         rules.add_cond_from_recexprs(
