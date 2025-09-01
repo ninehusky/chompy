@@ -579,7 +579,7 @@ mod pvec_match_tests {
     use crate::{
         enumo::{Ruleset, Scheduler, Workload},
         halide::Pred,
-        recipe_utils::run_workload,
+        recipe_utils::{run_workload, ChompyConfig},
         Limits, SynthAnalysis,
     };
 
@@ -604,31 +604,14 @@ mod pvec_match_tests {
 
         let mut all_rules: Ruleset<Pred> = Ruleset::default();
 
-        let bool_rules: Ruleset<Pred> = run_workload(
-            the_bools.clone(),
-            None,
-            Ruleset::default(),
-            Default::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-            false,
-        );
+        let bool_rules: Ruleset<Pred> =
+            run_workload(ChompyConfig::default().with_workload(the_bools.clone()));
 
         all_rules.extend(bool_rules.clone());
 
-        let and_rules: Ruleset<Pred> = run_workload(
+        let and_rules: Ruleset<Pred> = run_workload(ChompyConfig::default().with_workload(
             Workload::new(&["(&& V V)"]).plug("V", &Workload::new(&["a", "b", "0", "1"])),
-            None,
-            Ruleset::default(),
-            Default::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-            false,
-        );
+        ));
 
         all_rules.extend(and_rules.clone());
 
@@ -639,13 +622,5 @@ mod pvec_match_tests {
             "egraph size after compression: {}",
             egraph.number_of_classes()
         );
-        // let (mut imps, rules) = ImplicationSet::pvec_match(&egraph);
-
-        // let (imps, _invalid) = imps.minimize(ImplicationSet::new(), rules.clone());
-
-        // println!("imps:");
-        // for imp in imps.iter() {
-        //     println!("{}", imp.name());
-        // }
     }
 }
