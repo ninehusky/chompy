@@ -1080,46 +1080,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
-    let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-    dummy_ruleset.add(
-        Rule::from_string("(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-
-    // dummy_ruleset.add(
-    //     Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
-    //         .unwrap()
-    //         .0,
-    // );
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-
-    for r in dummy_ruleset.iter() {
-        assert!(r.is_valid());
-    }
-
     // Find rules matching terms of the shape (&& (comp x y) (comp y z))
     let comps = Workload::new(&["0", "1", "(OP V V)"])
         .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
@@ -1315,99 +1275,99 @@ pub fn og_recipe() -> Ruleset<Pred> {
     all_rules.extend(min_max_add.clone());
 
     // NOTE: commenting this out for fast iteration of other parts of the code.
-    // for op in &["min", "max"] {
-    //     let int_workload = Workload::new(&["0", "1", "(OP V V)"])
-    //         .plug("OP", &Workload::new(&[op]))
-    //         .plug("V", &Workload::new(&["a", "b", "c"]));
+    for op in &["min", "max"] {
+        let int_workload = Workload::new(&["0", "1", "(OP V V)"])
+            .plug("OP", &Workload::new(&[op]))
+            .plug("V", &Workload::new(&["a", "b", "c"]));
 
-    //     let eq_workload = Workload::new(&["0", "1", "(OP V V)"])
-    //         .plug("OP", &Workload::new(&["=="]))
-    //         .plug("V", &int_workload)
-    //         .filter(Filter::Canon(vec![
-    //             "a".to_string(),
-    //             "b".to_string(),
-    //             "c".to_string(),
-    //         ]));
+        let eq_workload = Workload::new(&["0", "1", "(OP V V)"])
+            .plug("OP", &Workload::new(&["=="]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+            ]));
 
-    //     let eq_simp = time_fn_call!(
-    //         format!("eq_simp_{}", op),
-    //         run_workload(
-    //             eq_workload,
-    //             Some(wkld.clone()),
-    //             min_max.clone(),
-    //             base_implications.clone(),
-    //             Limits::synthesis(),
-    //             Limits::minimize(),
-    //             true,
-    //             use_llm,
-    //             case_split,
-    //         )
-    //     );
+        let eq_simp = time_fn_call!(
+            format!("eq_simp_{}", op),
+            run_workload(
+                eq_workload,
+                Some(wkld.clone()),
+                min_max.clone(),
+                base_implications.clone(),
+                Limits::synthesis(),
+                Limits::minimize(),
+                true,
+                use_llm,
+                case_split,
+            )
+        );
 
-    //     all_rules.extend(eq_simp);
-    // }
+        all_rules.extend(eq_simp);
+    }
 
-    // let min_max_mul = time_fn_call!(
-    //     "min_max_mul",
-    //     recursive_rules_cond(
-    //         Metric::Atoms,
-    //         7,
-    //         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
-    //         all_rules.clone(),
-    //         base_implications.clone(),
-    //         wkld.clone(),
-    //         use_llm,
-    //         case_split,
-    //     )
-    // );
+    let min_max_mul = time_fn_call!(
+        "min_max_mul",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            use_llm,
+            case_split,
+        )
+    );
 
-    // all_rules.extend(min_max_mul);
+    all_rules.extend(min_max_mul);
 
-    // for op in &["min", "max"] {
-    //     // this workload will consist of well-typed lt comparisons, where the child
-    //     // expressions consist of variables, `+`, and `min` (of up to size 5).
-    //     let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
-    //         .filter(Filter::And(vec![
-    //             Filter::Excludes("VAL".parse().unwrap()),
-    //             Filter::Excludes("OP1".parse().unwrap()),
-    //         ]))
-    //         .plug("OP2", &Workload::new(&[op, "+"]))
-    //         .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+    for op in &["min", "max"] {
+        // this workload will consist of well-typed lt comparisons, where the child
+        // expressions consist of variables, `+`, and `min` (of up to size 5).
+        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
+            .filter(Filter::And(vec![
+                Filter::Excludes("VAL".parse().unwrap()),
+                Filter::Excludes("OP1".parse().unwrap()),
+            ]))
+            .plug("OP2", &Workload::new(&[op, "+"]))
+            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
 
-    //     let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
-    //         .plug("OP", &Workload::new(&["<"]))
-    //         .plug("V", &int_workload)
-    //         .filter(Filter::Canon(vec![
-    //             "a".to_string(),
-    //             "b".to_string(),
-    //             "c".to_string(),
-    //             "d".to_string(),
-    //         ]));
+        let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
+            .plug("OP", &Workload::new(&["<"]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ]));
 
-    //     let cond_workload = Workload::new(&["(OP2 V 0)"])
-    //         .plug("OP2", &Workload::new(&["<"]))
-    //         .plug(
-    //             "V",
-    //             &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
-    //         );
+        let cond_workload = Workload::new(&["(OP2 V 0)"])
+            .plug("OP2", &Workload::new(&["<"]))
+            .plug(
+                "V",
+                &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
+            );
 
-    //     let rules = time_fn_call!(
-    //         format!("lt_add_{}", op),
-    //         run_workload(
-    //             lt_workload.clone(),
-    //             Some(cond_workload.clone()),
-    //             all_rules.clone(),
-    //             base_implications.clone(),
-    //             Limits::synthesis(),
-    //             Limits::minimize(),
-    //             true,
-    //             false,
-    //             case_split,
-    //         )
-    //     );
+        let rules = time_fn_call!(
+            format!("lt_add_{}", op),
+            run_workload(
+                lt_workload.clone(),
+                Some(cond_workload.clone()),
+                all_rules.clone(),
+                base_implications.clone(),
+                Limits::synthesis(),
+                Limits::minimize(),
+                true,
+                false,
+                case_split,
+            )
+        );
 
-    //     all_rules.extend(rules);
-    // }
+        all_rules.extend(rules);
+    }
 
     // // BEGIN DEBUG
     // let double_div_cancel: Rule<Pred> =
