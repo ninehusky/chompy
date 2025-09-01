@@ -749,6 +749,10 @@ impl<L: SynthLanguage> Ruleset<L> {
 
                 if let Some(reverse) = reverse {
                     if self.contains(&reverse) && reverse.is_valid() {
+                        let mut dummy: Ruleset<L> = Default::default();
+                        dummy.add(reverse.clone());
+                        self.remove_all(dummy);
+
                         selected.add(reverse);
                     } else {
                         invalid.add(reverse);

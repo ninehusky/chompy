@@ -103,7 +103,7 @@ pub fn case_split_minimize<L: SynthLanguage>(
         let (_, rule) = chosen.clone().into_iter().next().unwrap().clone();
         let result = !case_split(rule.clone(), new_ruleset.clone(), implications.clone());
         if result {
-            new_ruleset.extend(chosen);
+            new_ruleset.add(rule.clone());
         }
     }
 
@@ -291,7 +291,8 @@ fn case_split_internal<L: SynthLanguage>(
 
     if egraph.find(l_id) == egraph.find(r_id) {
         if depth == 0 {
-            panic!("Proved without case splits!");
+            println!("Proved without case splits");
+            // panic!("Proved without case splits!");
         }
         return true;
     }
@@ -379,18 +380,8 @@ pub mod analysis_tests {
                 "d".to_string(),
             ]));
 
-        // for t in lt_workload.clone().force() {
-        //     println!("Workload term: {}", t);
-        // }
-
-        let cond_wkld =
-            Workload::new(&["(< VAR 0)"]).plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
-
-        let new_rules = run_workload(
-            ChompyConfig::default()
-                .with_workload(lt_workload.clone())
-                .with_prior(baseline.clone()),
-        );
+        // let cond_wkld =
+        //     Workload::new(&["(< VAR 0)"]).plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
 
         let minimized = run_workload(
             ChompyConfig::default()
@@ -399,9 +390,15 @@ pub mod analysis_tests {
                 .with_case_split(true),
         );
 
-        let full_len = new_rules.len();
+        let full_rules = run_workload(
+            ChompyConfig::default()
+                .with_workload(lt_workload.clone())
+                .with_prior(baseline.clone()),
+        );
+
+        let full_len = full_rules.len();
         println!("new rules (full):");
-        new_rules.pretty_print();
+        full_rules.pretty_print();
 
         println!("new rules (case split):");
         minimized.pretty_print();
@@ -414,7 +411,7 @@ pub mod analysis_tests {
         );
         minimized.pretty_print();
 
-        for r in new_rules.iter() {
+        for r in full_rules.iter() {
             if r.cond.is_some() {
                 println!("Skipping conditional rule: {r}");
                 continue;

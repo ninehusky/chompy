@@ -146,32 +146,33 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
         egraph: &mut EGraph<L, SynthAnalysis>,
         matched_id: Id,
         subst: &Subst,
-        _ast: Option<&PatternAst<L>>,
-        _sym: Symbol,
+        ast: Option<&PatternAst<L>>,
+        sym: Symbol,
     ) -> Vec<Id> {
-        if !egraph[matched_id].data.is_defined() {
-            return vec![];
-        }
-
-        let id = apply_pat(self.rhs.ast.as_ref(), egraph, subst);
-        if id == matched_id {
-            return vec![];
-        }
-
-        if !egraph[id].data.is_defined() {
-            return vec![];
-        }
-
-        // println!("I'm applying rule: {} to eclass: {}", self.rhs, matched_id);
-
-        // if egraph.are_explanations_enabled() {
-        //     egraph.union_instantiations(from_pat, to_pat, subst, rule_name)
-
-        // } else {
-        egraph.union(id, matched_id);
-
+        self.rhs.apply_one(egraph, matched_id, subst, ast, sym)
+        // if !egraph[matched_id].data.is_defined() {
+        //     return vec![];
         // }
-        vec![id]
+
+        // let id = apply_pat(self.rhs.ast.as_ref(), egraph, subst);
+        // if id == matched_id {
+        //     return vec![];
+        // }
+
+        // if !egraph[id].data.is_defined() {
+        //     return vec![];
+        // }
+
+        // // println!("I'm applying rule: {} to eclass: {}", self.rhs, matched_id);
+
+        // // if egraph.are_explanations_enabled() {
+        // //     egraph.union_instantiations(from_pat, to_pat, subst, rule_name)
+
+        // // } else {
+        // egraph.union(id, matched_id);
+
+        // // }
+        // vec![id]
     }
 }
 
