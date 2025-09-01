@@ -871,7 +871,6 @@ pub mod halide_derive_tests {
             Limits::minimize(),
             true,
             USE_LLM,
-
             false,
         );
 
@@ -892,7 +891,6 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_workload.clone(),
             USE_LLM,
-
             false,
         );
 
@@ -984,7 +982,6 @@ pub mod halide_derive_tests {
             Limits::minimize(),
             true,
             USE_LLM,
-
             false,
         );
 
@@ -1016,7 +1013,6 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_wkld.clone(),
             USE_LLM,
-
             false,
         );
 
@@ -1030,7 +1026,6 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_wkld.clone(),
             USE_LLM,
-
             false,
         );
 

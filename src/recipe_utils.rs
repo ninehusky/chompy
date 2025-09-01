@@ -3,7 +3,11 @@ use std::time::Instant;
 use egg::{AstSize, EGraph, Extractor, Runner};
 
 use crate::{
-    case_split::case_split_minimize, conditions::implication_set::ImplicationSet, enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload}, llm::sort_rule_candidates, Limits, SynthAnalysis, SynthLanguage
+    case_split::case_split_minimize,
+    conditions::implication_set::ImplicationSet,
+    enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
+    llm::sort_rule_candidates,
+    Limits, SynthAnalysis, SynthLanguage,
 };
 
 // After candidate collection, if there are MAX_RULE_SIZE rules remaining, we will
@@ -129,9 +133,10 @@ fn run_workload_internal<L: SynthLanguage>(
 
     // 3. Shrink the total candidates to a minimal set using the existing rules.
     let chosen_total = {
-        let (chosen_total, _) = total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
+        let (chosen_total, _) =
+            total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
         if case_split {
-            case_split_minimize(chosen_total, chosen.clone(),state.implications().clone())
+            case_split_minimize(chosen_total, chosen.clone(), state.implications().clone())
         } else {
             chosen_total
         }
@@ -195,7 +200,6 @@ fn run_workload_internal<L: SynthLanguage>(
             }
         };
 
-
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
     }
@@ -227,7 +231,7 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
     fast_match: bool,
     allow_empty: bool,
     use_llm: bool,
-    case_split: bool,
+    _case_split: bool,
 ) -> Ruleset<L> {
     let prior: Ruleset<L> = state.chosen().clone();
     let cond_workload = state.predicates().clone();
@@ -395,7 +399,7 @@ pub fn run_workload<L: SynthLanguage>(
         fast_match,
         true,
         use_llm,
-        case_split
+        case_split,
     );
 
     println!(
@@ -557,7 +561,7 @@ pub fn recursive_rules<L: SynthLanguage>(
         ImplicationSet::default(),
         Workload::empty(),
         use_llm,
-        case_split
+        case_split,
     )
 }
 

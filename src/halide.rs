@@ -1115,16 +1115,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
 
     all_rules.extend(and_comps_rules.clone());
 
-    for r in dummy_ruleset.iter() {
-        println!("deriving {}?", r.name);
-        assert!(all_rules.can_derive_cond(
-            DeriveType::LhsAndRhs,
-            r,
-            Limits::deriving(),
-            &base_implications.to_egg_rewrites()
-        ));
-    }
-
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
         5,

@@ -4,9 +4,9 @@ use crate::{
     halide::Pred,
     SynthAnalysis, SynthLanguage,
 };
-use egg::{EGraph, Pattern, Rewrite, Runner, Var};
+use egg::{EGraph, Pattern, Rewrite, Runner};
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 // ======== Split Records ========
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
