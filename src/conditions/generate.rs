@@ -1,6 +1,6 @@
 use egg::{AstSize, Extractor};
 
-use crate::conditions::implication_set::ImplicationSet;
+use crate::recipe_utils::ChompyConfig;
 use crate::{
     enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload},
     halide::Pred,
@@ -46,23 +46,15 @@ pub fn get_condition_workload() -> Workload {
             &["a", "b", "c"],
             &[&[], &["<", "<=", "==", "!=", "&&"]],
         ),
-        Ruleset::default(),
-        false,
-        false,
+        ChompyConfig::default(),
     );
 
     eq_rules.extend(new_rules);
 
     let rules = run_workload(
-        branches.clone(),
-        None,
-        eq_rules,
-        ImplicationSet::default(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true,
-        false,
-        false,
+        ChompyConfig::default()
+            .with_workload(branches.clone())
+            .with_prior(eq_rules.clone()),
     );
 
     let branches_better = compress(&branches, rules.clone());

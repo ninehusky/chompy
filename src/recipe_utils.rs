@@ -125,8 +125,8 @@ fn run_workload_internal<L: SynthLanguage>(
     // 3. Shrink the total candidates to a minimal set using the existing rules.
     let chosen_total = {
         let (chosen_total, _) =
-            total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
-        if case_split {
+            total_candidates.minimize(prior.clone(), Scheduler::Compress(cfg.minimize_limits));
+        if cfg.case_split {
             case_split_minimize(chosen_total, chosen.clone(), state.implications().clone())
         } else {
             chosen_total
@@ -196,10 +196,6 @@ fn run_workload_internal<L: SynthLanguage>(
     }
 
     let time = t.elapsed().as_secs_f64();
-
-    if chosen.is_empty() && !allow_empty {
-        panic!("Didn't learn any rules!");
-    }
 
     println!(
         "Learned {} bidirectional rewrites, and {} conditional rules ({} total rewrites) in {} using {} prior rewrites",
@@ -419,7 +415,11 @@ impl<L: SynthLanguage> ChompyConfig<L> {
     }
 }
 
-
+/// The default configuration for Chompy.
+/// It's an empty workload, cond workload, and prior ruleset/implication set:
+/// those are the bits you'll need to specify. But the remaining configurations:
+/// the limits, the usage of fast match/LLM/case split, are all set to basically
+/// emulate the original Ruler, with conditions.
 impl<L: SynthLanguage> Default for ChompyConfig<L> {
     fn default() -> Self {
         Self {
@@ -436,12 +436,21 @@ impl<L: SynthLanguage> Default for ChompyConfig<L> {
     }
 }
 
-pub fn synthesis_config<L: SynthLanguage>(wkld: Workload, cond_wkld: Option<Workload>, use_llm: bool, case_split: bool) -> ChompyConfig<L>{
-    let cfg = ChompyConfig::default()
+pub fn synthesis_config<L: SynthLanguage>(
+    wkld: Workload,
+    cond_wkld: Option<Workload>,
+    prior: Ruleset<L>,
+    prior_impls: ImplicationSet<L>,
+    use_llm: bool,
+    case_split: bool,
+) -> ChompyConfig<L> {
+    ChompyConfig::default()
         .with_workload(wkld)
         .with_cond_workload(cond_wkld)
+        .with_prior(prior)
+        .with_prior_impls(prior_impls)
         .with_use_llm(use_llm)
-        .with_case_split(case_split);
+        .with_case_split(case_split)
 }
 
 /// Runs rule inference:
@@ -449,9 +458,7 @@ pub fn synthesis_config<L: SynthLanguage>(wkld: Workload, cond_wkld: Option<Work
 ///     2. If there are prior rules, compress the e-graph using them
 ///     3. Find candidates via CVec matching
 ///     4. Minimize the candidates with respect to the prior rules
-pub fn run_workload<L: SynthLanguage>(
-    cfg: ChompyConfig<L>,
-) -> Ruleset<L> {
+pub fn run_workload<L: SynthLanguage>(cfg: ChompyConfig<L>) -> Ruleset<L> {
     println!("[run_workload] Running workload");
     let start = Instant::now();
     let mut state: ChompyState<L> = ChompyState::new(
@@ -461,10 +468,7 @@ pub fn run_workload<L: SynthLanguage>(
         cfg.clone().prior_impls,
     );
 
-    let res = run_workload_internal(
-        cfg,
-        &mut state
-    );
+    let res = run_workload_internal(cfg, &mut state);
 
     println!(
         "[run_workload] Finished workload in {:.2}s",
@@ -546,7 +550,6 @@ impl Lang {
     }
 }
 
-
 /// Incrementally construct a ruleset by running rule inference up to a size bound,
 /// using previously-learned rules at each step.
 pub fn recursive_rules_cond<L: SynthLanguage>(
@@ -558,12 +561,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     if n < 1 {
         Ruleset::default()
     } else {
-        let mut rec = recursive_rules_cond(
-            metric,
-            n - 1,
-            lang.clone(),
-            cfg,
-        );
+        let mut rec = recursive_rules_cond(metric, n - 1, lang.clone(), cfg.clone());
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
         } else {
@@ -579,16 +577,16 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
         }
         wkld = wkld.append(Workload::new(&["0", "1"]));
 
-        rec.extend(cfg.prior);
-        let allow_empty = n < 3;
+        rec.extend(cfg.clone().prior);
 
-        let mut state: ChompyState<L> =
-            ChompyState::new(wkld, rec.clone(), cfg.cond_workload.unwrap(), cfg.prior_impls);
-
-        let new_rules = run_workload_internal(
-            cfg,
-            &mut state
+        let mut state: ChompyState<L> = ChompyState::new(
+            wkld,
+            rec.clone(),
+            cfg.clone().cond_workload.unwrap_or_default(),
+            cfg.clone().prior_impls,
         );
+
+        let new_rules = run_workload_internal(cfg, &mut state);
         let mut all = new_rules;
         all.extend(rec);
         all
@@ -601,14 +599,9 @@ pub fn recursive_rules<L: SynthLanguage>(
     metric: Metric,
     n: usize,
     lang: Lang,
-    cfg: ChompyConfig<L>
+    cfg: ChompyConfig<L>,
 ) -> Ruleset<L> {
-    recursive_rules_cond(
-        metric,
-        n,
-        lang,
-        cfg
-    )
+    recursive_rules_cond(metric, n, lang, cfg)
 }
 
 /// Util function for making a grammar with variables, values, and operators with up to n arguments.

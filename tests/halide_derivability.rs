@@ -299,7 +299,7 @@ pub mod halide_derive_tests {
         halide::og_recipe,
         recipe_utils::{
             base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm,
-            Lang,
+            ChompyConfig, Lang,
         },
         time_fn_call, SynthAnalysis,
     };
@@ -974,15 +974,9 @@ pub mod halide_derive_tests {
             .plug("V", &Workload::new(&["a", "b", "c", "0"]));
 
         let cond_rules: Ruleset<Pred> = run_workload(
-            cond_wkld.clone(),
-            None,
-            Ruleset::default(),
-            ImplicationSet::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            USE_LLM,
-            false,
+            ChompyConfig::default()
+                .with_workload(cond_wkld.clone())
+                .with_use_llm(USE_LLM),
         );
 
         all_rules.extend(cond_rules.clone());
@@ -1009,11 +1003,15 @@ pub mod halide_derive_tests {
             Metric::Atoms,
             5,
             Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "+"]]),
-            all_rules.clone(),
-            implications.clone(),
-            cond_wkld.clone(),
-            USE_LLM,
-            false,
+            ChompyConfig::default()
+                .with_prior(all_rules.clone())
+                .with_prior_impls(implications.clone())
+                .with_cond_workload(Some(cond_wkld.clone()))
+                .with_use_llm(USE_LLM), // all_rules.clone(),
+                                        // implications.clone(),
+                                        // cond_wkld.clone(),
+                                        // USE_LLM,
+                                        // false,
         );
 
         all_rules.extend(min_max_add_rules);
@@ -1022,11 +1020,11 @@ pub mod halide_derive_tests {
             Metric::Atoms,
             5,
             Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "-"]]),
-            all_rules.clone(),
-            implications.clone(),
-            cond_wkld.clone(),
-            USE_LLM,
-            false,
+            ChompyConfig::default()
+                .with_prior(all_rules.clone())
+                .with_prior_impls(implications.clone())
+                .with_cond_workload(Some(cond_wkld.clone()))
+                .with_use_llm(USE_LLM),
         );
 
         all_rules.extend(min_max_sub_rules);
@@ -1035,11 +1033,11 @@ pub mod halide_derive_tests {
             Metric::Atoms,
             7,
             Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
-            all_rules.clone(),
-            implications.clone(),
-            cond_wkld.clone(),
-            USE_LLM,
-            false,
+            ChompyConfig::default()
+                .with_prior(all_rules.clone())
+                .with_prior_impls(implications.clone())
+                .with_cond_workload(Some(cond_wkld.clone()))
+                .with_use_llm(USE_LLM),
         );
 
         all_rules.extend(min_max_mul_rules);

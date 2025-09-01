@@ -85,11 +85,14 @@ impl CaseSplitTracker {
 
 pub fn case_split_minimize<L: SynthLanguage>(
     ruleset: Ruleset<L>,
-    chosen: Ruleset<L>,
+    initial: Ruleset<L>,
     implications: ImplicationSet<L>,
 ) -> Ruleset<L> {
-    let initial_len = ruleset.len();
-    let mut new_ruleset = chosen.clone();
+    println!("Starting case splitting minimization...");
+    println!("with {} implications", implications.len());
+
+    let before_len = ruleset.len();
+    let mut new_ruleset = initial.clone();
     let mut ruleset = ruleset.clone();
     while !ruleset.is_empty() {
         let chosen = ruleset.select(1, &mut Default::default());
@@ -105,17 +108,17 @@ pub fn case_split_minimize<L: SynthLanguage>(
     }
 
     // Return only new rules
-    new_ruleset.remove_all(chosen);
+    // new_ruleset.remove_all(initial);
 
-    let final_len = new_ruleset.len();
+    // let final_len = new_ruleset.len();
 
-    println!("Finished case splitting minimization.");
-    println!(
-        "Reduced ruleset from {} to {} rules ({} removed).",
-        initial_len,
-        final_len,
-        initial_len - final_len
-    );
+    // println!("Finished case splitting minimization.");
+    // println!(
+    //     "Reduced ruleset from {} to {} rules ({} removed).",
+    //     before_len,
+    //     final_len,
+    //     before_len - final_len
+    // );
 
     new_ruleset
 }
@@ -182,6 +185,10 @@ fn case_split<L: SynthLanguage>(
 ) -> bool {
     let tracker = CaseSplitTracker::new();
     println!("Case splitting on rule: {rule}");
+    println!("My current rules:");
+    for r in ruleset.iter() {
+        println!("  {}", r);
+    }
     case_split_internal(0, &rule, &[], &tracker, ruleset, implications)
 }
 
@@ -238,12 +245,17 @@ fn case_split_internal<L: SynthLanguage>(
         return false;
     }
 
-    println!("assumptions at depth {depth}");
-    for a in assumptions {
-        println!("  {a}");
-    }
+    let assumptions: Vec<Assumption<L>> = if rule.cond.is_some() {
+        let assumption_from_condition: Assumption<L> = Assumption::new(
+            L::instantiate(&rule.cond.as_ref().unwrap().chop_assumption()).to_string(),
+        )
+        .expect("Failed to parse condition as assumption");
+        [assumptions, &[assumption_from_condition]].concat()
+    } else {
+        assumptions.to_vec()
+    };
 
-    if is_false(assumptions) {
+    if is_false(assumptions.clone().as_slice()) {
         // We can vacuously prove anything in the world where false is true
         return true;
     }
@@ -254,16 +266,8 @@ fn case_split_internal<L: SynthLanguage>(
     let r_id = egraph.add_expr(&L::instantiate(&rule.rhs));
 
     // 1. add each assumption to the egraph.
-    for a in assumptions {
+    for a in assumptions.clone() {
         a.insert_into_egraph(&mut egraph);
-    }
-
-    if rule.cond.is_some() {
-        let assumption_from_condition: Assumption<L> = Assumption::new(
-            L::instantiate(&rule.cond.as_ref().unwrap().chop_assumption()).to_string(),
-        )
-        .expect("Failed to parse condition as assumption");
-        assumption_from_condition.insert_into_egraph(&mut egraph);
     }
 
     let rules: Vec<Rewrite<L, SynthAnalysis>> = ruleset.iter().map(|r| r.rewrite.clone()).collect();
@@ -287,7 +291,7 @@ fn case_split_internal<L: SynthLanguage>(
 
     if egraph.find(l_id) == egraph.find(r_id) {
         if depth == 0 {
-            println!("Proved without case splits!");
+            panic!("Proved without case splits!");
         }
         return true;
     }
@@ -299,7 +303,7 @@ fn case_split_internal<L: SynthLanguage>(
             SplitCandidate::Order(o) => {
                 let split_assumptions: Vec<Assumption<L>> = o.into();
                 for a in &split_assumptions {
-                    let new_assumptions = [assumptions, &[a.clone()]].concat();
+                    let new_assumptions = [assumptions.clone(), vec![a.clone()]].concat();
                     let result = case_split_internal(
                         depth + 1,
                         rule,
@@ -329,7 +333,7 @@ pub mod analysis_tests {
         case_split::case_split,
         enumo::{Filter, Metric, Rule, Ruleset, Workload},
         halide::Pred,
-        recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang},
+        recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, ChompyConfig, Lang},
         DeriveType, Limits,
     };
 
@@ -341,8 +345,6 @@ pub mod analysis_tests {
             9,
             Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
             Default::default(),
-            false,
-            false,
         );
 
         let lt_rules: Ruleset<Pred> = recursive_rules(
@@ -350,8 +352,6 @@ pub mod analysis_tests {
             3,
             Lang::new(&[], &["a", "b", "c"], &[&[], &["<"]]),
             Default::default(),
-            false,
-            false,
         );
 
         baseline.extend(lt_rules);
@@ -387,35 +387,28 @@ pub mod analysis_tests {
             Workload::new(&["(< VAR 0)"]).plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
 
         let new_rules = run_workload(
-            lt_workload,
-            Some(cond_wkld),
-            baseline.clone(),
-            Default::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-            false,
+            ChompyConfig::default()
+                .with_workload(lt_workload.clone())
+                .with_prior(baseline.clone()),
         );
 
-        // new_rules.add(Rule::from_string("(> ?a ?b) ==> (< ?b ?a)").unwrap().0);
-
-        let r: Rule<Pred> = Rule::from_string("(< (+ ?a ?b) (+ ?a ?c)) ==> (< ?b ?c)")
-            .unwrap()
-            .0;
-        assert!(r.is_valid());
+        let minimized = run_workload(
+            ChompyConfig::default()
+                .with_workload(lt_workload.clone())
+                .with_prior(baseline.clone())
+                .with_case_split(true),
+        );
 
         let full_len = new_rules.len();
-        println!("Generated {full_len} new rules");
+        println!("new rules (full):");
         new_rules.pretty_print();
 
-        assert!(new_rules.can_derive(DeriveType::LhsAndRhs, &r, Limits::deriving()));
-
-        let minimized =
-            super::case_split_minimize(new_rules.clone(), Default::default(), Default::default());
+        println!("new rules (case split):");
+        minimized.pretty_print();
 
         println!(
-            "Minimized to {} rules (difference of {})",
+            "Minimized {} to {} rules (difference of {})",
+            full_len,
             minimized.len(),
             full_len - minimized.len()
         );
@@ -432,13 +425,5 @@ pub mod analysis_tests {
                 r
             );
         }
-    }
-
-    #[test]
-    fn thing_is_valid() {
-        let r: Rule<Pred> = Rule::from_string("(< (+ ?a ?b) (+ ?a ?c)) ==> (< ?b ?c)")
-            .unwrap()
-            .0;
-        assert!(r.is_valid());
     }
 }
