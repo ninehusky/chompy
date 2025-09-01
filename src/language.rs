@@ -519,10 +519,10 @@ pub trait SynthLanguage: Language + Send + Sync + Display + FromOp + 'static {
         }
 
         [
-            // 1. prefer more variables
-            -(vars.len() as i32),
-            // 2. prefer smaller overall AST cost
+            // 1. prefer smaller overall AST cost
             l_cost + r_cost + c_cost,
+            // 2. prefer more variables
+            -(vars.len() as i32),
             // 3. prefer larger true_count
             -(true_count.unwrap_or(i32::MAX as usize) as i32),
         ]
