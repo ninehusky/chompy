@@ -384,6 +384,7 @@ pub mod halide_derive_tests {
             base_implications.clone(),
             cond_workload,
             false,
+            false,
         );
 
         all_rules.extend(rules);
@@ -535,6 +536,7 @@ pub mod halide_derive_tests {
             true,
             true,
             true,
+            false,
         )
         .await;
 
@@ -677,6 +679,7 @@ pub mod halide_derive_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            false,
             false,
         );
 
@@ -868,6 +871,8 @@ pub mod halide_derive_tests {
             Limits::minimize(),
             true,
             USE_LLM,
+
+            false,
         );
 
         let cond_workload = compress(&cond_workload, rules.clone());
@@ -887,6 +892,8 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_workload.clone(),
             USE_LLM,
+
+            false,
         );
 
         println!("min_max_rules: {}", min_max_rules.len());
@@ -977,6 +984,8 @@ pub mod halide_derive_tests {
             Limits::minimize(),
             true,
             USE_LLM,
+
+            false,
         );
 
         all_rules.extend(cond_rules.clone());
@@ -1007,6 +1016,8 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_wkld.clone(),
             USE_LLM,
+
+            false,
         );
 
         all_rules.extend(min_max_add_rules);
@@ -1019,6 +1030,8 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_wkld.clone(),
             USE_LLM,
+
+            false,
         );
 
         all_rules.extend(min_max_sub_rules);
@@ -1031,6 +1044,7 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_wkld.clone(),
             USE_LLM,
+            false,
         );
 
         all_rules.extend(min_max_mul_rules);

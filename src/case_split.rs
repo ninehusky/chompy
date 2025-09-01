@@ -15,7 +15,7 @@ struct OrderSplit {
     rhs: String,
 }
 
-impl From<OrderSplit> for Vec<Assumption<Pred>> {
+impl<L: SynthLanguage> From<OrderSplit> for Vec<Assumption<L>> {
     fn from(os: OrderSplit) -> Self {
         vec![
             Assumption::new(format!("(< {} {})", os.lhs, os.rhs)).unwrap(),
@@ -44,7 +44,7 @@ impl CaseSplitTracker {
     }
 
     // Generates candidate splits for a given rule
-    fn get_next_split(&mut self, rule: &Rule<Pred>) -> Option<SplitCandidate> {
+    fn get_next_split<L: SynthLanguage>(&mut self, rule: &Rule<L>) -> Option<SplitCandidate> {
         // TODO: does vars contain concrete variables or metavariables?
         let mut vars = rule.lhs.vars();
         vars.extend(rule.rhs.vars());
@@ -83,11 +83,12 @@ impl CaseSplitTracker {
     }
 }
 
-pub fn case_split_minimize(
-    ruleset: Ruleset<Pred>,
-    chosen: Ruleset<Pred>,
-    implications: ImplicationSet<Pred>,
-) -> Ruleset<Pred> {
+pub fn case_split_minimize<L: SynthLanguage>(
+    ruleset: Ruleset<L>,
+    chosen: Ruleset<L>,
+    implications: ImplicationSet<L>,
+) -> Ruleset<L> {
+    let initial_len = ruleset.len();
     let mut new_ruleset = chosen.clone();
     let mut ruleset = ruleset.clone();
     while !ruleset.is_empty() {
@@ -95,18 +96,26 @@ pub fn case_split_minimize(
         if chosen.len() == 0 {
             break;
         }
-        println!("I chose:");
-        for c in chosen.iter() {
-            println!("   {}", c);
-        }
 
         let (_, rule) = chosen.clone().into_iter().next().unwrap().clone();
         let result = !case_split(rule.clone(), new_ruleset.clone(), implications.clone());
-        println!("result for {}: {}", rule, result);
         if result {
             new_ruleset.extend(chosen);
         }
     }
+
+    // Return only new rules
+    new_ruleset.remove_all(chosen);
+
+    let final_len = new_ruleset.len();
+
+    println!("Finished case splitting minimization.");
+    println!(
+        "Reduced ruleset from {} to {} rules ({} removed).",
+        initial_len,
+        final_len,
+        initial_len - final_len
+    );
 
     new_ruleset
 }
@@ -166,17 +175,17 @@ mod split_tests {
 }
 
 // Returns false if you should keep it, true otherwise.
-fn case_split(
-    rule: Rule<Pred>,
-    ruleset: Ruleset<Pred>,
-    implications: ImplicationSet<Pred>,
+fn case_split<L: SynthLanguage>(
+    rule: Rule<L>,
+    ruleset: Ruleset<L>,
+    implications: ImplicationSet<L>,
 ) -> bool {
     let tracker = CaseSplitTracker::new();
     println!("Case splitting on rule: {}", rule);
     case_split_internal(0, &rule, &[], &tracker, ruleset, implications)
 }
 
-fn is_false(assumptions: &[Assumption<Pred>]) -> bool {
+fn is_false<L: SynthLanguage>(assumptions: &[Assumption<L>]) -> bool {
     // No assumptions means no contradiction
     if assumptions.is_empty() {
         return false;
@@ -188,10 +197,10 @@ fn is_false(assumptions: &[Assumption<Pred>]) -> bool {
     let patterns = assumptions
         .iter()
         .map(|a| a.chop_assumption())
-        .collect::<Vec<Pattern<Pred>>>();
+        .collect::<Vec<Pattern<L>>>();
 
     let mut terms = String::new();
-    fn construct_terms(remaining: &[Pattern<Pred>], acc: &mut String) {
+    fn construct_terms<L: SynthLanguage>(remaining: &[Pattern<L>], acc: &mut String) {
         if remaining.len() == 1 {
             acc.push_str(&remaining[0].to_string());
         } else if remaining.len() > 1 {
@@ -216,13 +225,13 @@ fn is_false(assumptions: &[Assumption<Pred>]) -> bool {
 }
 
 // Returns false if you should keep it. Returns true if you should throw it away.
-fn case_split_internal(
+fn case_split_internal<L: SynthLanguage>(
     depth: usize,
-    rule: &Rule<Pred>,
-    assumptions: &[Assumption<Pred>],
+    rule: &Rule<L>,
+    assumptions: &[Assumption<L>],
     tracker: &CaseSplitTracker,
-    ruleset: Ruleset<Pred>,
-    implications: ImplicationSet<Pred>,
+    ruleset: Ruleset<L>,
+    implications: ImplicationSet<L>,
 ) -> bool {
     if depth > 10 {
         println!("Bailed out of case splitting at depth {}", depth);
@@ -240,9 +249,9 @@ fn case_split_internal(
     }
 
     // actually, if we wanted, we could even cache this between calls.
-    let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default();
-    let l_id = egraph.add_expr(&Pred::instantiate(&rule.lhs));
-    let r_id = egraph.add_expr(&Pred::instantiate(&rule.rhs));
+    let mut egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+    let l_id = egraph.add_expr(&L::instantiate(&rule.lhs));
+    let r_id = egraph.add_expr(&L::instantiate(&rule.rhs));
 
     // 1. add each assumption to the egraph.
     for a in assumptions {
@@ -250,35 +259,36 @@ fn case_split_internal(
     }
 
     if rule.cond.is_some() {
-        let assumption_from_condition: Assumption<Pred> = Assumption::new(
-            Pred::instantiate(&rule.cond.as_ref().unwrap().chop_assumption()).to_string(),
+        let assumption_from_condition: Assumption<L> = Assumption::new(
+            L::instantiate(&rule.cond.as_ref().unwrap().chop_assumption()).to_string(),
         )
         .expect("Failed to parse condition as assumption");
         assumption_from_condition.insert_into_egraph(&mut egraph);
     }
 
-    let rules: Vec<Rewrite<Pred, SynthAnalysis>> =
-        ruleset.iter().map(|r| r.rewrite.clone()).collect();
+    let rules: Vec<Rewrite<L, SynthAnalysis>> = ruleset.iter().map(|r| r.rewrite.clone()).collect();
 
     // 2. rewrite the assumption as needed
-    let runner: Runner<Pred, SynthAnalysis> = Runner::default().with_egraph(egraph).run(&rules);
+    let runner: Runner<L, SynthAnalysis> = Runner::default().with_egraph(egraph).run(&rules);
 
     egraph = runner.egraph;
 
     // 3. run the implications that follow from the assumptions
-    let runner: Runner<Pred, SynthAnalysis> = Runner::default()
+    let runner: Runner<L, SynthAnalysis> = Runner::default()
         .with_egraph(egraph)
         .run(&implications.to_egg_rewrites());
 
     egraph = runner.egraph;
 
     // 4. rewrite the entire term space
-    let runner: Runner<Pred, SynthAnalysis> = Runner::default().with_egraph(egraph).run(&rules);
+    let runner: Runner<L, SynthAnalysis> = Runner::default().with_egraph(egraph).run(&rules);
 
     egraph = runner.egraph;
 
     if egraph.find(l_id) == egraph.find(r_id) {
-        println!("Proved by case splitting at depth {}", depth);
+        if depth == 0 {
+            println!("Proved without case splits!");
+        }
         return true;
     }
 
@@ -287,7 +297,7 @@ fn case_split_internal(
     if let Some(split) = tracker.get_next_split(rule) {
         match split {
             SplitCandidate::Order(o) => {
-                let split_assumptions: Vec<Assumption<Pred>> = o.into();
+                let split_assumptions: Vec<Assumption<L>> = o.into();
                 for a in &split_assumptions {
                     let new_assumptions = [assumptions, &[a.clone()]].concat();
                     let result = case_split_internal(
@@ -301,6 +311,7 @@ fn case_split_internal(
                     if !result {
                         return false;
                     }
+                    println!("Proved by case splitting at depth {}", depth);
                 }
             }
         }

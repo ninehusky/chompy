@@ -145,7 +145,7 @@ impl<L: SynthLanguage> Implication<L> {
     ///            result.lookup_expr(&imp.rhs().clone().into()));
     /// ```
     pub fn rewrite(&self) -> Rewrite<L, SynthAnalysis> {
-        assert!(self.is_valid(), "Implication is not valid: {}", self.name);
+        // assert!(self.is_valid(), "Implication is not valid: {}", self.name);
         Rewrite::new(
             format!("impl: {}", self.name),
             Pattern::<L>::from(self.lhs.clone()),

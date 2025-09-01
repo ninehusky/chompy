@@ -48,6 +48,7 @@ pub fn get_condition_workload() -> Workload {
         ),
         Ruleset::default(),
         false,
+        false,
     );
 
     eq_rules.extend(new_rules);
@@ -60,6 +61,7 @@ pub fn get_condition_workload() -> Workload {
         Limits::synthesis(),
         Limits::minimize(),
         true,
+        false,
         false,
     );
 

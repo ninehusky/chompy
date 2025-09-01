@@ -3,10 +3,7 @@ use std::time::Instant;
 use egg::{AstSize, EGraph, Extractor, Runner};
 
 use crate::{
-    conditions::implication_set::ImplicationSet,
-    enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
-    llm::sort_rule_candidates,
-    Limits, SynthAnalysis, SynthLanguage,
+    case_split::case_split_minimize, conditions::implication_set::ImplicationSet, enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload}, llm::sort_rule_candidates, Limits, SynthAnalysis, SynthLanguage
 };
 
 // After candidate collection, if there are MAX_RULE_SIZE rules remaining, we will
@@ -58,6 +55,7 @@ fn run_workload_internal<L: SynthLanguage>(
     fast_match: bool,
     allow_empty: bool,
     _use_llm: bool,
+    case_split: bool,
 ) -> Ruleset<L> {
     let prior: Ruleset<L> = state.chosen().clone();
     let cond_workload = state.predicates().clone();
@@ -130,8 +128,14 @@ fn run_workload_internal<L: SynthLanguage>(
     let mut chosen: Ruleset<L> = prior.clone();
 
     // 3. Shrink the total candidates to a minimal set using the existing rules.
-    let (chosen_total, _) =
-        total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
+    let chosen_total = {
+        let (chosen_total, _) = total_candidates.minimize(prior.clone(), Scheduler::Compress(minimize_limits));
+        if case_split {
+            case_split_minimize(chosen_total, chosen.clone(),state.implications().clone())
+        } else {
+            chosen_total
+        }
+    };
 
     chosen.extend(chosen_total.clone());
 
@@ -182,7 +186,15 @@ fn run_workload_internal<L: SynthLanguage>(
 
         let rws = impl_prop_rules.to_egg_rewrites();
 
-        let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
+        let chosen_cond = {
+            let (chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
+            if case_split {
+                case_split_minimize(chosen_cond, chosen.clone(), impl_prop_rules.clone())
+            } else {
+                chosen_cond
+            }
+        };
+
 
         chosen_cond.pretty_print();
         chosen.extend(chosen_cond.clone());
@@ -215,6 +227,7 @@ pub async fn run_workload_internal_llm<L: SynthLanguage>(
     fast_match: bool,
     allow_empty: bool,
     use_llm: bool,
+    case_split: bool,
 ) -> Ruleset<L> {
     let prior: Ruleset<L> = state.chosen().clone();
     let cond_workload = state.predicates().clone();
@@ -364,6 +377,7 @@ pub fn run_workload<L: SynthLanguage>(
     minimize_limits: Limits,
     fast_match: bool,
     use_llm: bool,
+    case_split: bool,
 ) -> Ruleset<L> {
     println!("[run_workload] Running workload");
     let start = Instant::now();
@@ -381,6 +395,7 @@ pub fn run_workload<L: SynthLanguage>(
         fast_match,
         true,
         use_llm,
+        case_split
     );
 
     println!(
@@ -473,6 +488,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
     prior_impls: ImplicationSet<L>,
     conditions: Workload,
     use_llm: bool,
+    case_split: bool,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
@@ -485,6 +501,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             prior_impls.clone(),
             conditions.clone(),
             use_llm,
+            case_split,
         );
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
@@ -514,6 +531,7 @@ pub fn recursive_rules_cond<L: SynthLanguage>(
             true,
             allow_empty,
             use_llm,
+            case_split,
         );
         let mut all = new_rules;
         all.extend(rec);
@@ -529,6 +547,7 @@ pub fn recursive_rules<L: SynthLanguage>(
     lang: Lang,
     prior: Ruleset<L>,
     use_llm: bool,
+    case_split: bool,
 ) -> Ruleset<L> {
     recursive_rules_cond(
         metric,
@@ -538,6 +557,7 @@ pub fn recursive_rules<L: SynthLanguage>(
         ImplicationSet::default(),
         Workload::empty(),
         use_llm,
+        case_split
     )
 }
 
