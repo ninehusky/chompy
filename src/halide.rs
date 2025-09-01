@@ -286,27 +286,20 @@ impl SynthLanguage for Pred {
             Pred::Sub([x, y]) => map!(get_cvec, x, y => x.checked_sub(*y)),
             Pred::Mul([x, y]) => map!(get_cvec, x, y => x.checked_mul(*y)),
             Pred::Div([x, y]) => map!(get_cvec, x, y => {
-                if *y == zero {
-                    Some(zero)
+                if *y == 0 {
+                    Some(0)
+                } else if *x == i64::MIN && *y == -1 {
+                    // Wraparound case
+                    Some(i64::MIN)
                 } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_div(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_div(*y)
-                    }
+                    Some(x.div_euclid(*y))
                 }
             }),
             Pred::Mod([x, y]) => map!(get_cvec, x, y => {
                 if *y == zero {
                     Some(zero)
                 } else {
-                    let is_neg = (*x < zero) ^ (*y < zero);
-                    if is_neg {
-                        x.abs().checked_rem(y.abs()).map(|v| -v)
-                    } else {
-                        x.checked_rem(*y)
-                    }
+                    Some(x.rem_euclid(*y))
                 }
             }),
             Pred::Min([x, y]) => map!(get_cvec, x, y => Some(*x.min(y))),
@@ -548,6 +541,12 @@ impl SynthLanguage for Pred {
         let rexpr = egg_to_z3(&ctx, Self::instantiate(rhs).as_ref());
         solver.assert(&z3::ast::Bool::implies(&cexpr, &lexpr._eq(&rexpr)).not());
 
+        // if matches!(solver.check(), z3::SatResult::Sat) {
+        //     println!("model: ");
+        //     let model = solver.get_model().unwrap();
+        //     println!("{:?}", model);
+        // }
+
         match solver.check() {
             z3::SatResult::Unsat => ValidationResult::Valid,
             z3::SatResult::Unknown => ValidationResult::Unknown,
@@ -667,42 +666,77 @@ pub fn egg_to_z3<'a>(ctx: &'a z3::Context, expr: &[Pred]) -> z3::ast::Int<'a> {
                 let r = &buf[usize::from(*y)];
 
                 let zero = z3::ast::Int::from_i64(ctx, 0);
+                let one = z3::ast::Int::from_i64(ctx, 1);
 
-                let l_neg = z3::ast::Int::lt(l, &zero);
-                let r_neg = z3::ast::Int::lt(r, &zero);
+                // trunc-toward-0 quotient and remainder (Z3's div/mod)
+                let q = z3::ast::Int::div(l, r);
+                let rem = z3::ast::Int::modulo(l, r);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
-                let div = z3::ast::Int::div(&l_abs, &r_abs);
+                // quick tests
+                let rem_lt_zero = rem.lt(&zero);
 
-                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+                let r_gt_zero = r.gt(&zero);
+                // let r_lt_zero = r.lt(&zero); // not strictly needed separately
 
-                buf.push(z3::ast::Bool::ite(
-                    &r._eq(&zero),
-                    &zero,
-                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&div), &div),
-                ));
+                // q - 1 and q + 1 helpers
+                let q_minus = z3::ast::Int::sub(ctx, &[&q, &one]);
+                let q_plus = z3::ast::Int::add(ctx, &[&q, &one]);
+
+                // If remainder is zero, the trunc quotient is exact.
+                // Otherwise if remainder < 0 (i.e. a < 0), we must adjust:
+                //   - if r > 0, Halide wants floor -> trunc was too high -> q - 1
+                //   - if r < 0, Halide wants ceil  -> trunc was too low  -> q + 1
+                //
+                // If remainder > 0 (a > 0) trunc is already correct for both signs of r.
+                let q_after_rem = z3::ast::Bool::ite(
+                    &rem_lt_zero,
+                    // rem < 0: branch on sign of r
+                    &z3::ast::Bool::ite(&r_gt_zero, &q_minus, &q_plus),
+                    // rem >= 0 -> keep trunc quotient
+                    &q,
+                );
+
+                // division-by-zero rule: Halide defines a/0 == 0
+                let halide_div = z3::ast::Bool::ite(&r._eq(&zero), &zero, &q_after_rem);
+
+                buf.push(halide_div);
             }
             Pred::Mod([x, y]) => {
-                let l = &buf[usize::from(*x)];
-                let r = &buf[usize::from(*y)];
+                let l = &buf[usize::from(*x)]; // dividend a
+                let r = &buf[usize::from(*y)]; // divisor b
 
                 let zero = z3::ast::Int::from_i64(ctx, 0);
+                let one = z3::ast::Int::from_i64(ctx, 1);
 
-                let l_neg = z3::ast::Int::lt(l, &zero);
-                let r_neg = z3::ast::Int::lt(r, &zero);
+                // Step 1: Compute truncating div and remainder (Z3 defaults)
+                let q = z3::ast::Int::div(l, r);
+                let rem = z3::ast::Int::modulo(l, r);
 
-                let l_abs = z3::ast::Bool::ite(&l_neg, &z3::ast::Int::unary_minus(l), l);
-                let r_abs = z3::ast::Bool::ite(&r_neg, &z3::ast::Int::unary_minus(r), r);
-                let rem = z3::ast::Int::rem(&l_abs, &r_abs);
+                // Step 2: Adjust quotient for Halide rounding
+                let rem_lt_zero = rem.lt(&zero);
+                let r_gt_zero = r.gt(&zero);
 
-                let signs_differ = z3::ast::Bool::xor(&l_neg, &r_neg);
+                let q_minus = z3::ast::Int::sub(ctx, &[&q, &one]);
+                let q_plus = z3::ast::Int::add(ctx, &[&q, &one]);
 
-                buf.push(z3::ast::Bool::ite(
+                let q_after_rem = z3::ast::Bool::ite(
+                    &rem_lt_zero,
+                    &z3::ast::Bool::ite(&r_gt_zero, &q_minus, &q_plus),
+                    &q,
+                );
+
+                // Step 3: Halide division by zero → 0
+                let halide_div = z3::ast::Bool::ite(&r._eq(&zero), &zero, &q_after_rem);
+
+                // Step 4: Halide modulo via Euclidean identity
+                // mod = a - (div * b)
+                let halide_mod = z3::ast::Bool::ite(
                     &r._eq(&zero),
                     &zero,
-                    &z3::ast::Bool::ite(&signs_differ, &z3::ast::Int::unary_minus(&rem), &rem),
-                ));
+                    &z3::ast::Int::sub(ctx, &[l, &z3::ast::Int::mul(ctx, &[&halide_div, r])]),
+                );
+
+                buf.push(halide_mod);
             }
             Pred::Min([x, y]) => {
                 let l = &buf[usize::from(*x)];
