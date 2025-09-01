@@ -6,9 +6,8 @@ use crate::{
         implication::{Implication, ImplicationValidationResult},
         implication_set::run_implication_workload,
     },
-    enumo::Rule,
     recipe_utils::{base_lang, iter_metric},
-    time_fn_call, DeriveType, *,
+    time_fn_call, *,
 };
 
 use conditions::implication_set::ImplicationSet;
@@ -1027,8 +1026,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     } else {
         println!("LOG: not using LLMs to filter. To enable, set the USE_LLM environment variable.");
     }
-
-    let case_split = true;
 
     if case_split {
         println!("LOG: using case splitting.");

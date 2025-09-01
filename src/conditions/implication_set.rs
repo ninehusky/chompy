@@ -613,6 +613,7 @@ mod pvec_match_tests {
             Limits::minimize(),
             true,
             false,
+            false,
         );
 
         all_rules.extend(bool_rules.clone());
@@ -625,6 +626,7 @@ mod pvec_match_tests {
             Limits::synthesis(),
             Limits::minimize(),
             true,
+            false,
             false,
         );
 

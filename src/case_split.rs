@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 // ======== Split Records ========
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct OrderSplit {
+pub struct OrderSplit {
     lhs: String,
     rhs: String,
 }
@@ -93,7 +93,7 @@ pub fn case_split_minimize<L: SynthLanguage>(
     let mut ruleset = ruleset.clone();
     while !ruleset.is_empty() {
         let chosen = ruleset.select(1, &mut Default::default());
-        if chosen.len() == 0 {
+        if chosen.is_empty() {
             break;
         }
 
@@ -181,7 +181,7 @@ fn case_split<L: SynthLanguage>(
     implications: ImplicationSet<L>,
 ) -> bool {
     let tracker = CaseSplitTracker::new();
-    println!("Case splitting on rule: {}", rule);
+    println!("Case splitting on rule: {rule}");
     case_split_internal(0, &rule, &[], &tracker, ruleset, implications)
 }
 
@@ -212,12 +212,12 @@ fn is_false<L: SynthLanguage>(assumptions: &[Assumption<L>]) -> bool {
     }
 
     construct_terms(&patterns, &mut terms);
-    let rule: Rule<Pred> = Rule::from_string(&format!("{} ==> 0", terms).to_string())
+    let rule: Rule<Pred> = Rule::from_string(&format!("{terms} ==> 0").to_string())
         .unwrap()
         .0;
 
     if rule.is_valid() {
-        println!("Assumptions are contradictory: {}", terms);
+        println!("Assumptions are contradictory: {terms}");
         true
     } else {
         false
@@ -234,16 +234,16 @@ fn case_split_internal<L: SynthLanguage>(
     implications: ImplicationSet<L>,
 ) -> bool {
     if depth > 10 {
-        println!("Bailed out of case splitting at depth {}", depth);
+        println!("Bailed out of case splitting at depth {depth}");
         return false;
     }
 
-    println!("assumptions at depth {}", depth);
+    println!("assumptions at depth {depth}");
     for a in assumptions {
-        println!("  {}", a);
+        println!("  {a}");
     }
 
-    if is_false(&assumptions) {
+    if is_false(assumptions) {
         // We can vacuously prove anything in the world where false is true
         return true;
     }
@@ -311,12 +311,12 @@ fn case_split_internal<L: SynthLanguage>(
                     if !result {
                         return false;
                     }
-                    println!("Proved by case splitting at depth {}", depth);
+                    println!("Proved by case splitting at depth {depth}");
                 }
             }
         }
     } else {
-        println!("No more splits available at depth {}", depth);
+        println!("No more splits available at depth {depth}");
         return false;
     }
 
@@ -327,12 +327,11 @@ fn case_split_internal<L: SynthLanguage>(
 pub mod analysis_tests {
     use crate::{
         case_split::case_split,
-        enumo::{egg_to_serialized_egraph, Filter, Metric, Rule, Ruleset, Workload},
+        enumo::{Filter, Metric, Rule, Ruleset, Workload},
         halide::Pred,
         recipe_utils::{base_lang, iter_metric, recursive_rules, run_workload, Lang},
-        DeriveType, EGraph, Limits, SynthAnalysis, SynthLanguage,
+        DeriveType, Limits,
     };
-    use egg::Runner;
 
     #[test]
     pub fn see_craziness() {
@@ -343,6 +342,7 @@ pub mod analysis_tests {
             Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min"]]),
             Default::default(),
             false,
+            false,
         );
 
         let lt_rules: Ruleset<Pred> = recursive_rules(
@@ -350,6 +350,7 @@ pub mod analysis_tests {
             3,
             Lang::new(&[], &["a", "b", "c"], &[&[], &["<"]]),
             Default::default(),
+            false,
             false,
         );
 
@@ -394,6 +395,7 @@ pub mod analysis_tests {
             Limits::minimize(),
             true,
             false,
+            false,
         );
 
         // new_rules.add(Rule::from_string("(> ?a ?b) ==> (< ?b ?a)").unwrap().0);
@@ -404,7 +406,7 @@ pub mod analysis_tests {
         assert!(r.is_valid());
 
         let full_len = new_rules.len();
-        println!("Generated {} new rules", full_len);
+        println!("Generated {full_len} new rules");
         new_rules.pretty_print();
 
         assert!(new_rules.can_derive(DeriveType::LhsAndRhs, &r, Limits::deriving()));
@@ -421,7 +423,7 @@ pub mod analysis_tests {
 
         for r in new_rules.iter() {
             if r.cond.is_some() {
-                println!("Skipping conditional rule: {}", r);
+                println!("Skipping conditional rule: {r}");
                 continue;
             }
             assert!(
