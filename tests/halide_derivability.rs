@@ -988,17 +988,6 @@ const CHOMPY_RULES: &str = r#"
 (< (max ?b (+ ?d ?c)) (+ ?b ?a)) ==> 0 if (< ?a 0)
 "#;
 
-#[allow(dead_code)]
-fn override_total_rules<L: SynthLanguage>(
-    keep_total: &Ruleset<L>,
-    keep_cond: &Ruleset<L>,
-) -> Ruleset<L> {
-    let mut result = Ruleset::default();
-    result.extend(keep_total.partition(|r| r.cond.is_none()).0);
-    result.extend(keep_cond.partition(|r| r.cond.is_some()).0);
-    result
-}
-
 fn run_derivability_tests<L: SynthLanguage>(
     base: &Ruleset<L>,
     against: &Ruleset<L>,
@@ -1143,10 +1132,6 @@ pub mod halide_derive_tests {
 
     use super::*;
 
-    #[test]
-    fn mul_div_derive_big_wkld() {
-        // let rules = include_str!("big-rules.txt");
-    }
 
     #[test]
     fn mul_div_workload() {
@@ -1603,8 +1588,10 @@ pub mod halide_derive_tests {
     // }
 
     #[test]
-    // A simple derivability test. How many Caviar rules can Chompy's rulesets derive?
-    fn chompy_vs_caviar() {
+    // A simple derivability test.
+    // How many conditional Caviar rules can Chompy's rulesets derive?
+    // Vice versa: how many of Chompy's rules can Caviar derive?
+    fn chompy_vs_caviar_conditional_derive() {
         // Don't run this test as part of the "unit tests" thing in CI.
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
@@ -1634,16 +1621,36 @@ pub mod halide_derive_tests {
             })
             .collect();
 
-        let implication_rules: ImplicationSet<Pred> =
+        let mut implication_rules: ImplicationSet<Pred> =
             pairwise_implication_building(&all_conditions);
 
-        // see how many caviar rules we can derive, given the same
-        // total caviar rules.
+
+        let and_implies_left: Implication<Pred> = Implication::new(
+            "and_implies_left".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        let and_implies_right: Implication<Pred> = Implication::new(
+            "and_implies_right".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?b".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        implication_rules.add(and_implies_left);
+        implication_rules.add(and_implies_right);
+
+        let keep_total = |rs: &Ruleset<Pred>| -> Ruleset<Pred> {
+            let (total, _) = rs.partition(|r| r.cond.is_none());
+            total
+        };
+
         let forward_result =
-            run_derivability_tests(&chompy_rules, &caviar_rules, &implication_rules);
-        // NOTE: cutting this because too expensive.
-        // let backward_result =
-        //     run_derivability_tests(&caviar_rules, &chompy_rules, &implication_rules);
+            run_derivability_tests(&chompy_rules, &keep_total(&caviar_rules), &implication_rules);
+        let backward_result =
+            run_derivability_tests(&caviar_rules, &keep_total(&chompy_rules), &implication_rules);
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({
@@ -1654,7 +1661,7 @@ pub mod halide_derive_tests {
 
         let to_write = serde_json::json!({
             "forwards": to_json(forward_result),
-            // "backwards": to_json(backward_result),
+            "backwards": to_json(backward_result),
         });
         std::fs::write(out_path, to_write.to_string())
             .expect("Failed to write derivability results to file");
@@ -1901,78 +1908,112 @@ pub mod halide_derive_tests {
         }
     }
 
-    #[test]
-    fn test_timeout() {
-        let mut rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/with-timeout.txt");
-        // for line in CHOMPY_RULES.lines() {
-        //     let line = line.trim();
-        //     if line.is_empty() {
-        //         continue;
-        //     }
+    // #[test]
+    // fn test_timeout() {
+    //     let mut chompy_rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/with-timeout.txt");
+    //     // for line in CHOMPY_RULES.lines() {
+    //     //     let line = line.trim();
+    //     //     if line.is_empty() {
+    //     //         continue;
+    //     //     }
 
-        //     let res = Rule::from_string(line);
+    //     //     let res = Rule::from_string(line);
 
-        //     if res.is_err() {
-        //         panic!("Failed to parse rule: {}", line);
-        //     }
+    //     //     if res.is_err() {
+    //     //         panic!("Failed to parse rule: {}", line);
+    //     //     }
 
-        //     let (fw, bw) = res.unwrap();
+    //     //     let (fw, bw) = res.unwrap();
 
-        //     rules.add(fw);
+    //     //     rules.add(fw);
 
-        //     if let Some(bw) = bw {
-        //         rules.add(bw);
-        //     }
-        // }
+    //     //     if let Some(bw) = bw {
+    //     //         rules.add(bw);
+    //     //     }
+    //     // }
 
-        println!("our rules:");
-        for r in rules.iter() {
-            println!("  {r}");
-        }
+    //     println!("our rules:");
+    //     for r in chompy_rules.iter() {
+    //         println!("  {r}");
+    //     }
 
-        let caviar_rules = caviar_rules();
+    //     let caviar_rules = caviar_rules();
 
-        let mut can: Ruleset<Pred> = Ruleset::default();
-        let mut cannot: Ruleset<Pred> = Ruleset::default();
+    //     let mut can: Ruleset<Pred> = Ruleset::default();
+    //     let mut cannot: Ruleset<Pred> = Ruleset::default();
 
+    //     let mut all_conditions: Vec<_> = caviar_rules
+    //         .iter()
+    //         .chain(chompy_rules.iter())
+    //         .filter_map(|r| {
+    //             r.cond.as_ref().and_then(|c| {
+    //                 Assumption::new(
+    //                     Pred::generalize(
+    //                         &Pred::instantiate(&c.chop_assumption()),
+    //                         &mut Default::default(),
+    //                     )
+    //                     .to_string(),
+    //                 )
+    //                 .ok()
+    //             })
+    //         })
+    //         .collect();
 
-        for c in caviar_rules.iter() {
-            if c.cond.is_some() {
-                println!("I'm trying to derive: {c}");
-                let derive_result = time_fn_call!(
-                    format!("can_derive_{}", c.name),
-                    rules.can_derive_cond(DeriveType::LhsAndRhs, c, Limits::deriving(), &vec![]));
-                if derive_result {
-                    can.add(c.clone());
-                } else {
-                    cannot.add(c.clone());
-                }
-            }
-        }
+    //     println!("initial length: {}", all_conditions.len());
 
-        let result = DerivabilityResult { can, cannot };
+    //     all_conditions.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+    //     all_conditions.dedup();
 
-        // write it to derive-with-timeout.json
-        let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
-            + "/derive-with-timeout.json";
+    //     println!("final length: {}", all_conditions.len());
 
-        let out_path: &Path = Path::new(&binding);
-
-        println!("I derived {}", result.can.len());
-        println!("I could not derive {}", result.cannot.len());
-
-        let result_json = |result: DerivabilityResult<Pred>| {
-            serde_json::json!({
-                "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
-                "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
-            })
-        };
-
-        std::fs::write(out_path, result_json(result).to_string())
-            .expect("Failed to write derivability results to file");
+    //     println!("all_conditions:");
+    //     for c in all_conditions.iter() {
+    //         println!("  {}", c);
+    //     }
 
 
-    }
+    //     let implication_rules: ImplicationSet<Pred> =
+    //         pairwise_implication_building(&all_conditions);
+
+    //     for c in caviar_rules.iter() {
+    //         if c.cond.is_some() {
+    //             println!("I'm trying to derive: {c}");
+    //             let derive_result = time_fn_call!(
+    //                 format!("can_derive_{}", c.name),
+    //                 chompy_rules.can_derive_cond(DeriveType::LhsAndRhs, c, Limits::deriving(), &implication_rules.to_egg_rewrites()));
+    //             if derive_result {
+    //                 can.add(c.clone());
+    //             } else {
+    //                 cannot.add(c.clone());
+    //             }
+    //         }
+    //     }
+
+
+
+    //     let result = DerivabilityResult { can, cannot };
+
+    //     // write it to derive-with-timeout.json
+    //     let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
+    //         + "/derive-with-timeout.json";
+
+    //     let out_path: &Path = Path::new(&binding);
+
+    //     println!("I derived {}", result.can.len());
+    //     println!("I could not derive {}", result.cannot.len());
+
+    //     let result_json = |result: DerivabilityResult<Pred>| {
+    //         serde_json::json!({
+    //             "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+    //             "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+    //         })
+    //     };
+
+    //     std::fs::write(out_path, result_json(result).to_string())
+    //         .expect("Failed to write derivability results to file");
+
+
+    // }
 
             
         
