@@ -1912,112 +1912,92 @@ pub mod halide_derive_tests {
         }
     }
 
-    // #[test]
-    // fn test_timeout() {
-    //     let mut chompy_rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/with-timeout.txt");
-    //     // for line in CHOMPY_RULES.lines() {
-    //     //     let line = line.trim();
-    //     //     if line.is_empty() {
-    //     //         continue;
-    //     //     }
+    #[test]
+    fn test_timeout() {
+        let mut chompy_rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/with-timeout.txt");
 
-    //     //     let res = Rule::from_string(line);
+        println!("our rules:");
+        for r in chompy_rules.iter() {
+            println!("  {r}");
+        }
 
-    //     //     if res.is_err() {
-    //     //         panic!("Failed to parse rule: {}", line);
-    //     //     }
+        let caviar_rules = caviar_rules();
 
-    //     //     let (fw, bw) = res.unwrap();
+        let mut can: Ruleset<Pred> = Ruleset::default();
+        let mut cannot: Ruleset<Pred> = Ruleset::default();
 
-    //     //     rules.add(fw);
+        let mut all_conditions: Vec<_> = caviar_rules
+            .iter()
+            .chain(chompy_rules.iter())
+            .filter_map(|r| {
+                r.cond.as_ref().and_then(|c| {
+                    Assumption::new(
+                        Pred::generalize(
+                            &Pred::instantiate(&c.chop_assumption()),
+                            &mut Default::default(),
+                        )
+                        .to_string(),
+                    )
+                    .ok()
+                })
+            })
+            .collect();
 
-    //     //     if let Some(bw) = bw {
-    //     //         rules.add(bw);
-    //     //     }
-    //     // }
+        println!("initial length: {}", all_conditions.len());
 
-    //     println!("our rules:");
-    //     for r in chompy_rules.iter() {
-    //         println!("  {r}");
-    //     }
+        all_conditions.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+        all_conditions.dedup();
 
-    //     let caviar_rules = caviar_rules();
+        println!("final length: {}", all_conditions.len());
 
-    //     let mut can: Ruleset<Pred> = Ruleset::default();
-    //     let mut cannot: Ruleset<Pred> = Ruleset::default();
-
-    //     let mut all_conditions: Vec<_> = caviar_rules
-    //         .iter()
-    //         .chain(chompy_rules.iter())
-    //         .filter_map(|r| {
-    //             r.cond.as_ref().and_then(|c| {
-    //                 Assumption::new(
-    //                     Pred::generalize(
-    //                         &Pred::instantiate(&c.chop_assumption()),
-    //                         &mut Default::default(),
-    //                     )
-    //                     .to_string(),
-    //                 )
-    //                 .ok()
-    //             })
-    //         })
-    //         .collect();
-
-    //     println!("initial length: {}", all_conditions.len());
-
-    //     all_conditions.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
-    //     all_conditions.dedup();
-
-    //     println!("final length: {}", all_conditions.len());
-
-    //     println!("all_conditions:");
-    //     for c in all_conditions.iter() {
-    //         println!("  {}", c);
-    //     }
+        println!("all_conditions:");
+        for c in all_conditions.iter() {
+            println!("  {}", c);
+        }
 
 
-    //     let implication_rules: ImplicationSet<Pred> =
-    //         pairwise_implication_building(&all_conditions);
+        let implication_rules: ImplicationSet<Pred> =
+            pairwise_implication_building(&all_conditions);
 
-    //     for c in caviar_rules.iter() {
-    //         if c.cond.is_some() {
-    //             println!("I'm trying to derive: {c}");
-    //             let derive_result = time_fn_call!(
-    //                 format!("can_derive_{}", c.name),
-    //                 chompy_rules.can_derive_cond(DeriveType::LhsAndRhs, c, Limits::deriving(), &implication_rules.to_egg_rewrites()));
-    //             if derive_result {
-    //                 can.add(c.clone());
-    //             } else {
-    //                 cannot.add(c.clone());
-    //             }
-    //         }
-    //     }
+        for c in caviar_rules.iter() {
+            if c.cond.is_some() {
+                println!("I'm trying to derive: {c}");
+                let derive_result = time_fn_call!(
+                    format!("can_derive_{}", c.name),
+                    chompy_rules.can_derive_cond(DeriveType::LhsAndRhs, c, Limits::deriving(), &implication_rules.to_egg_rewrites()));
+                if derive_result {
+                    can.add(c.clone());
+                } else {
+                    cannot.add(c.clone());
+                }
+            }
+        }
 
 
 
-    //     let result = DerivabilityResult { can, cannot };
+        let result = DerivabilityResult { can, cannot };
 
-    //     // write it to derive-with-timeout.json
-    //     let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
-    //         + "/derive-with-timeout.json";
+        // write it to derive-with-timeout.json
+        let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
+            + "/derive-with-timeout-full.json";
 
-    //     let out_path: &Path = Path::new(&binding);
+        let out_path: &Path = Path::new(&binding);
 
-    //     println!("I derived {}", result.can.len());
-    //     println!("I could not derive {}", result.cannot.len());
+        println!("I derived {}", result.can.len());
+        println!("I could not derive {}", result.cannot.len());
 
-    //     let result_json = |result: DerivabilityResult<Pred>| {
-    //         serde_json::json!({
-    //             "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
-    //             "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
-    //         })
-    //     };
+        let result_json = |result: DerivabilityResult<Pred>| {
+            serde_json::json!({
+                "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+                "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+            })
+        };
 
-    //     std::fs::write(out_path, result_json(result).to_string())
-    //         .expect("Failed to write derivability results to file");
+        std::fs::write(out_path, result_json(result).to_string())
+            .expect("Failed to write derivability results to file");
 
 
-    // }
+    }
 
             
         

@@ -47,7 +47,7 @@ impl Scheduler {
                 })
                 .with_node_limit(limits.node)
                 .with_iter_limit(limits.iter)
-                .with_time_limit(Duration::from_secs(30))
+                .with_time_limit(Duration::from_secs(60))
                 .with_egraph(egraph);
             if let Some(rule) = rule {
                 let lexpr = L::instantiate(&rule.lhs);

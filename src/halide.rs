@@ -1103,7 +1103,7 @@ pub fn og_recipe() -> Ruleset<Pred> {
         recursive_rules(
             Metric::Atoms,
             5,
-            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["&&", "||", "!"]]),
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
             all_rules.clone(),
             false
         )
