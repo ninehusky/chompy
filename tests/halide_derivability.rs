@@ -522,9 +522,7 @@ fn halide_rules() -> Ruleset<Pred> {
     }
 
     ruleset
-
 }
-    
 
 fn caviar_rules() -> Ruleset<Pred> {
     let rules = CAVIAR_RULES;
@@ -1080,7 +1078,6 @@ pub mod halide_derive_tests {
             + "/halide-derive.json";
 
         let halide_rules = halide_rules();
-
 
         println!("Parsed {} Halide rules", halide_rules.len());
     }
