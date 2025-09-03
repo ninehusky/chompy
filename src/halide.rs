@@ -7,7 +7,7 @@ use crate::{
         implication_set::run_implication_workload,
     },
     enumo::Rule,
-    recipe_utils::{base_lang, iter_metric},
+    recipe_utils::{base_lang, iter_metric, recursive_rules},
     time_fn_call, DeriveType, *,
 };
 
@@ -1056,7 +1056,8 @@ pub fn og_recipe() -> Ruleset<Pred> {
     let use_llm = std::env::var("USE_LLM").is_ok();
 
     let start_time = std::time::Instant::now();
-    let wkld = conditions::generate::get_condition_workload();
+    let wkld = conditions::generate::get_condition_workload()
+        .filter(Filter::Excludes("(&& 1 ?a)".parse().unwrap()));
     let mut all_rules = Ruleset::default();
     let mut base_implications = ImplicationSet::default();
     // and the "and" rules here.
@@ -1097,45 +1098,19 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
-    let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-    dummy_ruleset.add(
-        Rule::from_string("(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)")
-            .unwrap()
-            .0,
+    // Rules with &&, ||, !.
+    let basic_bools = time_fn_call!(
+        "basic_bools",
+        recursive_rules(
+            Metric::Atoms,
+            5,
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+            all_rules.clone(),
+            false
+        )
     );
 
-    // dummy_ruleset.add(
-    //     Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
-    //         .unwrap()
-    //         .0,
-    // );
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-
-    for r in dummy_ruleset.iter() {
-        assert!(r.is_valid());
-    }
+    all_rules.extend(basic_bools.clone());
 
     // Find rules matching terms of the shape (&& (comp x y) (comp y z))
     let comps = Workload::new(&["0", "1", "(OP V V)"])
@@ -1169,16 +1144,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(and_comps_rules.clone());
-
-    for r in dummy_ruleset.iter() {
-        println!("deriving {}?", r.name);
-        assert!(all_rules.can_derive_cond(
-            DeriveType::LhsAndRhs,
-            r,
-            Limits::deriving(),
-            &base_implications.to_egg_rewrites()
-        ));
-    }
 
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
@@ -1223,7 +1188,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
         recursive_rules_cond(
             Metric::Atoms,
             5,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
+            Lang::new(
+                &[],
+                &["a", "b", "c"],
+                &[&[], &["*", "/", "%", "min", "max"]]
+            ),
             Ruleset::default(),
             base_implications.clone(),
             cond_workload,
@@ -1232,67 +1201,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(mul_div_mod);
-
-    //     for line in r#"
-    // (/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
-    // (/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
-    // (min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-    // (min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-    // (min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
-    // (min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
-    // "#
-    //     .lines()
-    //     {
-    //         if line.trim().is_empty() {
-    //             continue;
-    //         }
-    //         let rule = Rule::from_string(line.trim())
-    //             .expect("Failed to parse rule")
-    //             .0;
-    //         assert!(rule.is_valid());
-    //         // assert!(
-    //         //     all_rules.can_derive_cond(
-    //         //         DeriveType::LhsAndRhs,
-    //         //         &rule,
-    //         //         Limits::deriving(),
-    //         //         &base_implications.to_egg_rewrites(),
-    //         //     ),
-    //         //     "Rule should be derivable: {}",
-    //         //     rule
-    //         // );
-
-    //         println!("Oh... i can derive this rule: {}", rule);
-
-    //         let l_expr = Pred::instantiate(&rule.lhs);
-    //         let r_expr = Pred::instantiate(&rule.rhs);
-    //         let c_expr = Pred::instantiate(&rule.cond.clone().unwrap().chop_assumption());
-
-    //         let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
-    //         let l_id = egraph.add_expr(&l_expr);
-    //         let r_id = egraph.add_expr(&r_expr);
-
-    //         let c_assumption = Assumption::new(c_expr.to_string()).unwrap();
-    //         c_assumption.insert_into_egraph(&mut egraph);
-
-    //         // 0. run the implications.
-    //         let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
-    //             .with_explanations_enabled()
-    //             .with_egraph(egraph.clone())
-    //             .run(base_implications.to_egg_rewrites().iter());
-
-    //         let egraph = runner.egraph;
-
-    //         // 1. run the rules.
-    //         let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
-    //             .with_explanations_enabled()
-    //             .with_egraph(egraph)
-    //             .run(all_rules.iter().map(|r| &r.rewrite));
-
-    //         let mut proof = runner.explain_equivalence(&l_expr, &r_expr);
-
-    //         println!("Here is the proof for why the rule is derivable:");
-    //         println!("{}", proof.get_flat_string());
-    //     }
 
     let min_max = time_fn_call!(
         "min_max",
@@ -1425,19 +1333,20 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // all_rules.add(double_div_cancel.clone());
     // // END DEBUG
 
-    // let min_max_div = time_fn_call!(
-    //     "min_max_div",
-    //     recursive_rules_cond(
-    //         Metric::Atoms,
-    //         7,
-    //         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
-    //         all_rules.clone(),
-    //         base_implications.clone(),
-    //         wkld.clone(),
-    //     )
-    // );
+    let min_max_div = time_fn_call!(
+        "min_max_div",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            use_llm,
+        )
+    );
 
-    // all_rules.extend(min_max_div);
+    all_rules.extend(min_max_div);
 
     let end_time = std::time::Instant::now();
 
