@@ -1122,8 +1122,7 @@ pub mod halide_derive_tests {
     use egg::{EGraph, RecExpr, Runner};
     use ruler::{
         conditions::{
-            generate::{compress, get_condition_workload},
-            implication_set::run_implication_workload,
+            self, generate::{compress, get_condition_workload}, implication_set::run_implication_workload
         }, enumo::{ChompyState, Filter, Metric}, halide::og_recipe, recipe_utils::{
             base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm,
             Lang,
@@ -1680,6 +1679,7 @@ pub mod halide_derive_tests {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
         }
+
         let caviar_rules = caviar_rules();
 
         let mut cond_num = 0;
@@ -1696,13 +1696,13 @@ pub mod halide_derive_tests {
             caviar_rules.len()
         );
 
-        // let caviar_conditional_rules = caviar_rules().partition(|r| r.cond.is_some()).0;
-        // let (_, cannot) = can_synthesize_all(caviar_conditional_rules.clone());
-        // assert!(
-        //     cannot.is_empty(),
-        //     "Chompy couldn't synthesize these rules: {:?}",
-        //     cannot
-        // );
+        let caviar_conditional_rules = caviar_rules.partition(|r| r.cond.is_some()).0;
+        let (_, cannot) = can_synthesize_all(caviar_conditional_rules.clone());
+        assert!(
+            cannot.is_empty(),
+            "Chompy couldn't synthesize these rules: {:?}",
+            cannot
+        );
     }
 
     #[test]
@@ -1911,6 +1911,73 @@ pub mod halide_derive_tests {
             );
         }
     }
+
+    #[test]
+    fn the_first_three() {
+        let wkld = conditions::generate::get_condition_workload();
+        let mut all_rules: Ruleset<Pred> = Ruleset::default();
+        let mut base_implications = ImplicationSet::default();
+        // and the "and" rules here.
+        let and_implies_left: Implication<Pred> = Implication::new(
+            "and_implies_left".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?a".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        let and_implies_right: Implication<Pred> = Implication::new(
+            "and_implies_right".into(),
+            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+            Assumption::new_unsafe("?b".to_string()).unwrap(),
+        )
+        .unwrap();
+
+        base_implications.add(and_implies_left);
+        base_implications.add(and_implies_right);
+
+        let other_implications = time_fn_call!(
+            "find_base_implications",
+            run_implication_workload(
+                &wkld,
+                &["a".to_string(), "b".to_string(), "c".to_string()],
+                &base_implications,
+                &Default::default()
+            )
+        );
+
+        base_implications.add_all(other_implications);
+
+        let min_max = time_fn_call!(
+            "min_max",
+            recursive_rules_cond(
+                Metric::Atoms,
+                7,
+                Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+                all_rules.clone(),
+                base_implications.clone(),
+                wkld.clone(),
+                false
+            )
+        );
+
+        all_rules.extend(min_max.clone());
+
+        let mut should_derive: Ruleset<Pred> = Ruleset::default();
+
+        should_derive.add(
+            Rule::from_string(
+                "(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)"
+            )
+            .unwrap()
+            .0,
+        );
+
+        for r in should_derive.iter() {
+            let result = all_rules.can_derive_cond(DeriveType::LhsAndRhs, r, Limits::deriving(), &base_implications.to_egg_rewrites());
+            assert!(result);
+        }
+    }
+        
 
     #[test]
     fn test_timeout() {
