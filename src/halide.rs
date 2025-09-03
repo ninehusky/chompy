@@ -7,7 +7,7 @@ use crate::{
         implication_set::run_implication_workload,
     },
     enumo::Rule,
-    recipe_utils::{base_lang, iter_metric},
+    recipe_utils::{base_lang, iter_metric, recursive_rules},
     time_fn_call, DeriveType, *,
 };
 
@@ -1097,45 +1097,19 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
-    let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-    dummy_ruleset.add(
-        Rule::from_string("(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)")
-            .unwrap()
-            .0,
+    // Rules with &&, ||, !.
+    let basic_bools = time_fn_call!(
+        "basic_bools",
+        recursive_rules(
+            Metric::Atoms,
+            5,
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["&&", "||", "!"]]),
+            all_rules.clone(),
+            false
+        )
     );
 
-    // dummy_ruleset.add(
-    //     Rule::from_string("(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))")
-    //         .unwrap()
-    //         .0,
-    // );
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-
-    dummy_ruleset.add(
-        Rule::from_string("(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)")
-            .unwrap()
-            .0,
-    );
-
-    for r in dummy_ruleset.iter() {
-        assert!(r.is_valid());
-    }
+    all_rules.extend(basic_bools.clone());
 
     // Find rules matching terms of the shape (&& (comp x y) (comp y z))
     let comps = Workload::new(&["0", "1", "(OP V V)"])
@@ -1169,16 +1143,6 @@ pub fn og_recipe() -> Ruleset<Pred> {
     );
 
     all_rules.extend(and_comps_rules.clone());
-
-    for r in dummy_ruleset.iter() {
-        println!("deriving {}?", r.name);
-        assert!(all_rules.can_derive_cond(
-            DeriveType::LhsAndRhs,
-            r,
-            Limits::deriving(),
-            &base_implications.to_egg_rewrites()
-        ));
-    }
 
     let simp_comps = recursive_rules_cond(
         Metric::Atoms,
@@ -1223,7 +1187,11 @@ pub fn og_recipe() -> Ruleset<Pred> {
         recursive_rules_cond(
             Metric::Atoms,
             5,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
+            Lang::new(
+                &[],
+                &["a", "b", "c"],
+                &[&[], &["*", "/", "%", "min", "max"]]
+            ),
             Ruleset::default(),
             base_implications.clone(),
             cond_workload,
@@ -1425,19 +1393,20 @@ pub fn og_recipe() -> Ruleset<Pred> {
     // all_rules.add(double_div_cancel.clone());
     // // END DEBUG
 
-    // let min_max_div = time_fn_call!(
-    //     "min_max_div",
-    //     recursive_rules_cond(
-    //         Metric::Atoms,
-    //         7,
-    //         Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
-    //         all_rules.clone(),
-    //         base_implications.clone(),
-    //         wkld.clone(),
-    //     )
-    // );
+    let min_max_div = time_fn_call!(
+        "min_max_div",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            use_llm,
+        )
+    );
 
-    // all_rules.extend(min_max_div);
+    all_rules.extend(min_max_div);
 
     let end_time = std::time::Instant::now();
 
