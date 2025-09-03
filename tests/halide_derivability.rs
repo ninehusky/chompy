@@ -1124,14 +1124,17 @@ pub mod halide_derive_tests {
         conditions::{
             generate::{compress, get_condition_workload},
             implication_set::run_implication_workload,
-        }, enumo::{ChompyState, Filter, Metric}, halide::og_recipe, recipe_utils::{
+        },
+        enumo::{ChompyState, Filter, Metric},
+        halide::og_recipe,
+        recipe_utils::{
             base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm,
             Lang,
-        }, time_fn_call, DeriveType, SynthAnalysis
+        },
+        time_fn_call, DeriveType, SynthAnalysis,
     };
 
     use super::*;
-
 
     #[test]
     fn mul_div_workload() {
@@ -1628,7 +1631,6 @@ pub mod halide_derive_tests {
         let mut implication_rules: ImplicationSet<Pred> =
             pairwise_implication_building(&all_conditions);
 
-
         let and_implies_left: Implication<Pred> = Implication::new(
             "and_implies_left".into(),
             Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
@@ -1651,8 +1653,11 @@ pub mod halide_derive_tests {
             conditional
         };
 
-        let forward_result =
-            run_derivability_tests(&chompy_rules, &keep_conditional(&caviar_rules), &implication_rules);
+        let forward_result = run_derivability_tests(
+            &chompy_rules,
+            &keep_conditional(&caviar_rules),
+            &implication_rules,
+        );
         // let backward_result =
         //     run_derivability_tests(&caviar_rules, &keep_conditional(&chompy_rules), &implication_rules);
 
@@ -1975,7 +1980,6 @@ pub mod halide_derive_tests {
     //         println!("  {}", c);
     //     }
 
-
     //     let implication_rules: ImplicationSet<Pred> =
     //         pairwise_implication_building(&all_conditions);
 
@@ -1992,8 +1996,6 @@ pub mod halide_derive_tests {
     //             }
     //         }
     //     }
-
-
 
     //     let result = DerivabilityResult { can, cannot };
 
@@ -2016,11 +2018,5 @@ pub mod halide_derive_tests {
     //     std::fs::write(out_path, result_json(result).to_string())
     //         .expect("Failed to write derivability results to file");
 
-
     // }
-
-            
-        
 }
-
-

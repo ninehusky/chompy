@@ -146,8 +146,8 @@ impl<L: SynthLanguage> Applier<L, SynthAnalysis> for Rhs<L> {
         egraph: &mut EGraph<L, SynthAnalysis>,
         matched_id: Id,
         subst: &Subst,
-        ast: Option<&PatternAst<L>>,
-        sym: Symbol,
+        _ast: Option<&PatternAst<L>>,
+        _sym: Symbol,
     ) -> Vec<Id> {
         if !egraph[matched_id].data.is_defined() {
             return vec![];
