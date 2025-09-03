@@ -1646,15 +1646,15 @@ pub mod halide_derive_tests {
         implication_rules.add(and_implies_left);
         implication_rules.add(and_implies_right);
 
-        let keep_total = |rs: &Ruleset<Pred>| -> Ruleset<Pred> {
-            let (total, _) = rs.partition(|r| r.cond.is_none());
-            total
+        let keep_conditional = |rs: &Ruleset<Pred>| -> Ruleset<Pred> {
+            let (conditional, _) = rs.partition(|r| r.cond.is_some());
+            conditional
         };
 
         let forward_result =
-            run_derivability_tests(&chompy_rules, &keep_total(&caviar_rules), &implication_rules);
+            run_derivability_tests(&chompy_rules, &keep_conditional(&caviar_rules), &implication_rules);
         // let backward_result =
-        //     run_derivability_tests(&caviar_rules, &keep_total(&chompy_rules), &implication_rules);
+        //     run_derivability_tests(&caviar_rules, &keep_conditional(&chompy_rules), &implication_rules);
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({
