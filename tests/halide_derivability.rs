@@ -12,6 +12,7 @@ struct DerivabilityResult<L: SynthLanguage> {
     cannot: Ruleset<L>,
 }
 
+// Grabbed using the script in python/halide_to_chompy.py.
 const HALIDE_RULES: &str = r#"
 (< (* x c0) (* y c0)) ==> (< x y) if (> c0 0)
 (< (* x c0) (* y c0)) ==> (< y x) if (< c0 0)
