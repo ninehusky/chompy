@@ -7,12 +7,24 @@ use ruler::{
     Limits, SynthLanguage,
 };
 
+use rayon::prelude::*;
+use rayon::iter::ParallelIterator;
+
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
     cannot: Ruleset<L>,
 }
 
+const CAVIAR_RULES_SPECIAL: &str = r#"
+( < ( max ?z ( + ?y ?c0 ) ) ( max ?x ?y ) ) ==> ( < ( max ?z ( + ?y ?c0 ) ) ?x ) if (< 0 ?c0)
+"#;
+
+
 const CAVIAR_RULES: &str = r#"
+( < ( max ?z ( + ?y ?c0 ) ) ( max ?x ?y ) ) ==> ( < ( max ?z ( + ?y ?c0 ) ) ?x ) if (> ?c0 0)
+( < ( min ?z ( + ?y ?c0 ) ) ( min ?x ?y ) ) ==> ( < ( min ?z ( + ?y ?c0 ) ) ?x ) if (< ?c0 0)
+( < ( max ?z ?y ) ( max ?x ( + ?y ?c0 ) ) ) ==> ( < ( max ?z ?y ) ?x ) if (< ?c0 0)
+( < ( min ?x ?y ) (+ ?x ?c0) ) ==> 1 if (> ?c0 0)
 (== ?x ?y) ==> (== ?y ?x)
 (== ?x ?y) ==> (== (- ?x ?y) 0)
 (== (+ ?x ?y) ?z) ==> (== ?x (- ?z ?y))
@@ -95,10 +107,6 @@ const CAVIAR_RULES: &str = r#"
 ( < ( min ?z ?y ) ( min ?x ?y ) ) ==> ( < ?z ( min ?x ?y ) )
 ( < ( max ?z ?y ) ( max ?x ?y ) ) ==> ( < ( max ?z ?y ) ?x )
 ( < ( min ?z ?y ) ( min ?x ( + ?y ?c0 ) ) ) ==> ( < ( min ?z ?y ) ?x ) if (> ?c0 0)
-( < ( max ?z ( + ?y ?c0 ) ) ( max ?x ?y ) ) ==> ( < ( max ?z ( + ?y ?c0 ) ) ?x ) if (> ?c0 0)
-( < ( min ?z ( + ?y ?c0 ) ) ( min ?x ?y ) ) ==> ( < ( min ?z ( + ?y ?c0 ) ) ?x ) if (< ?c0 0)
-( < ( max ?z ?y ) ( max ?x ( + ?y ?c0 ) ) ) ==> ( < ( max ?z ?y ) ?x ) if (< ?c0 0)
-( < ( min ?x ?y ) (+ ?x ?c0) ) ==> 1 if (> ?c0 0)
 (< (max ?a ?c) (min ?a ?b)) ==> 0
 (< (* ?x ?y) ?z) ==> (< ?x ( / (- ( + ?z ?y ) 1 ) ?y ) )) if (> ?y 0)
 (< ?y (/ ?x ?z)) ==> ( < ( - ( * ( + ?y 1 ) ?z ) 1 ) ?x ) if (> ?z 0)
@@ -1006,23 +1014,17 @@ fn run_derivability_tests<L: SynthLanguage>(
 }
 
 fn caviar_rules() -> Ruleset<Pred> {
-    let rules = CAVIAR_RULES;
-    let mut ruleset = Ruleset::default();
-    for rule in rules.trim().lines() {
-        match Rule::from_string(rule) {
-            Ok((rule, None)) => {
-                if !rule.is_valid() {
-                    println!("skipping {rule} because it is not valid");
-                } else {
-                    ruleset.add(rule);
-                }
-            }
-            // This error can come from the inclusion of backwards rules:
-            // the Caviar ruleset shouldn't have them.
-            _ => panic!("Unable to parse single rule: {}", rule),
+    let mut rules = Ruleset::from_file("/Users/acheung/research/projects/chompy/caviar_rules.txt");
+    let mut should_remove: Ruleset<Pred> = Ruleset::default();
+    for rule in rules.iter() {
+        if !rule.is_valid() {
+            println!("skipping {rule}, it's not valid.");
+            should_remove.add(rule.clone());
         }
     }
-    ruleset
+
+    rules.remove_all(should_remove);
+    rules
 }
 
 // The naive O(n^2) algorithm to build implications.
@@ -1962,6 +1964,95 @@ pub mod halide_derive_tests {
 
         all_rules.extend(min_max.clone());
 
+
+    let min_max_add = time_fn_call!(
+        "min_max_add",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            false,
+        )
+    );
+
+    all_rules.extend(min_max_add.clone());
+
+    for op in &["max"] {
+        // this workload will consist of well-typed lt comparisons, where the child
+        // expressions consist of variables, `+`, and `min` (of up to size 5).
+        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
+            .filter(Filter::And(vec![
+                Filter::Excludes("VAL".parse().unwrap()),
+                Filter::Excludes("OP1".parse().unwrap()),
+            ]))
+            .plug("OP2", &Workload::new(&[op, "+"]))
+            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+
+        let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
+            .plug("OP", &Workload::new(&["<"]))
+            .plug("V", &int_workload)
+            .filter(Filter::Canon(vec![
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ]));
+
+        let cond_workload = Workload::new(&["(OP2 V 0)"])
+            .plug("OP2", &Workload::new(&["<"]))
+            .plug(
+                "V",
+                &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
+            );
+
+        let rules = time_fn_call!(
+            format!("lt_add_{}", op),
+            run_workload(
+                lt_workload.clone(),
+                Some(cond_workload.clone()),
+                all_rules.clone(),
+                base_implications.clone(),
+                Limits::synthesis(),
+                Limits::minimize(),
+                true,
+                false
+            )
+        );
+
+        all_rules.extend(rules);
+    }
+
+
+    let cond_workload = Workload::new(&[
+        "(< 0 b)",
+        "(< 0 a)",
+        "(&& (< 0 b) (== (% a b) 0))",
+        "(&& (< 0 a) (== (% a b) 0))",
+        "(== c c)",
+    ]);
+
+    let mul_div_mod = time_fn_call!(
+        "mul_div_mod",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(
+                &[],
+                &["a", "b", "c"],
+                &[&[], &["*", "/", "%", "min", "max"]]
+            ),
+            Ruleset::default(),
+            base_implications.clone(),
+            cond_workload,
+            false,
+        )
+    );
+
+    all_rules.extend(mul_div_mod);
+
         let mut should_derive: Ruleset<Pred> = Ruleset::default();
 
         should_derive.add(
@@ -1972,8 +2063,22 @@ pub mod halide_derive_tests {
             .0,
         );
 
+        should_derive.add(
+            Rule::from_string(
+"(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (< 0 ?a) (== (% ?b ?a) 0))"
+            )
+            .unwrap()
+            .0,
+        );
+            
+
+        should_derive.add(Rule::from_string("(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (< 0 ?c0)").unwrap().0);
+
         for r in should_derive.iter() {
-            let result = all_rules.can_derive_cond(DeriveType::LhsAndRhs, r, Limits::deriving(), &base_implications.to_egg_rewrites());
+            let result = match r.cond {
+                Some(_) => all_rules.can_derive_cond(DeriveType::LhsAndRhs, r, Limits::deriving(), &base_implications.to_egg_rewrites()),
+                None => all_rules.can_derive(DeriveType::LhsAndRhs, r, Limits::deriving()),
+            };
             assert!(result);
         }
     }
@@ -1981,7 +2086,7 @@ pub mod halide_derive_tests {
 
     #[test]
     fn test_timeout() {
-        let mut chompy_rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/with-timeout.txt");
+        let mut chompy_rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/with-timeout-full-recipe.txt");
 
         println!("our rules:");
         for r in chompy_rules.iter() {
@@ -2026,9 +2131,10 @@ pub mod halide_derive_tests {
         let implication_rules: ImplicationSet<Pred> =
             pairwise_implication_building(&all_conditions);
 
+
         for c in caviar_rules.iter() {
             if c.cond.is_some() {
-                println!("I'm trying to derive: {c}");
+                println!("I'm trying to derive {c} using {} Chompy rules", chompy_rules.len());
                 let derive_result = time_fn_call!(
                     format!("can_derive_{}", c.name),
                     chompy_rules.can_derive_cond(DeriveType::LhsAndRhs, c, Limits::deriving(), &implication_rules.to_egg_rewrites()));
@@ -2046,7 +2152,7 @@ pub mod halide_derive_tests {
 
         // write it to derive-with-timeout.json
         let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
-            + "/derive-with-timeout-full.json";
+            + "/derive-with-timeout-fuller.json";
 
         let out_path: &Path = Path::new(&binding);
 
