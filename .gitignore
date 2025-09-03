@@ -37,3 +37,13 @@ out/
 
 # Don't want flamegraphs.
 flamegraph.svg
+
+# We don't want logs.
+*.log
+*.smt2
+
+# We don't want venv artifacts.
+python/bin
+python/include
+python/lib
+python/pyvenv.cfg

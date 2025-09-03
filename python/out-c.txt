@@ -1,0 +1,322 @@
+x * c0 < y * c0 ==>  x < y if  c0 > 0
+x * c0 < y * c0 ==>  y < x if  c0 < 0
+x / c0 < c1 ==>  x < c1 * c0 if  c0 > 0
+min(z, y) < min(x, y + c0) ==>  min(z, y) < x if  c0 > 0
+min(z, y) < min(y + c0, x) ==>  min(z, y) < x if  c0 > 0
+min(z, y + c0) < min(x, y) ==>  min(z, y + c0) < x if  c0 < 0
+min(z, y + c0) < min(y, x) ==>  min(z, y + c0) < x if  c0 < 0
+min(y, z) < min(x, y + c0) ==>  min(z, y) < x if  c0 > 0
+min(y, z) < min(y + c0, x) ==>  min(z, y) < x if  c0 > 0
+min(y + c0, z) < min(x, y) ==>  min(z, y + c0) < x if  c0 < 0
+min(y + c0, z) < min(y, x) ==>  min(z, y + c0) < x if  c0 < 0
+max(z, y) < max(x, y + c0) ==>  max(z, y) < x if  c0 < 0
+max(z, y) < max(y + c0, x) ==>  max(z, y) < x if  c0 < 0
+max(z, y + c0) < max(x, y) ==>  max(z, y + c0) < x if  c0 > 0
+max(z, y + c0) < max(y, x) ==>  max(z, y + c0) < x if  c0 > 0
+max(y, z) < max(x, y + c0) ==>  max(z, y) < x if  c0 < 0
+max(y, z) < max(y + c0, x) ==>  max(z, y) < x if  c0 < 0
+max(y + c0, z) < max(x, y) ==>  max(z, y + c0) < x if  c0 > 0
+max(y + c0, z) < max(y, x) ==>  max(z, y + c0) < x if  c0 > 0
+x < select(y, x + c0, z) ==>  !y && (x < z) if  c0 <= 0
+x < select(y, x + c0, z) ==>  y || (x < z) if  c0 > 0
+x < select(y, z, x + c0) ==>  y && (x < z) if  c0 <= 0
+x < select(y, z, x + c0) ==>  !y || (x < z) if  c0 > 0
+x < select(y, x + c0, z) + c1 ==>  !y && (x < z + c1) if  c0 + c1 <= 0
+x < select(y, x + c0, z) + c1 ==>  y || (x < z + c1) if  c0 + c1 > 0
+x < select(y, z, x + c0) + c1 ==>  y && (x < z + c1) if  c0 + c1 <= 0
+x < select(y, z, x + c0) + c1 ==>  !y || (x < z + c1) if  c0 + c1 > 0
+select(y, x + c0, z) < x ==>  !y && (z < x) if  c0 >= 0
+select(y, x + c0, z) < x ==>  y || (z < x) if  c0 < 0
+select(y, z, x + c0) < x ==>  y && (z < x) if  c0 >= 0
+select(y, z, x + c0) < x ==>  !y || (z < x) if  c0 < 0
+select(y, x + c0, z) < x + c1 ==>  !y && (z < x + c1) if  c0 >= c1
+select(y, x + c0, z) < x + c1 ==>  y || (z < x + c1) if  c0 < c1
+select(y, z, x + c0) < x + c1 ==>  y && (z < x + c1) if  c0 >= c1
+select(y, z, x + c0) < x + c1 ==>  !y || (z < x + c1) if  c0 < c1
+x < (x/c1)*c1 ==>  0 if  c1 > 0
+(x + c1)/c0 < (x + c2)/c0 ==>  0 if  c0 > 0 && c1 >= c2
+(x + c1)/c0 < (x + c2)/c0 ==>  1 if  c0 > 0 && c1 <= c2 - c0
+x/c0 < (x + c2)/c0 ==>  0 if  c0 > 0 && 0 >= c2
+x/c0 < (x + c2)/c0 ==>  1 if  c0 > 0 && 0 <= c2 - c0
+(x + c1)/c0 < x/c0 ==>  0 if  c0 > 0 && c1 >= 0
+(x + c1)/c0 < x/c0 ==>  1 if  c0 > 0 && c1 <= 0 - c0
+(x + c1)/c0 < x/c0 + c2 ==>  0 if  c0 > 0 && c1 >= c2 * c0
+(x + c1)/c0 < x/c0 + c2 ==>  1 if  c0 > 0 && c1 <= c2 * c0 - c0
+(x + c1)/c0 < (min(x/c0, y) + c2) ==>  0 if  c0 > 0 && c1 >= c2 * c0
+(x + c1)/c0 < (max(x/c0, y) + c2) ==>  1 if  c0 > 0 && c1 <= c2 * c0 - c0
+(x + c1)/c0 < min((x + c2)/c0, y) ==>  0 if  c0 > 0 && c1 >= c2
+(x + c1)/c0 < max((x + c2)/c0, y) ==>  1 if  c0 > 0 && c1 <= c2 - c0
+(x + c1)/c0 < min(x/c0, y) ==>  0 if  c0 > 0 && c1 >= 0
+(x + c1)/c0 < max(x/c0, y) ==>  1 if  c0 > 0 && c1 <= 0 - c0
+(x + c1)/c0 < (min(y, x/c0) + c2) ==>  0 if  c0 > 0 && c1 >= c2 * c0
+(x + c1)/c0 < (max(y, x/c0) + c2) ==>  1 if  c0 > 0 && c1 <= c2 * c0 - c0
+(x + c1)/c0 < min(y, (x + c2)/c0) ==>  0 if  c0 > 0 && c1 >= c2
+(x + c1)/c0 < max(y, (x + c2)/c0) ==>  1 if  c0 > 0 && c1 <= c2 - c0
+(x + c1)/c0 < min(y, x/c0) ==>  0 if  c0 > 0 && c1 >= 0
+(x + c1)/c0 < max(y, x/c0) ==>  1 if  c0 > 0 && c1 <= 0 - c0
+max((x + c2)/c0, y) < (x + c1)/c0 ==>  0 if  c0 > 0 && c2 >= c1
+min((x + c2)/c0, y) < (x + c1)/c0 ==>  1 if  c0 > 0 && c2 <= c1 - c0
+max(x/c0, y) < (x + c1)/c0 ==>  0 if  c0 > 0 && 0 >= c1
+min(x/c0, y) < (x + c1)/c0 ==>  1 if  c0 > 0 && 0 <= c1 - c0
+max(y, (x + c2)/c0) < (x + c1)/c0 ==>  0 if  c0 > 0 && c2 >= c1
+min(y, (x + c2)/c0) < (x + c1)/c0 ==>  1 if  c0 > 0 && c2 <= c1 - c0
+max(y, x/c0) < (x + c1)/c0 ==>  0 if  c0 > 0 && 0 >= c1
+min(y, x/c0) < (x + c1)/c0 ==>  1 if  c0 > 0 && 0 <= c1 - c0
+max((x + c2)/c0, y) < x/c0 + c1 ==>  0 if  c0 > 0 && c2 >= c1 * c0
+min((x + c2)/c0, y) < x/c0 + c1 ==>  1 if  c0 > 0 && c2 <= c1 * c0 - c0
+max(y, (x + c2)/c0) < x/c0 + c1 ==>  0 if  c0 > 0 && c2 >= c1 * c0
+min(y, (x + c2)/c0) < x/c0 + c1 ==>  1 if  c0 > 0 && c2 <= c1 * c0 - c0
+x/c0 < min((x + c2)/c0, y) ==>  0 if  c0 > 0 && c2 < 0
+x/c0 < max((x + c2)/c0, y) ==>  1 if  c0 > 0 && c0 <= c2
+x/c0 < min(y, (x + c2)/c0) ==>  0 if  c0 > 0 && c2 < 0
+x/c0 < max(y, (x + c2)/c0) ==>  1 if  c0 > 0 && c0 <= c2
+max((x + c2)/c0, y) < x/c0 ==>  0 if  c0 > 0 && c2 >= 0
+min((x + c2)/c0, y) < x/c0 ==>  1 if  c0 > 0 && c2 + c0 <= 0
+max(y, (x + c2)/c0) < x/c0 ==>  0 if  c0 > 0 && c2 >= 0
+min(y, (x + c2)/c0) < x/c0 ==>  1 if  c0 > 0 && c2 + c0 <= 0
+((max(x, (y*c0) + c1) + c2)/c0) < y ==>  ((x + c2)/c0) < y if  c0 > 0 && (c1 + c2) < 0
+((max(x, (y*c0) + c1) + c2)/c0) < y ==>  0 if  c0 > 0 && (c1 + c2) >= 0
+((max(x, y*c0) + c1)/c0) < y ==>  ((x + c1)/c0) < y if  c0 > 0 && c1 < 0
+((max(x, y*c0) + c1)/c0) < y ==>  0 if  c0 > 0 && c1 >= 0
+((max((x*c0) + c1, y) + c2)/c0) < x ==>  ((y + c2)/c0) < x if  c0 > 0 && (c1 + c2) < 0
+((max((x*c0) + c1, y) + c2)/c0) < x ==>  0 if  c0 > 0 && (c1 + c2) >= 0
+((max(x*c0, y) + c1)/c0) < x ==>  ((y + c1)/c0) < x if  c0 > 0 && c1 < 0
+((max(x*c0, y) + c1)/c0) < x ==>  0 if  c0 > 0 && c1 >= 0
+(max(x, (y*c0) + c1)/c0) < y ==>  (x/c0) < y if  c0 > 0 && c1 < 0
+(max(x, (y*c0) + c1)/c0) < y ==>  0 if  c0 > 0 && c1 >= 0
+(max(x, y*c0)/c20) < y ==>  0 if  c0 > 0
+(max((x*c0) + c1, y)/c0) < x ==>  (y/c0) < x if  c0 > 0 && c1 < 0
+(max((x*c0) + c1, y)/c0) < x ==>  0 if  c0 > 0 && c1 >= 0
+(max(x*c0, y)/c0) < x ==>  0 if  c0 > 0
+((min(x, (y*c0) + c1) + c2)/c0) < y ==>  1 if  c0 > 0 && (c1 + c2) < 0
+((min(x, (y*c0) + c1) + c2)/c0) < y ==>  ((x + c2)/c0) < y if  c0 > 0 && (c1 + c2) >= 0
+((min(x, y*c0) + c1)/c0) < y ==>  1 if  c0 > 0 && c1 < 0
+((min(x, y*c0) + c1)/c0) < y ==>  ((x + c1)/c0) < y if  c0 > 0 && c1 >= 0
+((min((x*c0) + c1, y) + c2)/c0) < x ==>  1 if  c0 > 0 && (c1 + c2) < 0
+((min((x*c0) + c1, y) + c2)/c0) < x ==>  ((y + c2)/c0) < x if  c0 > 0 && (c1 + c2) >= 0
+((min(x*c0, y) + c1)/c0) < x ==>  1 if  c0 > 0 && c1 < 0
+((min(x*c0, y) + c1)/c0) < x ==>  ((y + c1)/c0) < x if  c0 > 0 && c1 >= 0
+(min(x, (y*c0) + c1)/c0) < y ==>  1 if  c0 > 0 && c1 < 0
+(min(x, (y*c0) + c1)/c0) < y ==>  (x/c0) < y if  c0 > 0 && c1 >= 0
+(min(x, y*c0)/c0) < y ==>  (x/c0) < y if  c0 > 0
+(min((x*c0) + c1, y)/c0) < x ==>  1 if  c0 > 0 && c1 < 0
+(min((x*c0) + c1, y)/c0) < x ==>  (y/c0) < x if  c0 > 0 && c1 >= 0
+(min(x*c0, y)/c0) < x ==>  (y/c0) < x if  c0 > 0
+min(x, c0) < min(x, c1) ==>  0 if  c0 >= c1
+min(x, c0) < min(x, c1) + c2 ==>  0 if  c0 >= c1 + c2 && c2 <= 0
+max(x, c0) < max(x, c1) ==>  0 if  c0 >= c1
+max(x, c0) < max(x, c1) + c2 ==>  0 if  c0 >= c1 + c2 && c2 <= 0
+select(0 < x, min(x*c0, c1), x*c0) ==>  min(x*c0, c1) if  c1 >= 0 && c0 >= 0
+select(x < c0, 0, min(x, c0) + c1) ==>  0 if  c0 == -c1
+select(0 < x, ((x*c0) + c1) / x, y) ==>  select(0 < x, c0 - 1, y) if  c1 == -1
+select(c0 < x, x + c1, c2) ==>  max(x + c1, c2) if  c2 == c0 + c1 || c2 == c0 + c1 + 1
+select(x < c0, c1, x + c2) ==>  max(x + c2, c1) if  c1 == c0 + c2 || c1 + 1 == c0 + c2
+select(c0 < x, c1, x + c2) ==>  min(x + c2, c1) if  c1 == c0 + c2 || c1 == c0 + c2 + 1
+select(x < c0, x + c1, c2) ==>  min(x + c1, c2) if  c2 == c0 + c1 || c2 + 1 == c0 + c1
+select(c0 < x, x, c1) ==>  max(x, c1) if  c1 == c0 + 1
+select(x < c0, c1, x) ==>  max(x, c1) if  c1 + 1 == c0
+select(c0 < x, c1, x) ==>  min(x, c1) if  c1 == c0 + 1
+select(x < c0, x, c1) ==>  min(x, c1) if  c1 + 1 == c0
+max(x, c0) ==>  b if  is_max_value(c0)
+max(x, c0) ==>  x if  is_min_value(c0)
+max((x/c0)*c0, x) ==>  b if  c0 > 0
+max(x, (x/c0)*c0) ==>  a if  c0 > 0
+max(min(x, c0), c1) ==>  b if  c1 >= c0
+max(((x + c0)/c1)*c1 + c2, x) ==>  a if  c1 > 0 && c0 + c2 >= c1 - 1
+max(x, ((x + c0)/c1)*c1 + c2) ==>  b if  c1 > 0 && c0 + c2 >= c1 - 1
+max(((x + c0)/c1)*c1 + c2, x) ==>  b if  c1 > 0 && c0 + c2 <= 0
+max(x, ((x + c0)/c1)*c1 + c2) ==>  a if  c1 > 0 && c0 + c2 <= 0
+max((x/c0)*c0, (x/c1)*c1 + c2) ==>  b if  c2 >= c1 && c1 > 0 && c0 != 0
+max((x/c1)*c1 + c2, x) ==>  a if  c1 > 0 && c2 >= c1 - 1
+max(x, (x/c1)*c1 + c2) ==>  b if  c1 > 0 && c2 >= c1 - 1
+max(((x + c0)/c1)*c1, x) ==>  a if  c1 > 0 && c0 >= c1 - 1
+max(x, ((x + c0)/c1)*c1) ==>  b if  c1 > 0 && c0 >= c1 - 1
+max((x/c1)*c1 + c2, x) ==>  b if  c1 > 0 && c2 <= 0
+max(x, (x/c1)*c1 + c2) ==>  a if  c1 > 0 && c2 <= 0
+max(((x + c0)/c1)*c1, x) ==>  b if  c1 > 0 && c0 <= 0
+max(x, ((x + c0)/c1)*c1) ==>  a if  c1 > 0 && c0 <= 0
+max(x, min(x, y) + c0) ==>  a if  c0 <= 0
+max(x, min(y, x) + c0) ==>  a if  c0 <= 0
+max(min(x, y) + c0, x) ==>  b if  c0 <= 0
+max(min(x, y) + c0, y) ==>  b if  c0 <= 0
+max(min(c0 - x, x), c1) ==>  b if  2*c1 >= c0 - 1
+max(min(x, c0 - x), c1) ==>  b if  2*c1 >= c0 - 1
+max(max(x / c0, y), z / c0) ==>  max(max(x, z) / c0, y) if  c0 > 0
+max(x, select(x == c0, c1, x)) ==>  select(x == c0, c1, x) if  c0 < c1
+max(x, select(x == c0, c1, x)) ==>  x if  c1 <= c0
+max(select(x == c0, c1, x), c2) ==>  max(x, c2) if  (c0 <= c2) && (c1 <= c2)
+max(select(x == c0, c1, x), x) ==>  select(x == c0, c1, x) if  c0 < c1
+max(select(x == c0, c1, x), x) ==>  x if  c1 <= c0
+max(max(x, y) + c0, x) ==>  max(x, y + c0) if  c0 < 0
+max(max(x, y) + c0, x) ==>  max(x, y) + c0 if  c0 > 0
+max(max(y, x) + c0, x) ==>  max(y + c0, x) if  c0 < 0
+max(max(y, x) + c0, x) ==>  max(y, x) + c0 if  c0 > 0
+max(x, max(x, y) + c0) ==>  max(x, y + c0) if  c0 < 0
+max(x, max(x, y) + c0) ==>  max(x, y) + c0 if  c0 > 0
+max(x, max(y, x) + c0) ==>  max(x, y + c0) if  c0 < 0
+max(x, max(y, x) + c0) ==>  max(x, y) + c0 if  c0 > 0
+max(max(x, y), x + c0) ==>  max(x + c0, y) if  c0 > 0
+max(max(x, y), x + c0) ==>  max(x, y) if  c0 < 0
+max(max(y, x), x + c0) ==>  max(y, x + c0) if  c0 > 0
+max(max(y, x), x + c0) ==>  max(y, x) if  c0 < 0
+max((x*c0 + y)*c1, x*c2 + z) ==>  max(y*c1, z) + x*c2 if  c0 * c1 == c2
+max((y + x*c0)*c1, x*c2 + z) ==>  max(y*c1, z) + x*c2 if  c0 * c1 == c2
+max((x*c0 + y)*c1, z + x*c2) ==>  max(y*c1, z) + x*c2 if  c0 * c1 == c2
+max((y + x*c0)*c1, z + x*c2) ==>  max(y*c1, z) + x*c2 if  c0 * c1 == c2
+max(x / c0, y / c0) ==>  max(x, y) / c0 if  c0 > 0
+max(x / c0, y / c0) ==>  min(x, y) / c0 if  c0 < 0
+max(((x + c0) / c1) * c1, x + c2) ==>  ((x + c0) / c1) * c1 if  c1 > 0 && c0 + 1 >= c1 + c2
+max((x + c0)/c1, ((x + c2)/c3)*c4) ==>  (x + c0)/c1 if  c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+max((x + c0)/c1, ((x + c2)/c3)*c4) ==>  ((x + c2)/c3)*c4 if  c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+max(x/c1, ((x + c2)/c3)*c4) ==>  x/c1 if  c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+max(x/c1, ((x + c2)/c3)*c4) ==>  ((x + c2)/c3)*c4 if  c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+max((x + c0)/c1, (x/c3)*c4) ==>  (x + c0)/c1 if  0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+max((x + c0)/c1, (x/c3)*c4) ==>  (x/c3)*c4 if  c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+max(x/c1, (x/c3)*c4) ==>  x/c1 if  c1 > 0 && c3 > 0 && c1 * c4 == c3
+select(x, c0, y) == 0 ==>  !x && (y == 0) if  c0 != 0
+select(x, y, c0) == 0 ==>  x && (y == 0) if  c0 != 0
+max(x, c0) + c1 == 0 ==>  0 if  c0 + c1 > 0
+min(x, c0) + c1 == 0 ==>  0 if  c0 + c1 < 0
+max(x, c0) + c1 == 0 ==>  x <= c0 if  c0 + c1 == 0
+min(x, c0) + c1 == 0 ==>  c0 <= x if  c0 + c1 == 0
+max(x, c0) == 0 ==>  x == 0 if  c0 < 0
+min(x, c0) == 0 ==>  x == 0 if  c0 > 0
+max(x, c0) == 0 ==>  0 if  c0 > 0
+min(x, c0) == 0 ==>  0 if  c0 < 0
+(x * c1 - y) / c0 ==>  (0 - y) / c0 - x if                        c0 + c1 == 0
+((x * c1 - y) - z) / c0 ==>  (0 - y - z) / c0 - x if              c0 + c1 == 0
+x != c0 && x == c1 ==>  b if  c0 != c1
+x == c0 && x == c1 ==>  0 if  c0 != c1
+x <= c1 && c0 < x ==>  0 if  c1 <= c0
+c0 <= x && x < c1 ==>  0 if  c1 <= c0
+c0 <= x && x <= c1 ==>  0 if  c1 < c0
+x <= c1 && c0 <= x ==>  0 if  c1 < c0
+min(x, y) - min(z, w) ==>  y - w if  can_prove(x - y == z - w, this)
+min(x, y) - min(w, z) ==>  y - w if  can_prove(x - y == z - w, this)
+min(x*c0, c1) - min(x, c2)*c0 ==>  min(c1 - min(x, c2)*c0, 0) if  c0 > 0 && c1 <= c2*c0
+max(x, y) - max(z, w) ==>  y - w if  can_prove(x - y == z - w, this)
+max(x, y) - max(w, z) ==>  y - w if  can_prove(x - y == z - w, this)
+min(x, y) - min(x, w) ==>  min(y - min(x, w), 0) if  can_prove(y <= w, this)
+min(x, y) - min(x, w) ==>  max(min(x, y) - w, 0) if  can_prove(y >= w, this)
+min(x + c0, y) - min(x, w) ==>  min(y - min(x, w), c0) if  can_prove(y <= w + c0, this)
+min(x + c0, y) - min(x, w) ==>  max(min(x + c0, y) - w, c0) if  can_prove(y >= w + c0, this)
+min(y, x) - min(w, x) ==>  min(y - min(x, w), 0) if  can_prove(y <= w, this)
+min(y, x) - min(w, x) ==>  max(min(x, y) - w, 0) if  can_prove(y >= w, this)
+min(y, x + c0) - min(w, x) ==>  min(y - min(x, w), c0) if  can_prove(y <= w + c0, this)
+min(y, x + c0) - min(w, x) ==>  max(min(x + c0, y) - w, c0) if  can_prove(y >= w + c0, this)
+min(x, y) - min(w, x) ==>  min(y - min(x, w), 0) if  can_prove(y <= w, this)
+min(x, y) - min(w, x) ==>  max(min(x, y) - w, 0) if  can_prove(y >= w, this)
+min(x + c0, y) - min(w, x) ==>  min(y - min(x, w), c0) if  can_prove(y <= w + c0, this)
+min(x + c0, y) - min(w, x) ==>  max(min(x + c0, y) - w, c0) if  can_prove(y >= w + c0, this)
+min(y, x) - min(x, w) ==>  min(y - min(x, w), 0) if  can_prove(y <= w, this)
+min(y, x) - min(x, w) ==>  max(min(x, y) - w, 0) if  can_prove(y >= w, this)
+min(y, x + c0) - min(x, w) ==>  min(y - min(x, w), c0) if  can_prove(y <= w + c0, this)
+min(y, x + c0) - min(x, w) ==>  max(min(x + c0, y) - w, c0) if  can_prove(y >= w + c0, this)
+max(x, y) - max(x, w) ==>  max(y - max(x, w), 0) if  can_prove(y >= w, this)
+max(x, y) - max(x, w) ==>  min(max(x, y) - w, 0) if  can_prove(y <= w, this)
+max(x + c0, y) - max(x, w) ==>  max(y - max(x, w), c0) if  can_prove(y >= w + c0, this)
+max(x + c0, y) - max(x, w) ==>  min(max(x + c0, y) - w, c0) if  can_prove(y <= w + c0, this)
+max(y, x) - max(w, x) ==>  max(y - max(x, w), 0) if  can_prove(y >= w, this)
+max(y, x) - max(w, x) ==>  min(max(x, y) - w, 0) if  can_prove(y <= w, this)
+max(y, x + c0) - max(w, x) ==>  max(y - max(x, w), c0) if  can_prove(y >= w + c0, this)
+max(y, x + c0) - max(w, x) ==>  min(max(x + c0, y) - w, c0) if  can_prove(y <= w + c0, this)
+max(x, y) - max(w, x) ==>  max(y - max(x, w), 0) if  can_prove(y >= w, this)
+max(x, y) - max(w, x) ==>  min(max(x, y) - w, 0) if  can_prove(y <= w, this)
+max(x + c0, y) - max(w, x) ==>  max(y - max(x, w), c0) if  can_prove(y >= w + c0, this)
+max(x + c0, y) - max(w, x) ==>  min(max(x + c0, y) - w, c0) if  can_prove(y <= w + c0, this)
+max(y, x) - max(x, w) ==>  max(y - max(x, w), 0) if  can_prove(y >= w, this)
+max(y, x) - max(x, w) ==>  min(max(x, y) - w, 0) if  can_prove(y <= w, this)
+max(y, x + c0) - max(x, w) ==>  max(y - max(x, w), c0) if  can_prove(y >= w + c0, this)
+max(y, x + c0) - max(x, w) ==>  min(max(x + c0, y) - w, c0) if  can_prove(y <= w + c0, this)
+((x + y) + z)/c0 - ((y + x) + w)/c0 ==>  ((x + y) + z)/c0 - ((x + y) + w)/c0 if  c0 > 0
+(x + y)/c0 - (y + x)/c0 ==>  0 if  c0 != 0
+min(x*c0 + y, z) / c1 - x*c2 ==>  min(y, z - x*c0) / c1 if  c0 == c1 * c2
+min(z, x*c0 + y) / c1 - x*c2 ==>  min(y, z - x*c0) / c1 if  c0 == c1 * c2
+(min(x*c0 + y, z) + w) / c1 - x*c2 ==>  (min(y, z - x*c0) + w) / c1 if  c0 == c1 * c2
+(min(z, x*c0 + y) + w) / c1 - x*c2 ==>  (min(z - x*c0, y) + w) / c1 if  c0 == c1 * c2   
+x != c0 || x == c1 ==>  a if  c0 != c1
+x <= c0 || c1 < x ==>  1 if  c1 <= c0
+c1 <= x || x < c0 ==>  1 if  c1 <= c0
+x < c0 || c1 < x ==>  1 if  c1 < c0
+c1 < x || x < c0 ==>  1 if  c1 < c0
+select(x, y, z + c0) + c1 ==>  select(x, y + c1, z) if  (c0 + c1) == 0
+min(x, y + c0) + c1 ==>  min(x + c1, y) if  c0 + c1 == 0
+min(y + c0, x) + c1 ==>  min(y, x + c1) if  c0 + c1 == 0
+max(x, y + c0) + c1 ==>  max(x + c1, y) if  c0 + c1 == 0
+max(y + c0, x) + c1 ==>  max(y, x + c1) if  c0 + c1 == 0
+min(x, y + (z*c0)) + (z*c1) ==>  min(x + (z*c1), y) if  (c0 + c1) == 0
+min(x, (y*c0) + z) + (y*c1) ==>  min(x + (y*c1), z) if  (c0 + c1) == 0
+min(x, y*c0) + (y*c1) ==>  min(x + (y*c1), 0) if  (c0 + c1) == 0
+min(x + (y*c0), z) + (y*c1) ==>  min((y*c1) + z, x) if  (c0 + c1) == 0
+min((x*c0) + y, z) + (x*c1) ==>  min(y, (x*c1) + z) if  (c0 + c1) == 0
+min(x*c0, y) + (x*c1) ==>  min((x*c1) + y, 0) if  (c0 + c1) == 0
+max(x, y + (z*c0)) + (z*c1) ==>  max(x + (z*c1), y) if  (c0 + c1) == 0
+max(x, (y*c0) + z) + (y*c1) ==>  max(x + (y*c1), z) if  (c0 + c1) == 0
+max(x, y*c0) + (y*c1) ==>  max(x + (y*c1), 0) if  (c0 + c1) == 0
+max(x + (y*c0), z) + (y*c1) ==>  max(x, (y*c1) + z) if  (c0 + c1) == 0
+max((x*c0) + y, z) + (x*c1) ==>  max((x*c1) + z, y) if  (c0 + c1) == 0
+max(x*c0, y) + (x*c1) ==>  max((x*c1) + y, 0) if  (c0 + c1) == 0
+min(x, c0) ==>  b if  is_min_value(c0)
+min(x, c0) ==>  x if  is_max_value(c0)
+min((x/c0)*c0, x) ==>  a if  c0 > 0
+min(x, (x/c0)*c0) ==>  b if  c0 > 0
+min(max(x, c0), c1) ==>  b if  c1 <= c0
+min(((x + c0)/c1)*c1 + c2, x) ==>  b if  c1 > 0 && c0 + c2 >= c1 - 1
+min(x, ((x + c0)/c1)*c1 + c2) ==>  a if  c1 > 0 && c0 + c2 >= c1 - 1
+min(((x + c0)/c1)*c1 + c2, x) ==>  a if  c1 > 0 && c0 + c2 <= 0
+min(x, ((x + c0)/c1)*c1 + c2) ==>  b if  c1 > 0 && c0 + c2 <= 0
+min((x/c0)*c0, (x/c1)*c1 + c2) ==>  a if  c2 >= c1 && c1 > 0 && c0 != 0
+min((x/c1)*c1 + c2, x) ==>  b if  c1 > 0 && c2 >= c1 - 1
+min(x, (x/c1)*c1 + c2) ==>  a if  c1 > 0 && c2 >= c1 - 1
+min(((x + c0)/c1)*c1, x) ==>  b if  c1 > 0 && c0 >= c1 - 1
+min(x, ((x + c0)/c1)*c1) ==>  a if  c1 > 0 && c0 >= c1 - 1
+min((x/c1)*c1 + c2, x) ==>  a if  c1 > 0 && c2 <= 0
+min(x, (x/c1)*c1 + c2) ==>  b if  c1 > 0 && c2 <= 0
+min(((x + c0)/c1)*c1, x) ==>  a if  c1 > 0 && c0 <= 0
+min(x, ((x + c0)/c1)*c1) ==>  b if  c1 > 0 && c0 <= 0
+min(x, max(x, y) + c0) ==>  a if  0 <= c0
+min(x, max(y, x) + c0) ==>  a if  0 <= c0
+min(max(x, y) + c0, x) ==>  b if  0 <= c0
+min(max(x, y) + c0, y) ==>  b if  0 <= c0
+min(max(x, y + c0), y) ==>  y if  c0 > 0
+min(max(c0 - x, x), c1) ==>  b if  2*c1 <= c0 + 1
+min(max(x, c0 - x), c1) ==>  b if  2*c1 <= c0 + 1
+min(min(x / c0, y), z / c0) ==>  min(min(x, z) / c0, y) if  c0 > 0
+min(max(x, c0), c1) ==>  max(min(x, c1), c0) if  c0 <= c1
+min(x, select(x == c0, c1, x)) ==>  select(x == c0, c1, x) if  c1 < c0
+min(x, select(x == c0, c1, x)) ==>  x if  c0 <= c1
+min(select(x == c0, c1, x), c2) ==>  min(x, c2) if  (c2 <= c0) && (c2 <= c1)
+min(select(x == c0, c1, x), x) ==>  select(x == c0, c1, x) if  c1 < c0
+min(select(x == c0, c1, x), x) ==>  x if  c0 <= c1
+min(min(x, y) + c0, x) ==>  min(x, y + c0) if  c0 > 0
+min(min(x, y) + c0, x) ==>  min(x, y) + c0 if  c0 < 0
+min(min(y, x) + c0, x) ==>  min(y + c0, x) if  c0 > 0
+min(min(y, x) + c0, x) ==>  min(y, x) + c0 if  c0 < 0
+min(x, min(x, y) + c0) ==>  min(x, y + c0) if  c0 > 0
+min(x, min(x, y) + c0) ==>  min(x, y) + c0 if  c0 < 0
+min(x, min(y, x) + c0) ==>  min(x, y + c0) if  c0 > 0
+min(x, min(y, x) + c0) ==>  min(x, y) + c0 if  c0 < 0
+min(min(x, y), x + c0) ==>  min(x, y) if  c0 > 0
+min(min(x, y), x + c0) ==>  min(x + c0, y) if  c0 < 0
+min(min(y, x), x + c0) ==>  min(y, x) if  c0 > 0
+min(min(y, x), x + c0) ==>  min(y, x + c0) if  c0 < 0
+min(max(x + c0, y), x) ==>  x if  c0 > 0
+min((x*c0 + y)*c1, x*c2 + z) ==>  min(y*c1, z) + x*c2 if  c0 * c1 == c2
+min((y + x*c0)*c1, x*c2 + z) ==>  min(y*c1, z) + x*c2 if  c0 * c1 == c2
+min((x*c0 + y)*c1, z + x*c2) ==>  min(y*c1, z) + x*c2 if  c0 * c1 == c2
+min((y + x*c0)*c1, z + x*c2) ==>  min(y*c1, z) + x*c2 if  c0 * c1 == c2
+min(x / c0, y / c0) ==>  min(x, y) / c0 if  c0 > 0
+min(x / c0, y / c0) ==>  max(x, y) / c0 if  c0 < 0
+min(((x + c0) / c1) * c1, x + c2) ==>  x + c2 if  c1 > 0 && c0 + 1 >= c1 + c2
+min((min(((y + c0)/c1), x)*c1), y + c2) ==>  min(x * c1, y + c2) if  c1 > 0 && c1 + c2 <= c0 + 1
+min((min(((y + c0)/c1), x)*c1) + c2, y) ==>  min(x * c1 + c2, y) if  c1 > 0 && c1 <= c0 + c2 + 1
+min(min(((y + c0)/c1), x)*c1, y) ==>  min(x * c1, y) if  c1 > 0 && c1 <= c0 + 1
+min((x + c0)/c1, ((x + c2)/c3)*c4) ==>  (x + c0)/c1 if  c0 + c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+min((x + c0)/c1, ((x + c2)/c3)*c4) ==>  ((x + c2)/c3)*c4 if  c2 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+min(x/c1, ((x + c2)/c3)*c4) ==>  x/c1 if  c3 - c1 <= c2 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+min(x/c1, ((x + c2)/c3)*c4) ==>  ((x + c2)/c3)*c4 if  c2 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+min((x + c0)/c1, (x/c3)*c4) ==>  (x + c0)/c1 if  c0 + c3 - c1 <= 0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+min((x + c0)/c1, (x/c3)*c4) ==>  (x/c3)*c4 if  0 <= c0 && c1 > 0 && c3 > 0 && c1 * c4 == c3
+min(x/c1, (x/c3)*c4) ==>  (x/c3)*c4 if  c1 > 0 && c3 > 0 && c1 * c4 == c3
+min(x + c0, y) - select(z, min(x, y) + c1, x) ==>  select(z, (max(min(y - x, c0), 0) - c1), min(y - x, c0)) if  c0 > 0
+min(y, x + c0) - select(z, min(y, x) + c1, x) ==>  select(z, (max(min(y - x, c0), 0) - c1), min(y - x, c0)) if  c0 > 0
