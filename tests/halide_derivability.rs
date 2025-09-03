@@ -1621,6 +1621,10 @@ pub mod halide_derive_tests {
             })
             .collect();
 
+        let mut all_conditions = all_conditions.clone();
+        all_conditions.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+        all_conditions.dedup();
+
         let mut implication_rules: ImplicationSet<Pred> =
             pairwise_implication_building(&all_conditions);
 
@@ -1649,8 +1653,8 @@ pub mod halide_derive_tests {
 
         let forward_result =
             run_derivability_tests(&chompy_rules, &keep_total(&caviar_rules), &implication_rules);
-        let backward_result =
-            run_derivability_tests(&caviar_rules, &keep_total(&chompy_rules), &implication_rules);
+        // let backward_result =
+        //     run_derivability_tests(&caviar_rules, &keep_total(&chompy_rules), &implication_rules);
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({
@@ -1661,7 +1665,7 @@ pub mod halide_derive_tests {
 
         let to_write = serde_json::json!({
             "forwards": to_json(forward_result),
-            "backwards": to_json(backward_result),
+            // "backwards": to_json(backward_result),
         });
         std::fs::write(out_path, to_write.to_string())
             .expect("Failed to write derivability results to file");
