@@ -321,22 +321,50 @@ async fn run_workload_internal<L: SynthLanguage>(
 }
 
 pub async fn get_llm_ammo<L: SynthLanguage>(cfg: LLMUsage, wkld: &Workload, cond_wkld: &Workload) -> (Workload, Workload) {
-    match cfg {
-        LLMUsage::Enumeration(cfg) | LLMUsage::EnumerationOnly(cfg) => {
-            let cfg = cfg.clone();
-            let client = reqwest::Client::new();
+    let enumeration_cfg = match cfg {
+        LLMUsage::Enumeration(cfg) | LLMUsage::EnumerationOnly(cfg) => Some(cfg),
+        LLMUsage::Combined(usages) => {
+            let enumeration_cfg = usages.iter().find_map(|u| {
+                if let LLMUsage::Enumeration(cfg) = u {
+                    Some(cfg.clone())
+                } else {
+                    None
+                }
+            });
 
-            let conditions = if cond_wkld != &Workload::empty() {
-                get_llm_conditions::<L>(&client, &cond_wkld, &wkld, cfg.num_conditions).await
-            } else {
-                Workload::empty()
-            };
+            let enumeration_only_cfg = usages.iter().find_map(|u| {
+                if let LLMUsage::EnumerationOnly(cfg) = u {
+                    Some(cfg.clone())
+                } else {
+                    None
+                }
+            });
 
-            let terms = get_llm_conditions::<L>(&client, &cond_wkld, &wkld, cfg.num_terms).await;
-
-            (terms, conditions)
+            match (enumeration_cfg, enumeration_only_cfg) {
+                (Some(cfg), None) => Some(cfg),
+                (None, Some(cfg)) => Some(cfg),
+                (Some(_), Some(_)) => panic!("Cannot have both Enumeration and EnumerationOnly in Combined LLMUsage"),
+                (None, None) => None,
+            }
         }
-        _ => (Workload::empty(), Workload::empty()),
+        _ => None,
+    };
+
+    if let Some(cfg) = enumeration_cfg {
+        let cfg = cfg.clone();
+        let client = reqwest::Client::new();
+
+        let conditions = if cond_wkld != &Workload::empty() {
+            get_llm_conditions::<L>(&client, &cond_wkld, &wkld, cfg.num_conditions).await
+        } else {
+            Workload::empty()
+        };
+
+        let terms = get_llm_conditions::<L>(&client, &cond_wkld, &wkld, cfg.num_terms).await;
+
+        (terms, conditions)
+    } else {
+        (Workload::empty(), Workload::empty())
     }
 }
 
@@ -368,6 +396,31 @@ pub async fn run_workload<L: SynthLanguage>(
         LLMUsage::Enumeration(_) => {
             (workload.append(additional_terms), llm_cond_workload.append(additional_conditions.clone()))
         }
+        LLMUsage::Combined(ref usages) => {
+            let enumeration_cfg = usages.iter().find_map(|u| {
+                if let LLMUsage::Enumeration(cfg) = u {
+                    Some(cfg.clone())
+                } else {
+                    None
+                }
+            });
+
+            let enumeration_only_cfg = usages.iter().find_map(|u| {
+                if let LLMUsage::EnumerationOnly(cfg) = u {
+                    Some(cfg.clone())
+                } else {
+                    None
+                }
+            });
+
+            match (enumeration_cfg, enumeration_only_cfg) {
+                (Some(_), None) => (workload.append(additional_terms), llm_cond_workload.append(additional_conditions)),
+                (None, Some(_)) => (additional_terms, additional_conditions),
+                (Some(_), Some(_)) => panic!("Cannot have both Enumeration and EnumerationOnly in Combined LLMUsage"),
+                (None, None) => (workload, llm_cond_workload),
+            }
+        }
+
         _ => (workload, llm_cond_workload),
     };
 
@@ -546,12 +599,60 @@ async fn recursive_rules_cond_internal<L: SynthLanguage>(
         let wkld = match llm_usage {
             LLMUsage::EnumerationOnly(_) => additional_terms.filter(Filter::MetricEq(metric, n)),
             LLMUsage::Enumeration(_) => wkld.append(additional_terms.filter(Filter::MetricEq(metric, n))),
+            LLMUsage::Combined(ref usages) => {
+                let enumeration_cfg = usages.iter().find_map(|u| {
+                    if let LLMUsage::Enumeration(cfg) = u {
+                        Some(cfg.clone())
+                    } else {
+                        None
+                    }
+                });
+
+                let enumeration_only_cfg = usages.iter().find_map(|u| {
+                    if let LLMUsage::EnumerationOnly(cfg) = u {
+                        Some(cfg.clone())
+                    } else {
+                        None
+                    }
+                });
+
+                match (enumeration_cfg, enumeration_only_cfg) {
+                    (Some(_), None) => wkld.append(additional_terms.filter(Filter::MetricEq(metric, n))),
+                    (None, Some(_)) => additional_terms.filter(Filter::MetricEq(metric, n)),
+                    (Some(_), Some(_)) => panic!("Cannot have both Enumeration and EnumerationOnly in Combined LLMUsage"),
+                    (None, None) => wkld,
+                }
+            }
             _ => wkld,
         };
 
         let conditions = match llm_usage {
             LLMUsage::EnumerationOnly(_) => additional_conditions,
             LLMUsage::Enumeration(_) => conditions.append(additional_conditions),
+            LLMUsage::Combined(ref usages) => {
+                let enumeration_cfg = usages.iter().find_map(|u| {
+                    if let LLMUsage::Enumeration(cfg) = u {
+                        Some(cfg.clone())
+                    } else {
+                        None
+                    }
+                });
+
+                let enumeration_only_cfg = usages.iter().find_map(|u| {
+                    if let LLMUsage::EnumerationOnly(cfg) = u {
+                        Some(cfg.clone())
+                    } else {
+                        None
+                    }
+                });
+
+                match (enumeration_cfg, enumeration_only_cfg) {
+                    (Some(_), None) => conditions.append(additional_conditions),
+                    (None, Some(_)) => additional_conditions,
+                    (Some(_), Some(_)) => panic!("Cannot have both Enumeration and EnumerationOnly in Combined LLMUsage"),
+                    (None, None) => conditions,
+                }
+            },
             _ => conditions,
         };
 
