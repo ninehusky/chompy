@@ -368,6 +368,8 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
         .unwrap_or("")
         .to_string();
 
+    println!("OUTPUT:\n{}", text_output);
+
     Ok(text_output)
 
 }
@@ -391,7 +393,6 @@ pub async fn get_llm_terms<L: SynthLanguage>(client: &Client, terms: &Workload, 
 
     let mut final_wkld = Workload::empty();
     for line in response.lines() {
-        println!("line: {}", line);
         // Attempt to parse it as a RecExpr<Pred>.
         let recexpr: Result<RecExpr<L>, _> = line.parse();
         if let Ok(re) = recexpr {
@@ -422,7 +423,6 @@ pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &
 
     let mut working_wkld = Workload::empty();
     for line in response.lines() {
-        println!("line: {}", line);
         // Attempt to parse it as a RecExpr<Pred>.
         let recexpr: Result<RecExpr<L>, _> = line.parse();
         if let Ok(re) = recexpr {
@@ -440,12 +440,9 @@ pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &
             Some(HalideType::BoolType) => {
                 final_wkld = final_wkld.append(Workload::new(&[sexp.to_string()]));
             }
-            Some(HalideType::IntType) => {
+            _  => {
                 final_wkld = final_wkld.append(Workload::new(&[format!("(!= {} 0)", sexp.to_string())]));
             },
-            _ => {
-                println!("Skipping condition with non-bool/int type: {}", sexp);
-            }
         };
     }
 

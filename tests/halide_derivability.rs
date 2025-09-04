@@ -3,7 +3,7 @@ use std::path::Path;
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
-    }, enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload}, halide::{og_recipe, Pred}, recipe_utils::{LLMEnumerationConfig, LLMFilterConfig, LLMUsage}, Limits, SynthLanguage
+    }, enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload}, halide::{mini_recipe, og_recipe, Pred}, recipe_utils::{LLMEnumerationConfig, LLMFilterConfig, LLMUsage}, Limits, SynthLanguage
 };
 
 struct DerivabilityResult<L: SynthLanguage> {
@@ -633,10 +633,11 @@ pub async fn output_all() {
     // We will evaluate ruleset creation with the following settings:
     // No LLM assistance (baseline)
     // LLM enumeration ONLY
+    // baseline + LLM enumeration.
     // baseline + LLM filtering (limit 5)
     // baseline + LLM filtering (limit 1)
     // baseline + LLM filtering (limit 5) + LLM enumeration
-    let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(50);
+    let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
     let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(100);
 
     
@@ -646,14 +647,18 @@ pub async fn output_all() {
     // 2. LLM enumeration ONLY
     usages.push(("LLM_enum".to_string(), LLMUsage::EnumerationOnly(default_enum_cfg.clone())));
 
-    // 3, 4: baseline + LLM filtering (limit 1, 5)
+    // 3. Baseline + LLM enumeration.
+    usages.push(("LLM_enum".to_string(), LLMUsage::Enumeration(default_enum_cfg.clone())));
+    
+
+    // 4, 5: baseline + LLM filtering (limit 1, 5)
     for top_k in [1, 5] {
         usages.push((
             format!("baseline_with_LLM_filter_{top_k}"),
             LLMUsage::Filter(LLMFilterConfig::default().with_on_threshold(50).with_top_k(top_k))));
     }
 
-    // 5. baseline + LLM filtering (limit 5) + LLM enumeration
+    // 6. baseline + LLM filtering (limit 5) + LLM enumeration
     usages.push((
         "baseline_with_LLM filter_5_and_LLM_enum".to_string(),
         LLMUsage::Combined(
@@ -665,9 +670,9 @@ pub async fn output_all() {
     ));
 
     for (label, usage) in usages {
-        let rules = og_recipe(usage).await;
+        let rules = mini_recipe(usage).await;
         // then, print the ruleset to a file
-        rules.to_file(&format!("halide_rules_{}.txt", label));
+        rules.to_file(&format!("mini_rules_{}.txt", label));
     }
 }
     

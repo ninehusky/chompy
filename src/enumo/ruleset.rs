@@ -850,13 +850,11 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
                 if egraph.find(l_id) == egraph.find(r_id) {
-                    println!("condition: {condition}");
-                    println!("removing rule {rule}");
+                    // println!("condition: {condition}");
+                    // println!("removing rule {rule}");
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());
-                } else {
-                    println!("i'm keeping {rule}");
                 }
             }
         }
@@ -971,9 +969,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
-            for s in selected.iter() {
-                println!("[minimize] Selected: {s}");
-            }
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
         }
