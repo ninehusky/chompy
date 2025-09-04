@@ -5,7 +5,7 @@ use egg::{AstSize, EGraph, Extractor, Runner};
 use crate::{
     conditions::implication_set::ImplicationSet,
     enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload},
-    llm::sort_rule_candidates,
+    llm::{get_llm_conditions, sort_rule_candidates},
     Limits, SynthAnalysis, SynthLanguage,
 };
 
@@ -320,6 +320,26 @@ async fn run_workload_internal<L: SynthLanguage>(
     chosen
 }
 
+pub async fn get_llm_ammo<L: SynthLanguage>(cfg: LLMUsage, wkld: &Workload, cond_wkld: &Workload) -> (Workload, Workload) {
+    match cfg {
+        LLMUsage::Enumeration(cfg) | LLMUsage::EnumerationOnly(cfg) => {
+            let cfg = cfg.clone();
+            let client = reqwest::Client::new();
+
+            let conditions = if cond_wkld != &Workload::empty() {
+                get_llm_conditions::<L>(&client, &cond_wkld, &wkld, cfg.num_conditions).await
+            } else {
+                Workload::empty()
+            };
+
+            let terms = get_llm_conditions::<L>(&client, &cond_wkld, &wkld, cfg.num_terms).await;
+
+            (terms, conditions)
+        }
+        _ => (Workload::empty(), Workload::empty()),
+    }
+}
+
 /// Runs rule inference:
 ///     1. convert workload to e-graph
 ///     2. If there are prior rules, compress the e-graph using them
@@ -334,10 +354,27 @@ pub async fn run_workload<L: SynthLanguage>(
 ) -> Ruleset<L> {
     println!("[run_workload] Running workload");
     let start = Instant::now();
+
+    // Clone the workloads for LLM usage
+    let llm_workload = workload.clone();
+    let llm_cond_workload = cond_workload.clone().unwrap_or_else(Workload::empty);
+
+    let (additional_terms, additional_conditions) = get_llm_ammo::<L>(llm_usage.clone(), &llm_workload, &llm_cond_workload).await;
+
+    let (workload, cond_workload) = match llm_usage {
+        LLMUsage::EnumerationOnly(_) => {
+            (additional_terms, additional_conditions)
+        }
+        LLMUsage::Enumeration(_) => {
+            (workload.append(additional_terms), llm_cond_workload.append(additional_conditions.clone()))
+        }
+        _ => (workload, llm_cond_workload),
+    };
+
     let state: ChompyState<L> = ChompyState::new(
         workload,
         prior,
-        cond_workload.unwrap_or(Workload::empty()),
+        cond_workload,
         prior_impls,
     );
 
@@ -427,8 +464,6 @@ impl Lang {
     }
 }
 
-/// Incrementally construct a ruleset by running rule inference up to a size bound,
-/// using previously-learned rules at each step.
 pub async fn recursive_rules_cond<L: SynthLanguage>(
     metric: Metric,
     n: usize,
@@ -437,6 +472,46 @@ pub async fn recursive_rules_cond<L: SynthLanguage>(
     prior_impls: ImplicationSet<L>,
     conditions: Workload,
     llm_usage: LLMUsage
+) -> Ruleset<L> {
+    let base_lang = if lang.ops.len() == 2 {
+        base_lang(2)
+    } else {
+        base_lang(3)
+    };
+    let mut llm_wkld = iter_metric(base_lang, "EXPR", metric, n)
+        .filter(Filter::Contains("VAR".parse().unwrap()))
+        .plug("VAR", &Workload::new(lang.clone().vars))
+        .plug("VAL", &Workload::new(lang.clone().vals));
+
+    for (i, ops) in lang.ops.iter().enumerate() {
+        llm_wkld = llm_wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
+    }
+    let (additional_terms, additional_conditions) = get_llm_ammo::<L>(llm_usage.clone(), &llm_wkld, &conditions).await;
+    recursive_rules_cond_internal(
+        metric,
+        n,
+        lang,
+        prior,
+        prior_impls,
+        conditions,
+        llm_usage,
+        additional_terms,
+        additional_conditions,
+    ).await
+}
+
+/// Incrementally construct a ruleset by running rule inference up to a size bound,
+/// using previously-learned rules at each step.
+async fn recursive_rules_cond_internal<L: SynthLanguage>(
+    metric: Metric,
+    n: usize,
+    lang: Lang,
+    prior: Ruleset<L>,
+    prior_impls: ImplicationSet<L>,
+    conditions: Workload,
+    llm_usage: LLMUsage,
+    additional_terms: Workload,
+    additional_conditions: Workload,
 ) -> Ruleset<L> {
     if n < 1 {
         Ruleset::default()
@@ -452,7 +527,6 @@ pub async fn recursive_rules_cond<L: SynthLanguage>(
     ));
 
     let mut rec = rec_call.await;
-
         let base_lang = if lang.ops.len() == 2 {
             base_lang(2)
         } else {
@@ -462,11 +536,24 @@ pub async fn recursive_rules_cond<L: SynthLanguage>(
             .filter(Filter::Contains("VAR".parse().unwrap()))
             .plug("VAR", &Workload::new(lang.vars))
             .plug("VAL", &Workload::new(lang.vals));
+
         for (i, ops) in lang.ops.iter().enumerate() {
             wkld = wkld.plug(format!("OP{}", i + 1), &Workload::new(ops));
         }
 
         wkld = wkld.append(Workload::new(&["0", "1"]));
+
+        let wkld = match llm_usage {
+            LLMUsage::EnumerationOnly(_) => additional_terms.filter(Filter::MetricEq(metric, n)),
+            LLMUsage::Enumeration(_) => wkld.append(additional_terms.filter(Filter::MetricEq(metric, n))),
+            _ => wkld,
+        };
+
+        let conditions = match llm_usage {
+            LLMUsage::EnumerationOnly(_) => additional_conditions,
+            LLMUsage::Enumeration(_) => conditions.append(additional_conditions),
+            _ => conditions,
+        };
 
         rec.extend(prior);
 
