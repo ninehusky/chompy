@@ -1,10 +1,9 @@
+use std::path::Path;
+
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
-    },
-    enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload},
-    halide::Pred,
-    Limits, SynthLanguage,
+    }, enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload}, halide::{og_recipe, Pred}, recipe_utils::{LLMEnumerationConfig, LLMFilterConfig, LLMUsage}, Limits, SynthLanguage
 };
 
 struct DerivabilityResult<L: SynthLanguage> {
@@ -625,6 +624,54 @@ fn can_synthesize_all<L: SynthLanguage>(rules: Ruleset<L>) -> (Ruleset<L>, Rules
     (can, cannot)
 }
 
+/// Runs the full ruleset creation experiment with our different parameters.
+#[tokio::test]
+pub async fn output_all() {
+    // (label, usage)
+    let mut usages: Vec<(String, LLMUsage)> = vec![];
+
+    // We will evaluate ruleset creation with the following settings:
+    // No LLM assistance (baseline)
+    // LLM enumeration ONLY
+    // baseline + LLM filtering (limit 5)
+    // baseline + LLM filtering (limit 1)
+    // baseline + LLM filtering (limit 5) + LLM enumeration
+    let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(50);
+    let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(100);
+
+    
+    // 1. No LLM assistance (baseline)
+    usages.push(("baseline".to_string(), LLMUsage::None));
+
+    // 2. LLM enumeration ONLY
+    usages.push(("LLM_enum".to_string(), LLMUsage::EnumerationOnly(default_enum_cfg.clone())));
+
+    // 3, 4: baseline + LLM filtering (limit 1, 5)
+    for top_k in [1, 5] {
+        usages.push((
+            format!("baseline_with_LLM_filter_{top_k}"),
+            LLMUsage::Filter(LLMFilterConfig::default().with_on_threshold(50).with_top_k(top_k))));
+    }
+
+    // 5. baseline + LLM filtering (limit 5) + LLM enumeration
+    usages.push((
+        "baseline_with_LLM filter_5_and_LLM_enum".to_string(),
+        LLMUsage::Combined(
+            vec![
+                LLMUsage::Filter(default_filter_cfg.clone()),
+                LLMUsage::Enumeration(default_enum_cfg.clone()),
+            ],
+        ),
+    ));
+
+    for (label, usage) in usages {
+        let rules = og_recipe(usage).await;
+        // then, print the ruleset to a file
+        rules.to_file(&format!("halide_rules_{}.txt", label));
+    }
+}
+    
+
 #[cfg(test)]
 pub mod halide_derive_tests {
     use std::path::Path;
@@ -638,8 +685,7 @@ pub mod halide_derive_tests {
         enumo::{ChompyState, Filter, Metric},
         halide::og_recipe,
         recipe_utils::{
-            base_lang, iter_metric, recursive_rules_cond, run_workload, 
-            LLMUsage, Lang,
+            base_lang, iter_metric, recursive_rules_cond, run_workload, LLMFilterConfig, LLMUsage, Lang
         },
         time_fn_call, DeriveType, SynthAnalysis,
     };
@@ -823,11 +869,14 @@ pub mod halide_derive_tests {
             return;
         }
 
-        // root directory: "out/derive.json"
+        // TODO: make this a flag
+        let chompy_rulepath = std::env::var("CHOMPY_RULES_PATH").ok().unwrap();
+
+        let chompy_rules: Ruleset<Pred> = Ruleset::from_file(&chompy_rulepath);
+
         let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
             + "/derive.json";
         let out_path: &Path = Path::new(&binding);
-        let chompy_rules = og_recipe().await;
         let caviar_rules = caviar_rules();
 
         let all_conditions: Vec<_> = caviar_rules

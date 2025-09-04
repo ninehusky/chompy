@@ -38,6 +38,7 @@ impl<L: SynthLanguage> ChompyConfig<L> {
 pub enum LLMUsage {
     None,
     Enumeration(LLMEnumerationConfig),
+    EnumerationOnly(LLMEnumerationConfig),
     Filter(LLMFilterConfig),
     Combined(Vec<LLMUsage>),
 }
@@ -60,12 +61,12 @@ impl Default for LLMFilterConfig {
 }
 
 impl LLMFilterConfig {
-    fn with_on_threshold(mut self, threshold: usize) -> Self {
+    pub fn with_on_threshold(mut self, threshold: usize) -> Self {
         self.on_threshold = threshold;
         self
     }
 
-    fn with_top_k(mut self, k: usize) -> Self {
+    pub fn with_top_k(mut self, k: usize) -> Self {
         self.top_k = k;
         self
     }
@@ -86,12 +87,12 @@ impl Default for LLMEnumerationConfig {
 }
 
 impl LLMEnumerationConfig {
-    fn with_num_conditions(mut self, n: usize) -> Self {
+    pub fn with_num_conditions(mut self, n: usize) -> Self {
         self.num_conditions = n;
         self
     }
 
-    fn with_num_terms(mut self, n: usize) -> Self {
+    pub fn with_num_terms(mut self, n: usize) -> Self {
         self.num_terms = n;
         self
     }

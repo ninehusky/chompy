@@ -1051,11 +1051,9 @@ pub fn validate_expression(expr: &Sexp) -> ValidationResult {
     }
 }
 
-pub async fn og_recipe() -> Ruleset<Pred> {
-    log::info!("LOG: Starting recipe.");
-    let use_llm = std::env::var("USE_LLM").is_ok();
-
-    let llm_usage: LLMUsage = LLMUsage::Filter(LLMFilterConfig::default());
+pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
+    println!("LOG: Starting recipe.");
+    println!("llm_usage: {:?}", llm_usage);
 
     let start_time = std::time::Instant::now();
     let wkld = conditions::generate::get_condition_workload().await;
