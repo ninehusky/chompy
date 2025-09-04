@@ -877,6 +877,8 @@ pub mod halide_derive_tests {
 
         let chompy_rules: Ruleset<Pred> = og_recipe(LLMUsage::None).await;
 
+        chompy_rules.to_file("chompy-rules-big.txt");
+
         let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
             + "/derive.json";
         let out_path: &Path = Path::new(&binding);
