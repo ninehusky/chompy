@@ -362,7 +362,6 @@ pub fn run_implication_workload<L: SynthLanguage>(
     prior: &ImplicationSet<L>,
     rules: &Ruleset<L>,
 ) -> ImplicationSet<L> {
-    let max_size = 5;
     let mut chosen: ImplicationSet<L> = ImplicationSet::new();
     chosen.add_all(prior.clone());
 

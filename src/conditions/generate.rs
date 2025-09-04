@@ -66,7 +66,7 @@ pub async fn get_condition_workload() -> Workload {
 
     println!("Condition workload generation took: {:?}", start.elapsed());
 
-    branches_better
+    branches_better.filter(Filter::MetricLt(Metric::Atoms, 6))
 }
 
 pub fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
