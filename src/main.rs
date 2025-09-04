@@ -68,27 +68,25 @@ pub async fn main() {
     if let Err(e) = File::create(output_file.clone()) {
         panic!("Failed to create output file: {}", e);
     }
-    let rules = match mode {
-        ChompyMode::HandwrittenRecipe => {
-            let old_recipe_type = args.old_recipe_type;
-            let recipe_path = args.recipe_path;
-            match (old_recipe_type, recipe_path) {
-                (Some(recipe_type), None) => {
-                    let recipe: RecipeType = recipe_type.parse().unwrap();
-                    match recipe {
-                        RecipeType::OgRecipe => og_recipe(),
-                    }
-                }
-                (Some(_), Some(_)) => panic!("both recipe types provided."),
-                (None, _) => panic!("no recipe type provided."),
-            }
-        }
-        ChompyMode::LLMAlphabetSoup => run_gpt_eval().await,
-        ChompyMode::LLMRecipe => {
-            todo!("Not implemented yet.");
-        }
+    match mode {
+        // ChompyMode::HandwrittenRecipe => {
+        //     let old_recipe_type = args.old_recipe_type;
+        //     let recipe_path = args.recipe_path;
+        //     match (old_recipe_type, recipe_path) {
+        //         (Some(recipe_type), None) => {
+        //             let recipe: RecipeType = recipe_type.parse().unwrap();
+        //             match recipe {
+        //                 RecipeType::OgRecipe => og_recipe(),
+        //             }
+        //         }
+        //         (Some(_), Some(_)) => panic!("both recipe types provided."),
+        //         (None, _) => panic!("no recipe type provided."),
+        //     }
+        // }
+        // ChompyMode::LLMAlphabetSoup => run_gpt_eval().await,
+        // ChompyMode::LLMRecipe => {
+        _ => todo!("Not implemented yet.")
     };
-    rules.to_file(output_file.to_str().unwrap());
 }
 
 pub async fn run_gpt_eval() -> Ruleset<Pred> {

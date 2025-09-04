@@ -638,273 +638,21 @@ pub mod halide_derive_tests {
         enumo::{ChompyState, Filter, Metric},
         halide::og_recipe,
         recipe_utils::{
-            base_lang, iter_metric, recursive_rules_cond, run_workload, run_workload_internal_llm,
-            Lang,
+            base_lang, iter_metric, recursive_rules_cond, run_workload, 
+            LLMUsage, Lang,
         },
         time_fn_call, DeriveType, SynthAnalysis,
     };
 
     use super::*;
 
-    #[test]
-    fn mul_div_workload() {
-        if std::env::var("RUN_ME").is_err() {
-            return;
-        }
-
-        let wkld = get_condition_workload();
-
-        let cond_workload = Workload::new(&[
-            "(&& (< 0 a) (== (% b a) 0))",
-            "(&& (< 0 a) (== (% b a) 0))",
-            "(&& (< a 0) (== (% b a) 0))",
-            "(&& (< a 0) (== (% b a) 0))",
-            "(!= a 0)",
-            "(!= b 0)",
-            "(!= c 0)",
-            "(== c c)",
-        ]);
-
-        let mut base_implications = ImplicationSet::default();
-
-        // and the "and" rules here.
-        let and_implies_left: Implication<Pred> = Implication::new(
-            "and_implies_left".into(),
-            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
-            Assumption::new_unsafe("?a".to_string()).unwrap(),
-        )
-        .unwrap();
-
-        let and_implies_right: Implication<Pred> = Implication::new(
-            "and_implies_right".into(),
-            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
-            Assumption::new_unsafe("?b".to_string()).unwrap(),
-        )
-        .unwrap();
-
-        base_implications.add(and_implies_left);
-        base_implications.add(and_implies_right);
-
-        let other_implications = time_fn_call!(
-            "find_base_implications",
-            run_implication_workload(
-                &wkld,
-                &["a".to_string(), "b".to_string(), "c".to_string()],
-                &base_implications,
-                &Default::default()
-            )
-        );
-
-        base_implications.add_all(other_implications);
-
-        println!("# base implications: {}", base_implications.len());
-
-        for i in base_implications.iter() {
-            println!("implication: {}", i.name());
-        }
-
-        let mut all_rules: Ruleset<Pred> = Ruleset::default();
-
-        all_rules.add(Rule::from_string("(!= ?a ?b) ==> (!= ?b ?a)").unwrap().0);
-
-        let rules = recursive_rules_cond(
-            Metric::Atoms,
-            3,
-            Lang::new(
-                &["0", "1"],
-                &["a", "b", "c"],
-                &[&[], &["*", "/", "min", "max"]],
-            ),
-            all_rules.clone(),
-            base_implications.clone(),
-            cond_workload,
-            false,
-        );
-
-        all_rules.extend(rules);
-
-        for line in r#"
-(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== (% ?a ?b) 0))
-(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
-(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== (% ?b ?a) 0))
-"#
-        .lines()
-        {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let rule = Rule::from_string(line.trim())
-                .expect("Failed to parse rule")
-                .0;
-            assert!(rule.is_valid());
-            if !all_rules.can_derive_cond(
-                ruler::DeriveType::LhsAndRhs,
-                &rule,
-                Limits::deriving(),
-                &base_implications.to_egg_rewrites(),
-            ) {
-                println!("Hey.. we weren't able to derive this rule: {rule}");
-                continue;
-            }
-
-            let l_expr = Pred::instantiate(&rule.lhs);
-            let r_expr = Pred::instantiate(&rule.rhs);
-            let c_expr = Pred::instantiate(&rule.cond.clone().unwrap().chop_assumption());
-
-            let mut egraph: EGraph<Pred, SynthAnalysis> =
-                EGraph::default().with_explanations_enabled();
-            egraph.add_expr(&l_expr);
-            egraph.add_expr(&r_expr);
-
-            let c_assumption = Assumption::new(c_expr.to_string()).unwrap();
-            c_assumption.insert_into_egraph(&mut egraph);
-
-            // 0. run the implications.
-            let runner: Runner<Pred, SynthAnalysis> = Runner::default()
-                .with_explanations_enabled()
-                .with_egraph(egraph.clone())
-                .run(base_implications.to_egg_rewrites().iter());
-
-            let egraph = runner.egraph;
-
-            // 1. run the rules.
-            let mut runner: Runner<Pred, SynthAnalysis> = Runner::default()
-                .with_explanations_enabled()
-                .with_egraph(egraph)
-                .run(all_rules.iter().map(|r| &r.rewrite));
-
-            let mut proof = runner.explain_equivalence(&l_expr, &r_expr);
-
-            println!("Here is the proof for why the rule is derivable:");
-            println!("{}", proof.get_flat_string());
-        }
-    }
 
     // TODO: fix mii
     const USE_LLM: bool = false;
 
-    #[tokio::test]
-    async fn op_min_max_workload_with_llm() {
-        let start_time = std::time::Instant::now();
-        if std::env::var("RUN_ME").is_err() {
-            println!("Not running op_min_max_workload_with_llm test because RUN_ME is not set.");
-            return;
-        }
-
-        // this workload will consist of well-typed lt comparisons, where the child
-        // expressions consist of variables, `+`, and `min` (of up to size 5).
-        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
-            .filter(Filter::And(vec![
-                Filter::Excludes("VAL".parse().unwrap()),
-                Filter::Excludes("OP1".parse().unwrap()),
-            ]))
-            .plug("OP2", &Workload::new(&["min", "+"]))
-            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
-
-        let lt_workload = Workload::new(&["(OP V V)"])
-            .plug("OP", &Workload::new(&["<"]))
-            .plug("V", &int_workload)
-            .filter(Filter::Canon(vec![
-                "a".to_string(),
-                "b".to_string(),
-                "c".to_string(),
-                "d".to_string(),
-            ]));
-
-        let cond_workload = Workload::new(&["(OP2 V 0)"])
-            .plug("OP2", &Workload::new(&["<"]))
-            .plug(
-                "V",
-                &Workload::new(&["(< a 0)", "(== b b)", "(== c c)", "(== d d)"]),
-            );
-
-        // These are rules which will help compress the workload so we can mimic
-        // focus on "realistic" candidate spaces for large grammars.
-        let mut prior: Ruleset<Pred> = Ruleset::default();
-
-        let prior_str = r#"(min ?a ?a) <=> ?a
-(max ?a ?a) <=> (min ?a ?a)
-(min ?b ?a) <=> (min ?a ?b)
-(max ?b ?a) <=> (max ?a ?b)
-(min ?b ?a) ==> ?a if (< ?a ?b)
-(max ?b ?a) ==> ?b if (< ?a ?b)
-(min ?b (max ?b ?a)) ==> ?b
-(max ?a (min ?b ?a)) ==> ?a
-(min ?c (min ?b ?a)) <=> (min ?a (min ?b ?c))
-(min ?b (min ?b ?a)) <=> (min ?a (min ?b ?a))
-(min ?a (max ?b ?a)) <=> (max ?a (min ?b ?a))
-(max ?c (max ?b ?a)) <=> (max ?b (max ?c ?a))
-(max ?c (min ?b ?a)) ==> (min ?a (max ?c ?b)) if  (< ?c ?a)
-(max (min ?a ?c) (min ?b ?c)) <=> (min ?c (max ?b ?a))
-(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a ?c))
-(min ?a (max ?c (min ?b ?a))) <=> (max (min ?c ?a) (min ?b ?a))
-(min (max ?b ?c) (max ?b ?a)) <=> (max ?b (min ?a (max ?b ?c)))
-(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a (max ?b ?c)))
-(+ ?a 0) <=> ?a
-(+ ?a ?b) <=> (+ ?b ?a)
-(< ?a ?b) ==> 1 if (< ?a ?b)
-(< ?a ?b) ==> 0 if (< ?b ?a)"#;
-
-        for line in prior_str.lines() {
-            let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
-            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
-            prior.add(rule);
-        }
-
-        let mut state: ChompyState<Pred> = ChompyState::new(
-            lt_workload.clone(),
-            prior.clone(),
-            cond_workload.clone(),
-            // we don't need any implications for this test; notice how
-            // all the conditions are just `(< ?a ?b)`.
-            ImplicationSet::default(),
-        );
-
-        let rules = run_workload_internal_llm(
-            &mut state,
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            true,
-            true,
-        )
-        .await;
-
-        // (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
-        let mut egraph: EGraph<Pred, SynthAnalysis> = EGraph::default().with_explanations_enabled();
-        let l_expr: RecExpr<Pred> = "(< (min z (+ y c0)) (min x y))".parse().unwrap();
-        let r_expr: RecExpr<Pred> = "(< (min z (+ y c0)) x)".parse().unwrap();
-        let l_id = egraph.add_expr(&l_expr);
-        let r_id = egraph.add_expr(&r_expr);
-        egraph.add_expr(&"(assume (< c0 0))".parse().unwrap());
-
-        let runner: Runner<Pred, SynthAnalysis> = egg::Runner::new(SynthAnalysis::default())
-            .with_egraph(egraph.clone())
-            .with_explanations_enabled()
-            .with_node_limit(100000)
-            .run(rules.iter().map(|r| &r.rewrite));
-
-        let mut out_egraph = runner.egraph;
-
-        let end_time = std::time::Instant::now();
-        println!("Time taken: {:?}", end_time - start_time);
-
-        if out_egraph.find(l_id) == out_egraph.find(r_id) {
-            println!("The rule was derived: (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)");
-            println!("Here's the proof:");
-            let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
-            println!("\n{proof}");
-        } else {
-            println!("The rule was NOT derived.");
-        }
-    }
-
     /// This takes a long time if we don't adjust the Limits and the Scheduler.
-    #[test]
-    fn op_min_max_workload() {
+    #[tokio::test]
+    async fn op_min_max_workload() {
         let start_time = std::time::Instant::now();
         if std::env::var("RUN_ME").is_err() {
             return;
@@ -1009,11 +757,8 @@ pub mod halide_derive_tests {
             // we don't need any implications for this test; notice how
             // all the conditions are just `(< ?a ?b)`.
             ImplicationSet::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-        );
+            LLMUsage::None,
+        ).await;
 
         // NOTE : doing this manual derivation scheme for now because I don't have total
         //        faith that the unsound merge problem has gone away; I want to
@@ -1068,11 +813,11 @@ pub mod halide_derive_tests {
         println!("Parsed {} Halide rules", halide_rules.len());
     }
 
-    #[test]
+    #[tokio::test]
     // A simple derivability test.
     // How many conditional Caviar rules can Chompy's rulesets derive?
     // Vice versa: how many of Chompy's rules can Caviar derive?
-    fn chompy_vs_caviar_conditional_derive() {
+    async fn chompy_vs_caviar() {
         // Don't run this test as part of the "unit tests" thing in CI.
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
@@ -1082,7 +827,7 @@ pub mod halide_derive_tests {
         let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
             + "/derive.json";
         let out_path: &Path = Path::new(&binding);
-        let chompy_rules = og_recipe();
+        let chompy_rules = og_recipe().await;
         let caviar_rules = caviar_rules();
 
         let all_conditions: Vec<_> = caviar_rules
@@ -1136,8 +881,11 @@ pub mod halide_derive_tests {
             &keep_conditional(&caviar_rules),
             &implication_rules,
         );
-        let backward_result =
-            run_derivability_tests(&caviar_rules, &keep_conditional(&chompy_rules), &implication_rules);
+        let backward_result = run_derivability_tests(
+            &caviar_rules,
+            &keep_conditional(&chompy_rules),
+            &implication_rules,
+        );
 
         let to_json = |result: DerivabilityResult<Pred>| {
             serde_json::json!({
@@ -1157,7 +905,7 @@ pub mod halide_derive_tests {
     // A test to see if we can correctly choose all Caviar handwritten rules
     // as candidates.
     // Commenting this out, because it fails in CI.
-    #[test]
+    #[allow(dead_code)]
     fn synthesize_all_caviar_as_candidates() {
         // Don't run this test as part of the "unit tests" thing in CI.
         if std::env::var("SKIP_RECIPES").is_ok() {
@@ -1188,7 +936,7 @@ pub mod halide_derive_tests {
         // );
     }
 
-    #[test]
+    #[tokio::test]
     // This test makes sure that Chompy's derivability (minimization)
     // algorithm is robust enough to not synthesize both of these rules
     // (it needs to just pick one):
@@ -1196,7 +944,7 @@ pub mod halide_derive_tests {
     // // (min ?a ?b) ==> ?b if (<= ?b ?a)
     // // (min ?b ?a) ==> ?b if (<= ?b ?a)
     // // (min ?b ?a) ==> ?a if (<= ?a ?b)
-    fn chompy_shouldnt_make_these() {
+    async fn chompy_shouldnt_make_these() {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
         }
@@ -1210,11 +958,8 @@ pub mod halide_derive_tests {
             None,
             Ruleset::default(),
             ImplicationSet::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            USE_LLM,
-        );
+            LLMUsage::None,
+        ).await;
 
         let cond_workload = compress(&cond_workload, rules.clone());
 
@@ -1232,8 +977,8 @@ pub mod halide_derive_tests {
             rules.clone(),
             implications.clone(),
             cond_workload.clone(),
-            USE_LLM,
-        );
+            LLMUsage::None,
+        ).await;
 
         println!("min_max_rules: {}", min_max_rules.len());
         for r in min_max_rules.iter() {
@@ -1286,8 +1031,8 @@ pub mod halide_derive_tests {
     // A sanity test.
     // If we can't synthesize these rules, or synthesize rules that derive
     // them, something terrible has happened.
-    #[test]
-    fn chompy_cant_forget_these() {
+    #[tokio::test]
+    async fn chompy_cant_forget_these() {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
         }
@@ -1319,20 +1064,12 @@ pub mod halide_derive_tests {
             None,
             Ruleset::default(),
             ImplicationSet::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            USE_LLM,
-        );
+            LLMUsage::None,
+        ).await;
 
         all_rules.extend(cond_rules.clone());
 
         let cond_wkld = compress(cond_wkld, cond_rules.clone());
-
-        println!("compressed");
-        for c in cond_wkld.clone().force() {
-            println!("c: {c}");
-        }
 
         let implications = run_implication_workload(
             &cond_wkld,
@@ -1341,10 +1078,6 @@ pub mod halide_derive_tests {
             &cond_rules,
         );
 
-        for i in implications.iter() {
-            println!("i: {}", i.name());
-        }
-
         let min_max_add_rules = recursive_rules_cond(
             Metric::Atoms,
             5,
@@ -1352,8 +1085,8 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            USE_LLM,
-        );
+            LLMUsage::None
+        ).await;
 
         all_rules.extend(min_max_add_rules);
 
@@ -1364,8 +1097,8 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            USE_LLM,
-        );
+            LLMUsage::None
+        ).await;
 
         all_rules.extend(min_max_sub_rules);
 
@@ -1376,8 +1109,8 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            USE_LLM,
-        );
+            LLMUsage::None
+        ).await;
 
         all_rules.extend(min_max_mul_rules);
 

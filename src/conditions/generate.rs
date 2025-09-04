@@ -1,6 +1,7 @@
 use egg::{AstSize, Extractor};
 
 use crate::conditions::implication_set::ImplicationSet;
+use crate::recipe_utils::LLMUsage;
 use crate::{
     enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload},
     halide::Pred,
@@ -8,7 +9,8 @@ use crate::{
     Limits,
 };
 
-pub fn get_condition_workload() -> Workload {
+pub async fn get_condition_workload() -> Workload {
+    let llm_usage = LLMUsage::None;
     // we're going to do conjunctions of ==, != with
     // variables and 0.
     let start = std::time::Instant::now();
@@ -47,8 +49,8 @@ pub fn get_condition_workload() -> Workload {
             &[&[], &["<", "<=", "==", "!=", "&&"]],
         ),
         Ruleset::default(),
-        false,
-    );
+        llm_usage.clone()
+    ).await;
 
     eq_rules.extend(new_rules);
 
@@ -57,11 +59,8 @@ pub fn get_condition_workload() -> Workload {
         None,
         eq_rules,
         ImplicationSet::default(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true,
-        false,
-    );
+        llm_usage.clone()
+    ).await;
 
     let branches_better = compress(&branches, rules.clone());
 
