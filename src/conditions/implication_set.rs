@@ -370,8 +370,11 @@ pub fn run_implication_workload<L: SynthLanguage>(
     let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
     L::initialize_vars(&mut egraph, vars);
 
-    for size in 1..=max_size {
+    for size in 1..= 10 {
         let curr_workload = wkld.clone().filter(Filter::MetricEq(Metric::Atoms, size));
+        if curr_workload.is_empty() {
+            continue;
+        }
         for t in curr_workload.force() {
             egraph.add_expr(&t.to_string().parse::<RecExpr<L>>().unwrap());
         }
