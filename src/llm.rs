@@ -8,6 +8,7 @@ use serde_json::json;
 use std::fmt::Display;
 
 use crate::enumo::{Rule, Ruleset, Sexp};
+use crate::halide::{get_type, HalideType};
 use crate::recipe_utils::iter_metric;
 use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
@@ -419,21 +420,37 @@ pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &
 
     let response = send_openai_request(client, prompt_text).await.unwrap();
 
-    let mut final_wkld = Workload::empty();
+    let mut working_wkld = Workload::empty();
     for line in response.lines() {
         println!("line: {}", line);
         // Attempt to parse it as a RecExpr<Pred>.
         let recexpr: Result<RecExpr<L>, _> = line.parse();
         if let Ok(re) = recexpr {
-            final_wkld = final_wkld.append(Workload::new(&[re.to_string()]));
+            working_wkld = working_wkld.append(Workload::new(&[re.to_string()]));
         } else {
             println!("failed to parse term: {}", line);
         }
     }
 
+    let mut final_wkld = Workload::empty();
+
+    for sexp in working_wkld.force() {
+        let calculated_type = get_type(&sexp, None);
+        match calculated_type {
+            Some(HalideType::BoolType) => {
+                final_wkld = final_wkld.append(Workload::new(&[sexp.to_string()]));
+            }
+            Some(HalideType::IntType) => {
+                final_wkld = final_wkld.append(Workload::new(&[format!("(!= {} 0)", sexp.to_string())]));
+            },
+            _ => {
+                println!("Skipping condition with non-bool/int type: {}", sexp);
+            }
+        };
+    }
+
     final_wkld
 }
-
 
 #[tokio::test]
 async fn get_llm_ammo_test() {

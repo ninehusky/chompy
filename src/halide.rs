@@ -49,6 +49,76 @@ egg::define_language! {
   }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HalideType {
+    VarType,
+    IntType,
+    BoolType,
+}
+
+pub fn get_type(sexp: &Sexp, expected: Option<HalideType>) -> Option<HalideType> {
+    match sexp {
+        Sexp::Atom(a) => {
+            if let Ok(num) = a.parse::<i64>() {
+                match expected {
+                    Some(HalideType::BoolType) => {
+                        if num == 0 || num == 1 { Some(HalideType::BoolType) } else { None }
+                    }
+                    Some(HalideType::IntType) | None => Some(HalideType::IntType),
+                    _ => None,
+                }
+            } else {
+                // Variable: assume expected type if given, else VarType
+                expected.or(Some(HalideType::VarType))
+            }
+        }
+        Sexp::List(l) => {
+            if l.is_empty() { return None; }
+            let op = match &l[0] {
+                Sexp::Atom(op) => op.as_str(),
+                _ => return None,
+            };
+
+            match op {
+                "+" | "-" | "*" | "/" | "%" | "min" | "max" | "abs" => {
+                    for arg in &l[1..] {
+                        if get_type(arg, Some(HalideType::IntType)) != Some(HalideType::IntType) {
+                            return None;
+                        }
+                    }
+                    Some(HalideType::IntType)
+                }
+                "<" | "<=" | "==" | "!=" | ">" | ">=" => {
+                    for arg in &l[1..] {
+                        if get_type(arg, Some(HalideType::IntType)) != Some(HalideType::IntType) {
+                            return None;
+                        }
+                    }
+                    Some(HalideType::BoolType)
+                }
+                "&&" | "||" | "^" | "!" | "->" => {
+                    for arg in &l[1..] {
+                        if get_type(arg, Some(HalideType::BoolType)) != Some(HalideType::BoolType) {
+                            return None;
+                        }
+                    }
+                    Some(HalideType::BoolType)
+                }
+                "select" => {
+                    if l.len() != 4 { return None; }
+                    let cond_type = get_type(&l[1], Some(HalideType::BoolType))?;
+                    if cond_type != HalideType::BoolType { return None; }
+                    let t1 = get_type(&l[2], None)?;
+                    let t2 = get_type(&l[3], Some(t1))?;
+                    if t1 != t2 { return None; }
+                    Some(t1)
+                }
+                _ => None,
+            }
+        }
+    }
+}
+
 impl Pred {
     pub fn get_condition_propagation_rules(
         conditions: &Workload,
