@@ -1,13 +1,17 @@
 use egg::RecExpr;
+use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
+use rand::{thread_rng, SeedableRng};
 use reqwest::Client;
 use serde_json::json;
 
 use std::fmt::Display;
 
-use crate::enumo::{Rule, Ruleset};
+use crate::enumo::{Rule, Ruleset, Sexp};
+use crate::recipe_utils::iter_metric;
 use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 
-use crate::{ConditionRecipe, IndexMap, Recipe};
+use crate::{ConditionRecipe, HashMap, HashSet, IndexMap, Recipe};
 
 pub type CategorizedRuleset<L> = IndexMap<String, Ruleset<L>>;
 
@@ -192,99 +196,270 @@ candidates_text
 "#;
 
 const ENUMERATE_TERMS_PROMPT: &str = r#"
-You are an expert in generating a list of terms for a given
-programming language. The syntax of the programming language
-is s-expressions. You will be given a list of variables,
-constants, and operations. Your task is to generate a list
-of interesting terms using the above variables, constants, and operations.
-The operations will be a list of list of strings, where operations[i]
-will be the list of strings representing arity-i operations.
-The terms should be in the s-expression format.
-You should try to generate 50 terms, and you must try to generate
-terms at each size from 1 to max_size. Outside of single constants,
-make sure each term has at least one variable in it.
-Avoid generating terms that only involve constants unless they reduce to a single constant.
-First generate all size-1 terms, then size-2 terms, then size-3, and continue up to size-{max_size}.
+You are generating new terms in a small programming language.
+The syntax is s-expressions with the following operators:
+{operators}
 
+You will be given a list of existing terms.
+Your task is to propose additional terms that are:
+- syntactically valid,
+- structurally rich,
+- likely to be useful in rewrite rules (e.g., distributivity, commutativity, associativity, idempotence),
+- non-trivial (avoid constant-only terms unless they reduce to a single constant),
+- and include variables in most cases.
 
-Your response should only be terms, one after another.
-Do not include any other text in your response. Do not
-include line numbers or any other formatting. Only
-include the terms in your response.
-Example:
+Output requirements:
+- Generate about {term_limit} additional terms.
+- Produce a variety of sizes and shapes (not just shallow terms, include large terms as well).
+- Ensure all terms are distinct and not repeats of the input.
+- Output **only the terms**, one per line.
+- Do not include any commentary, numbering, or explanations.
 
-Example Input:
-max_size: 4,
-vals: ["0", "1"],
-vars: ["x", "y"],
-ops: [[], ["abs"], ["+", "-", "*", "min", "max"]],
-
-Some example output:
+Example Input Terms:
 x
-
+y
+0
+1
+(+ x y)
 (abs x)
 
-(+ x y)
-(- x x)
-(* x y)
-(min x y)
-(min y x)
-(min 0 x)
-(min x 0)
+Example Output:
+(+ (* x y) (* x z))
+(* (+ x y) z)
+(max (abs y) x)
+(min x (+ y 1))
+(- (* x 0) y)
 
-(min (abs x) y)
-...
-
-Input:
-Here is the recipe for the terms you should generate:
-max_size: {max_size}
-vals: {vals},
-vars: {vars},
-ops: {ops},
+Input Terms:
+{input_text}
 "#;
 
 const ENUMERATE_CONDITIONS_PROMPT: &str = r#"
-Good job! Now let's do it again, but with conditions. Your input will be the same as before:
-it will be a list of variables, constants, and operations. However, this time instead of generating
-terms that will be useful in rewrite situations, you generate conditions which can be used to
-generate equalities between the terms you generated in the previous step.
+You are generating logical conditions in a small programming language.
+The syntax is s-expressions with the following operators:
+{operators}
 
-Like before, you will generate terms in the s-expression format, one after another, up to
-max_size. You will also generate conditions which will be used to compare terms.
+You will be given a list of terms (expressions).
+Your task is to propose additional conditions that are:
+- syntactically valid Boolean expressions,
+- useful for rewrite rules (e.g., inequalities, equalities, divisibility checks, non-negativity tests),
+- non-trivial (avoid tautologies or contradictions like `(< x x)`),
+- structurally diverse (use different operators and nesting where possible),
+- and involve variables where possible.
 
-Your response should only be terms, one after another.
-Do not include any other text in your response. Do not
-include line numbers or any other formatting. Only
-include the terms in your response.
+Conditions can be:
+- simple comparisons (like `(< x y)` or `(== a 0)`), or
+- compound conditions using logical operators such as `(&& cond1 cond2)` or `(|| cond1 cond2)` when this makes them more useful for rewrite rules.
+- assume that variables are numbers, don't enumerate stuff like `(&& a b)`.
 
-Example Input:
-Here are the terms from the last step:
+Output requirements:
+- Generate about {cond_limit} distinct conditions.
+- Each condition must evaluate to a Boolean (true/false).
+- Conditions should compare or test terms using operators such as <, <=, >, >=, ==, !=, and also include useful checks (e.g., remainder equal to zero, comparisons to constants).
+- Output **only the conditions**, one per line.
+- Do not repeat the input terms.
+- Do not include commentary, numbering, or explanations.
+
+Example Input Terms:
 a
-(abs a)
+b
+(* a b)
+(% a b)
 
-Here is the recipe for the terms you should generate:
-max_size: 4,
-vals: ["0"],
-vars: ["a"],
-ops: [[], ["abs"], ["<", "<=", "!="]],
-
-Example Output:
+Example Output Conditions:
 (< a 0)
-(<= a 0)
-(< a (abs a))
-...
+(>= (* a b) 1)
+(== (% a b) 0)
+(!= a b)
+(<= b (* a b))
+(&& (> a 0) (< b a))
 
-
-Input:
-Here are the terms from the last step:
-{last_step_workload}
-
-Here is the recipe for the terms you should generate:
-max_size: {max_size}
-vals: {vals},
-vars: {vars},
-ops: {ops},
+Input Terms:
+{input_text}
 "#;
+
+fn term_size(sexp: &Sexp) -> usize {
+    match sexp {
+        Sexp::Atom(_) => 1,
+        Sexp::List(children) => 1 + children.iter().map(term_size).sum::<usize>(),
+    }
+}
+
+fn get_operator_description(terms: &Vec<Sexp>) -> String {
+    let mut ops: HashMap<String, usize> = HashMap::default();
+    for term in terms {
+        if let Sexp::List(children) = term {
+            if let Some(Sexp::Atom(op)) = children.first() {
+                // ops[operator] = arity
+                ops.insert(op.clone(), children.len() - 1);
+            } else {
+                panic!("Unexpected term format: {:?}", term);
+            }
+        }
+    }
+
+    let mut desc = String::new();
+    for (op, arity) in ops {
+        // <op>: arity <arity>
+        desc.push_str(&format!("- {}: arity {}\n", op, arity));
+
+    }
+    desc
+}
+
+fn sample_terms(wkld: &Workload) -> Vec<String> {
+    let mut rng = StdRng::seed_from_u64(42);
+    let all_terms: Vec<Sexp> = wkld.force();
+    let mut sampled = Vec::new();
+
+    for size in 1..=10 {
+        let mut bucket: Vec<Sexp> = all_terms
+            .iter()
+            .filter(|t| term_size(t) == size)
+            .cloned()
+            .collect();
+
+        // Shuffle so we don't always pick the same ones
+        bucket.shuffle(&mut rng);
+
+        // Take up to 5 examples from this size
+        sampled.extend(bucket.into_iter().take(5));
+    }
+
+    sampled.iter().map(|s| s.to_string()).collect()
+}
+
+pub async fn send_openai_request(client: &Client, prompt: String) -> Result<String, String> {
+    // Build the request payload
+    let request_body = json!({
+        "model": "gpt-4o",
+        "messages": [
+            { "role": "system", "content": prompt }
+        ],
+        "temperature": 0.0,
+        "max_tokens": 1500
+    });
+
+    // Send the request
+    let response = client
+        .post("https://api.openai.com/v1/chat/completions")
+        .header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
+            ),
+        )
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed: {e}"))?;
+
+    let response_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
+
+    // Return raw text content
+    let text_output = response_json["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+
+    Ok(text_output)
+
+}
+
+pub async fn get_llm_terms<L: SynthLanguage>(client: &Client, terms: &Workload, limit: usize) -> Workload {
+    let representative_terms = sample_terms(terms);
+    // 1. Send the request to the LLM.
+    let input_text = representative_terms.join("\n");
+
+    let prompt_text = ENUMERATE_TERMS_PROMPT
+        .replace("{input_text}", &input_text)
+        .replace("{term_limit}", &limit.to_string())
+        .replace("{operators}", &get_operator_description(&terms.force()));
+
+    println!("PROMPT TEXT:\n{}", prompt_text);
+
+    let response = send_openai_request(client, prompt_text).await.unwrap();
+
+    // 2. Parse the response into a list of strings.
+    println!("LLM TERMS RESPONSE:\n{}", response);
+
+    let mut final_wkld = Workload::empty();
+    for line in response.lines() {
+        println!("line: {}", line);
+        // Attempt to parse it as a RecExpr<Pred>.
+        let recexpr: Result<RecExpr<L>, _> = line.parse();
+        if let Ok(re) = recexpr {
+            final_wkld = final_wkld.append(Workload::new(&[re.to_string()]));
+        } else {
+            println!("failed to parse term: {}", line);
+        }
+    }
+
+    final_wkld
+
+}
+
+
+pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &Workload, terms: &Workload, limit: usize) -> Workload {
+    let representative_terms = sample_terms(terms);
+    // 1. Send the request to the LLM.
+    let input_text = representative_terms.join("\n");
+
+    let prompt_text = ENUMERATE_TERMS_PROMPT
+        .replace("{input_text}", &input_text)
+        .replace("{cond_limit}", &limit.to_string())
+        .replace("{operators}", &get_operator_description(&cond_terms.force()));
+
+    println!("PROMPT TEXT:\n{}", prompt_text);
+
+    let response = send_openai_request(client, prompt_text).await.unwrap();
+
+    let mut final_wkld = Workload::empty();
+    for line in response.lines() {
+        println!("line: {}", line);
+        // Attempt to parse it as a RecExpr<Pred>.
+        let recexpr: Result<RecExpr<L>, _> = line.parse();
+        if let Ok(re) = recexpr {
+            final_wkld = final_wkld.append(Workload::new(&[re.to_string()]));
+        } else {
+            println!("failed to parse term: {}", line);
+        }
+    }
+
+    final_wkld
+}
+
+
+#[tokio::test]
+async fn get_llm_ammo_test() {
+    let wkld = Workload::new(&["(OP2 V V)", "V"])
+        .plug("V", &Workload::new(&["a", "b", "c", "0", "1"]))
+        .plug("OP2", &Workload::new(&["+", "-", "*", "/", "min", "max"]));
+
+    let cond_wkld = Workload::new(&["(OP2 V V)", "V"])
+        .plug("V", &Workload::new(&["a", "b", "c", "0", "1"]))
+        .plug("OP2", &Workload::new(&["<", "<=", "==", "!="]));
+
+    let client = Client::new();
+    let terms = get_llm_terms::<Pred>(&client, &wkld, 50).await;
+    let conds = get_llm_conditions::<Pred>(&client, &cond_wkld, &wkld, 50).await;
+
+    println!("LLM TERMS:");
+    for t in terms.force() {
+        println!("{}", t);
+    }
+
+    println!("LLM CONDITIONS:");
+    for c in conds.force() {
+        println!("{}", c);
+    }
+}
+
 
 fn parse_categorization_response<L: SynthLanguage>(response: String) -> CategorizedRuleset<L> {
     let mut result: CategorizedRuleset<L> = Default::default();
