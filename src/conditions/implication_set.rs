@@ -579,14 +579,14 @@ mod pvec_match_tests {
     use crate::{
         enumo::{Ruleset, Scheduler, Workload},
         halide::Pred,
-        recipe_utils::run_workload,
+        recipe_utils::{run_workload, LLMUsage},
         Limits, SynthAnalysis,
     };
 
     // A big ass integration test that puts it all together and sees if given a moderate
     // workload, it can synthesize implications and equalities AND minimize them.
-    #[test]
-    fn pvec_match_ok() {
+    #[tokio::test]
+    async fn pvec_match_ok() {
         // Define a workload of predicates.
         let the_ints = Workload::new(&["V", "(OP2 V V)"])
             .plug("V", &Workload::new(&["a", "b", "0"]))
@@ -609,11 +609,9 @@ mod pvec_match_tests {
             None,
             Ruleset::default(),
             Default::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-        );
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(bool_rules.clone());
 
@@ -622,11 +620,8 @@ mod pvec_match_tests {
             None,
             Ruleset::default(),
             Default::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-        );
+            LLMUsage::None,
+        ).await;
 
         all_rules.extend(and_rules.clone());
 
