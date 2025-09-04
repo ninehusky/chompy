@@ -873,11 +873,9 @@ pub mod halide_derive_tests {
         if std::env::var("SKIP_RECIPES").is_ok() {
             return;
         }
+        // let chompy_rulepath = std::env::var("CHOMPY_RULES_PATH").ok().unwrap();
 
-        // TODO: make this a flag
-        let chompy_rulepath = std::env::var("CHOMPY_RULES_PATH").ok().unwrap();
-
-        let chompy_rules: Ruleset<Pred> = Ruleset::from_file(&chompy_rulepath);
+        let chompy_rules: Ruleset<Pred> = og_recipe(LLMUsage::None).await;
 
         let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
             + "/derive.json";

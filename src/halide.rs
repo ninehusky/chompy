@@ -1410,6 +1410,24 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
 
     all_rules.extend(min_max_mul);
 
+
+
+    let min_max_mul = time_fn_call!(
+        "min_max_div",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            llm_usage.clone()
+        ).await
+    );
+
+    all_rules.extend(min_max_mul);
+
+
     for op in &["min", "max"] {
         // this workload will consist of well-typed lt comparisons, where the child
         // expressions consist of variables, `+`, and `min` (of up to size 5).
