@@ -387,7 +387,7 @@ pub async fn get_llm_terms<L: SynthLanguage>(client: &Client, terms: &Workload, 
         .replace("{term_limit}", &limit.to_string())
         .replace("{operators}", &get_operator_description(&terms.force()));
 
-    println!("PROMPT TEXT:\n{}", prompt_text);
+    // println!("PROMPT TEXT:\n{}", prompt_text);
 
     let response = send_openai_request(client, prompt_text).await.unwrap();
 
@@ -424,6 +424,8 @@ pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &
 
     let response = send_openai_request(client, prompt_text).await.unwrap();
 
+    println!("LLM CONDITIONS RESPONSE:\n{}", response);
+
     let mut working_wkld = Workload::empty();
     for line in response.lines() {
         // Attempt to parse it as a RecExpr<Pred>.
@@ -437,15 +439,16 @@ pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &
 
     let mut final_wkld = Workload::empty();
 
+
     for sexp in working_wkld.force() {
         let calculated_type = get_type(&sexp, None);
         match calculated_type {
             Some(HalideType::BoolType) => {
                 final_wkld = final_wkld.append(Workload::new(&[sexp.to_string()]));
             }
-            _  => {
-                final_wkld = final_wkld.append(Workload::new(&[format!("(!= {} 0)", sexp.to_string())]));
-            },
+            _ => {
+                println!("skipping non-bool condition: {}", sexp);
+            }
         };
     }
 

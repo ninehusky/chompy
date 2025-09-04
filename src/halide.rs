@@ -1274,17 +1274,22 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
 
     let and_comps = Workload::new(&["V", "(&& V V)"]).plug("V", &comps);
 
-    let and_comps_rules = run_workload(
+    let and_comps_rules = time_fn_call!(
+        "and_comps",
+        run_workload(
         and_comps,
         Some(wkld.clone()),
         all_rules.clone(),
         base_implications.clone(),
         llm_usage.clone(),
-    ).await;
+    ).await
+            );
 
     all_rules.extend(and_comps_rules.clone());
 
-    let simp_comps = recursive_rules_cond(
+    let simp_comps = time_fn_call!(
+        "simp_comps",
+        recursive_rules_cond(
         Metric::Atoms,
         5,
         Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", ">", "+", "-"]]),
@@ -1292,7 +1297,8 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         base_implications.clone(),
         wkld.clone(),
         llm_usage.clone(),
-    ).await;
+    ).await
+            );
 
     all_rules.extend(simp_comps.clone());
 
