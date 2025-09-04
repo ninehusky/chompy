@@ -215,6 +215,7 @@ Output requirements:
 - Ensure all terms are distinct and not repeats of the input.
 - Output **only the terms**, one per line.
 - Do not include any commentary, numbering, or explanations.
+- Do not include any markdown backticks.
 
 Example Input Terms:
 x
@@ -260,6 +261,7 @@ Output requirements:
 - Output **only the conditions**, one per line.
 - Do not repeat the input terms.
 - Do not include commentary, numbering, or explanations.
+- Do not include any markdown backticks.
 
 Example Input Terms:
 a
@@ -366,7 +368,8 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
     let text_output = response_json["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("")
-        .to_string();
+        .to_string()
+        .replace("`", ""); // Strip markdown backticks if any
 
     println!("OUTPUT:\n{}", text_output);
 
