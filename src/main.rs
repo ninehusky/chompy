@@ -52,7 +52,7 @@ pub async fn main() {
     let args = ChompyArgs::parse();
 
     let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
-    let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(100);
+    let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(10);
 
     let llm_usage = match args.llm_usage.as_str() {
         "baseline" => LLMUsage::None,
