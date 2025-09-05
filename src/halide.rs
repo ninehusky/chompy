@@ -1167,6 +1167,21 @@ pub async fn mini_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
     // here, make sure wkld is non empty
     assert_ne!(wkld, Workload::empty());
 
+    let bools = time_fn_call!(
+        "bools",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&["0", "1"], &["a", "b", "c"], &[&["!"], &["&&", "||"]]),
+            Ruleset::default(),
+            base_implications.clone(),
+            wkld.clone(),
+            llm_usage.clone(),
+        ).await
+    );
+
+    all_rules.extend(bools.clone());
+
     // Find rules matching terms of the shape (&& (comp x y) (comp y z))
     let comps = Workload::new(&["0", "1", "(OP V V)"])
         .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
@@ -1238,8 +1253,8 @@ pub async fn mini_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         "(== c c)",
     ]);
 
-    let mul_div_mod = time_fn_call!(
-        "mul_div_mod",
+    let min_max_mul_div = time_fn_call!(
+        "min_max_mul_div",
         recursive_rules_cond(
             Metric::Atoms,
             5,
@@ -1251,7 +1266,7 @@ pub async fn mini_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         ).await
     );
 
-    all_rules.extend(mul_div_mod);
+    all_rules.extend(min_max_mul_div.clone());
 
     let min_max = time_fn_call!(
         "min_max",
@@ -1323,38 +1338,10 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
     for i in base_implications.iter() {
         println!("implication: {}", i.name());
     }
-    // here, make sure wkld is non empty
-    assert_ne!(wkld, Workload::empty());
 
-    // Find rules matching terms of the shape (&& (comp x y) (comp y z))
-    let comps = Workload::new(&["0", "1", "(OP V V)"])
-        .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
-        .plug("V", &Workload::new(&["a", "b", "c"]));
+    let start = mini_recipe(llm_usage.clone()).await;
 
-    let base_comps = run_workload(
-        comps.clone(),
-        Some(wkld.clone()),
-        all_rules.clone(),
-        base_implications.clone(),
-        llm_usage.clone(),
-    ).await;
-
-    all_rules.extend(base_comps.clone());
-
-    let and_comps = Workload::new(&["V", "(&& V V)"]).plug("V", &comps);
-
-    let and_comps_rules = time_fn_call!(
-        "and_comps",
-        run_workload(
-        and_comps,
-        Some(wkld.clone()),
-        all_rules.clone(),
-        base_implications.clone(),
-        llm_usage.clone(),
-    ).await
-            );
-
-    all_rules.extend(and_comps_rules.clone());
+    all_rules.extend(start);
 
     let simp_comps = time_fn_call!(
         "simp_comps",
@@ -1371,62 +1358,6 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
 
     all_rules.extend(simp_comps.clone());
 
-    let arith_basic = time_fn_call!(
-        "arith_basic",
-        recursive_rules_cond(
-            Metric::Atoms,
-            5,
-            Lang::new(
-                &["0", "1"],
-                &["a", "b", "c"],
-                &[&["-"], &["+", "-", "*", "/"]],
-            ),
-            Ruleset::default(),
-            base_implications.clone(),
-            wkld.clone(),
-            llm_usage.clone(),
-        ).await
-    );
-    all_rules.extend(arith_basic.clone());
-
-    let cond_workload = Workload::new(&[
-        "(< 0 b)",
-        "(< 0 a)",
-        "(&& (< 0 b) (== (% a b) 0))",
-        "(&& (< 0 a) (== (% a b) 0))",
-        "(== c c)",
-    ]);
-
-    let mul_div_mod = time_fn_call!(
-        "mul_div_mod",
-        recursive_rules_cond(
-            Metric::Atoms,
-            5,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
-            Ruleset::default(),
-            base_implications.clone(),
-            cond_workload,
-            llm_usage.clone()
-        ).await
-    );
-
-    all_rules.extend(mul_div_mod);
-
-    let min_max = time_fn_call!(
-        "min_max",
-        recursive_rules_cond(
-            Metric::Atoms,
-            7,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
-            all_rules.clone(),
-            base_implications.clone(),
-            wkld.clone(),
-            llm_usage.clone()
-        ).await
-    );
-
-    all_rules.extend(min_max.clone());
-
     let min_max_add = time_fn_call!(
         "min_max_add",
         recursive_rules_cond(
@@ -1441,6 +1372,36 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
     );
 
     all_rules.extend(min_max_add.clone());
+
+    let min_max_mul = time_fn_call!(
+        "min_max_mul",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            llm_usage.clone()
+        ).await
+    );
+
+    all_rules.extend(min_max_mul);
+
+    let min_max_div = time_fn_call!(
+        "min_max_div",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            llm_usage.clone()
+        ).await
+    );
+
+    all_rules.extend(min_max_div);
 
     for op in &["min", "max"] {
         let int_workload = Workload::new(&["0", "1", "(OP V V)"])
@@ -1461,7 +1422,8 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
             run_workload(
                 eq_workload,
                 Some(wkld.clone()),
-                min_max.clone(),
+                // TODO: see if this makes it hella slow
+                all_rules.clone(),
                 base_implications.clone(),
                 llm_usage.clone()
             ).await
@@ -1469,38 +1431,6 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
 
         all_rules.extend(eq_simp);
     }
-
-    let min_max_mul = time_fn_call!(
-        "min_max_mul",
-        recursive_rules_cond(
-            Metric::Atoms,
-            7,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "*"]]),
-            all_rules.clone(),
-            base_implications.clone(),
-            wkld.clone(),
-            llm_usage.clone()
-        ).await
-    );
-
-    all_rules.extend(min_max_mul);
-
-
-
-    let min_max_mul = time_fn_call!(
-        "min_max_div",
-        recursive_rules_cond(
-            Metric::Atoms,
-            7,
-            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max", "/"]]),
-            all_rules.clone(),
-            base_implications.clone(),
-            wkld.clone(),
-            llm_usage.clone()
-        ).await
-    );
-
-    all_rules.extend(min_max_mul);
 
 
     for op in &["min", "max"] {
