@@ -1147,66 +1147,135 @@ pub async fn mini_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
     base_implications.add(and_implies_left);
     base_implications.add(and_implies_right);
 
-    // // one call to recursive_rules_cond to get arithmetic rules
-    // let arith_basic = time_fn_call!(
-    //     "arith_basic",
-    //     recursive_rules_cond(
-    //         Metric::Atoms,
-    //         5,
-    //         Lang::new(
-    //             &["0", "1"],
-    //             &["a", "b", "c"],
-    //             &[&["-"], &["+", "-", "*", "/"]],
-    //         ),
-    //         Ruleset::default(),
-    //         base_implications.clone(),
-    //         wkld.clone(),
-    //         llm_usage.clone(),
-    //     ).await
-    // );
-    // all_rules.extend(arith_basic.clone());
+    let other_implications = time_fn_call!(
+        "find_base_implications",
+        run_implication_workload(
+            &wkld,
+            &["a".to_string(), "b".to_string(), "c".to_string()],
+            &base_implications,
+            &Default::default()
+        )
+    );
 
-    for op in &["min"] {
-        // this workload will consist of well-typed lt comparisons, where the child
-        // expressions consist of variables, `+`, and `min` (of up to size 3).
-        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 3)
-            .filter(Filter::And(vec![
-                Filter::Excludes("VAL".parse().unwrap()),
-                Filter::Excludes("OP1".parse().unwrap()),
-            ]))
-            .plug("OP2", &Workload::new(&[op, "+"]))
-            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+    base_implications.add_all(other_implications);
 
-        let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
-            .plug("OP", &Workload::new(&["<"]))
-            .plug("V", &int_workload)
-            .filter(Filter::Canon(vec![
-                "a".to_string(),
-                "b".to_string(),
-                "c".to_string(),
-                "d".to_string(),
-            ]));
+    println!("# base implications: {}", base_implications.len());
 
-        let cond_workload = Workload::new(&["(OP2 V 0)"])
-            .plug("OP2", &Workload::new(&["<"]))
-            .plug(
-                "V",
-                &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
+    for i in base_implications.iter() {
+        println!("implication: {}", i.name());
+    }
+    // here, make sure wkld is non empty
+    assert_ne!(wkld, Workload::empty());
+
+    // Find rules matching terms of the shape (&& (comp x y) (comp y z))
+    let comps = Workload::new(&["0", "1", "(OP V V)"])
+        .plug("OP", &Workload::new(&["<=", "<", "==", "!="]))
+        .plug("V", &Workload::new(&["a", "b", "c"]));
+
+    let base_comps = run_workload(
+        comps.clone(),
+        Some(wkld.clone()),
+        all_rules.clone(),
+        base_implications.clone(),
+        llm_usage.clone(),
+    ).await;
+
+    all_rules.extend(base_comps.clone());
+
+    let and_comps = Workload::new(&["V", "(&& V V)"]).plug("V", &comps);
+
+    let and_comps_rules = time_fn_call!(
+        "and_comps",
+        run_workload(
+        and_comps,
+        Some(wkld.clone()),
+        all_rules.clone(),
+        base_implications.clone(),
+        llm_usage.clone(),
+    ).await
             );
 
-        let rules = time_fn_call!(
-            format!("lt_add_{}", op),
-            run_workload(
-                lt_workload.clone(),
-                Some(cond_workload.clone()),
-                all_rules.clone(),
-                base_implications.clone(),
-                llm_usage.clone()
-            ).await
-        );
+    all_rules.extend(and_comps_rules.clone());
 
-        all_rules.extend(rules);
-    }
+    let simp_comps = time_fn_call!(
+        "simp_comps",
+        recursive_rules_cond(
+        Metric::Atoms,
+        5,
+        Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["<", ">", "+", "-"]]),
+        Ruleset::default(),
+        base_implications.clone(),
+        wkld.clone(),
+        llm_usage.clone(),
+    ).await
+            );
+
+    all_rules.extend(simp_comps.clone());
+
+    let arith_basic = time_fn_call!(
+        "arith_basic",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(
+                &["0", "1"],
+                &["a", "b", "c"],
+                &[&["-"], &["+", "-", "*", "/"]],
+            ),
+            Ruleset::default(),
+            base_implications.clone(),
+            wkld.clone(),
+            llm_usage.clone(),
+        ).await
+    );
+    all_rules.extend(arith_basic.clone());
+
+    let cond_workload = Workload::new(&[
+        "(< 0 b)",
+        "(< 0 a)",
+        "(&& (< 0 b) (== (% a b) 0))",
+        "(&& (< 0 a) (== (% a b) 0))",
+        "(== c c)",
+    ]);
+
+    let mul_div_mod = time_fn_call!(
+        "mul_div_mod",
+        recursive_rules_cond(
+            Metric::Atoms,
+            5,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["*", "/", "min", "max"]]),
+            Ruleset::default(),
+            base_implications.clone(),
+            cond_workload,
+            llm_usage.clone()
+        ).await
+    );
+
+    all_rules.extend(mul_div_mod);
+
+    let min_max = time_fn_call!(
+        "min_max",
+        recursive_rules_cond(
+            Metric::Atoms,
+            7,
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["min", "max"]]),
+            all_rules.clone(),
+            base_implications.clone(),
+            wkld.clone(),
+            llm_usage.clone()
+        ).await
+    );
+
+    all_rules.extend(min_max.clone());
+
+    let end_time = std::time::Instant::now();
+
+    all_rules.pretty_print();
+
+    println!(
+        "finished recipe (seconds: {})",
+        end_time.duration_since(start_time).as_secs_f64()
+    );
 
     all_rules
 }
