@@ -146,6 +146,8 @@ async fn run_workload_internal<L: SynthLanguage>(
 
     // 1. Create an e-graph from the workload, and compress
     //    it using the prior rules.
+    println!("variables in the terms:{:?}", get_vars::<L>(state.terms()));
+    println!("variables in the predicates:{:?}", get_vars::<L>(state.predicates()));
     let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
 
     let mut compressed = Scheduler::Compress(cfg.prior_limits).run(&egraph, &prior);
