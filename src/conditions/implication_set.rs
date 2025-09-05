@@ -362,7 +362,6 @@ pub fn run_implication_workload<L: SynthLanguage>(
     prior: &ImplicationSet<L>,
     rules: &Ruleset<L>,
 ) -> ImplicationSet<L> {
-    let max_size = 5;
     let mut chosen: ImplicationSet<L> = ImplicationSet::new();
     chosen.add_all(prior.clone());
 
@@ -371,8 +370,11 @@ pub fn run_implication_workload<L: SynthLanguage>(
     let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
     L::initialize_vars(&mut egraph, vars);
 
-    for size in 1..=max_size {
+    for size in 1..= 10 {
         let curr_workload = wkld.clone().filter(Filter::MetricEq(Metric::Atoms, size));
+        if curr_workload.is_empty() {
+            continue;
+        }
         for t in curr_workload.force() {
             egraph.add_expr(&t.to_string().parse::<RecExpr<L>>().unwrap());
         }
@@ -579,14 +581,14 @@ mod pvec_match_tests {
     use crate::{
         enumo::{Ruleset, Scheduler, Workload},
         halide::Pred,
-        recipe_utils::run_workload,
+        recipe_utils::{run_workload, LLMUsage},
         Limits, SynthAnalysis,
     };
 
     // A big ass integration test that puts it all together and sees if given a moderate
     // workload, it can synthesize implications and equalities AND minimize them.
-    #[test]
-    fn pvec_match_ok() {
+    #[tokio::test]
+    async fn pvec_match_ok() {
         // Define a workload of predicates.
         let the_ints = Workload::new(&["V", "(OP2 V V)"])
             .plug("V", &Workload::new(&["a", "b", "0"]))
@@ -609,11 +611,9 @@ mod pvec_match_tests {
             None,
             Ruleset::default(),
             Default::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-        );
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(bool_rules.clone());
 
@@ -622,11 +622,8 @@ mod pvec_match_tests {
             None,
             Ruleset::default(),
             Default::default(),
-            Limits::synthesis(),
-            Limits::minimize(),
-            true,
-            false,
-        );
+            LLMUsage::None,
+        ).await;
 
         all_rules.extend(and_rules.clone());
 

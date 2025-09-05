@@ -1,5 +1,6 @@
 use crate::{
     conditions::implication_set::{run_implication_workload, ImplicationSet},
+    recipe_utils::get_vars,
     HashMap, IndexMap, PVec, SynthLanguage,
 };
 
@@ -78,19 +79,9 @@ impl<L: SynthLanguage> ChompyState<L> {
         predicates: Workload,
         prior_impls: ImplicationSet<L>,
     ) -> Self {
-        let mut vars = vec![];
-        for t in terms.force() {
-            let expr: RecExpr<L> = t.to_string().parse().unwrap();
-            for node in expr.as_ref() {
-                if let ENodeOrVar::Var(v) = node.clone().to_enode_or_var() {
-                    let mut v = v.to_string();
-                    v.remove(0);
-                    if !vars.contains(&v) {
-                        vars.push(v);
-                    }
-                }
-            }
-        }
+        println!("finding variables on terms");
+        let vars = get_vars::<L>(&terms);
+        println!("found variables: {:?}", vars);
 
         let implications = if predicates.is_empty() {
             ImplicationSet::default()

@@ -531,9 +531,7 @@ impl<L: SynthLanguage> Ruleset<L> {
             .with_node_limit(50000)
             .run(&rules);
 
-        // 3. If we can compress the egraph further, do so.
-        //    This might not be a bad place to use a `Scheduler::Saturating` instead.
-        Scheduler::Compress(Limits::minimize()).run(&runner.egraph, prior)
+        runner.egraph
     }
 
     // Given two cvecs and a mapping from pvecs to expressions, returns a list of predicates
@@ -768,7 +766,7 @@ impl<L: SynthLanguage> Ruleset<L> {
         &mut self,
         chosen: &Self,
         prop_rules: &Vec<Rewrite<L, SynthAnalysis>>,
-        most_recent_condition: &Assumption<L>,
+        most_recent_condition: Option<Assumption<L>>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
@@ -827,14 +825,16 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .run(prop_rules);
 
             // TODO: make this an optimization flag
-            if most_recent_condition
-                .chop_assumption()
-                .search(&runner.egraph)
-                .is_empty()
-            {
-                println!("skipping {condition}");
-                // if the most recent condition is not in the e-graph, then it's not relevant
-                continue;
+            if let Some(ref most_recent_condition) = most_recent_condition {
+                if most_recent_condition
+                    .chop_assumption()
+                    .search(&runner.egraph)
+                    .is_empty()
+                {
+                    println!("skipping {condition}");
+                    // if the most recent condition is not in the e-graph, then it's not relevant
+                    continue;
+                }
             }
 
             let egraph = runner.egraph.clone();
@@ -850,13 +850,11 @@ impl<L: SynthLanguage> Ruleset<L> {
             // 6. For each candidate, see if the chosen rules have merged the lhs and rhs.
             for (l_id, r_id, rule) in initial {
                 if egraph.find(l_id) == egraph.find(r_id) {
-                    println!("condition: {condition}");
-                    println!("removing rule {rule}");
+                    // println!("condition: {condition}");
+                    // println!("removing rule {rule}");
                     let mut dummy: Ruleset<L> = Ruleset::default();
                     dummy.add(rule.clone());
                     self.remove_all(dummy.clone());
-                } else {
-                    println!("i'm keeping {rule}");
                 }
             }
         }
@@ -919,7 +917,13 @@ impl<L: SynthLanguage> Ruleset<L> {
             }
         }
 
+        let mut most_recent_condition: Option<Assumption<L>> = None;
+
         while !self.is_empty() {
+            if most_recent_condition.is_none() {
+                self.shrink_cond(&chosen, prop_rules, None);
+            }
+
             let selected = self.select(step_size, &mut invalid);
             if selected.is_empty() {
                 continue;
@@ -928,20 +932,22 @@ impl<L: SynthLanguage> Ruleset<L> {
             // We might add `step_size` rules, and each rule might have a backwards version too.
             assert!(selected.len() <= step_size * 2);
 
-            let most_recent_condition = &selected
-                .0
-                .values()
-                .map(|rule| rule.cond.clone())
-                .collect::<Vec<_>>()
-                .first()
-                .cloned()
+            let cond = selected
+                .iter()
+                .take(1)
+                .next()
                 .unwrap()
+                .cond
+                .clone()
                 .unwrap();
+
+            most_recent_condition = Some(cond);
 
             chosen.extend(selected.clone());
 
-            self.shrink_cond(&chosen, prop_rules, most_recent_condition);
+            self.shrink_cond(&chosen, prop_rules, most_recent_condition.clone());
         }
+
         // Return only the new rules
         chosen.remove_all(prior);
 
@@ -971,9 +977,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         let step_size = 1;
         while !self.is_empty() {
             let selected = self.select(step_size, &mut invalid);
-            for s in selected.iter() {
-                println!("[minimize] Selected: {s}");
-            }
             chosen.extend(selected.clone());
             self.shrink(&chosen, scheduler);
         }
