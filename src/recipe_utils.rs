@@ -3,7 +3,7 @@ use std::time::Instant;
 use egg::{AstSize, EGraph, ENodeOrVar, Extractor, RecExpr, Runner};
 
 use crate::{
-    conditions::implication_set::{run_implication_workload, ImplicationSet}, enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload}, llm::{get_llm_conditions, get_llm_terms, sort_rule_candidates}, Limits, Pattern, SynthAnalysis, SynthLanguage
+    conditions::{generate::compress, implication_set::{run_implication_workload, ImplicationSet}}, enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload}, llm::{get_llm_conditions, get_llm_terms, sort_rule_candidates}, Limits, Pattern, SynthAnalysis, SynthLanguage
 };
 
 pub struct ChompyConfig<L: SynthLanguage> {
@@ -224,6 +224,9 @@ async fn run_workload_internal<L: SynthLanguage>(
         // If there are no conditions, we can just return the chosen rules.
         return chosen;
     }
+
+    let cond_workload = compress(&cond_workload, chosen.clone());
+
 
     // TODO: Make this a parameter; 5 is a bit arbitrary lol.
     let max_cond_size = 5;

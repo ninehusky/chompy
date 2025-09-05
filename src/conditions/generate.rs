@@ -2,6 +2,7 @@ use egg::{AstSize, Extractor};
 
 use crate::conditions::implication_set::ImplicationSet;
 use crate::recipe_utils::LLMUsage;
+use crate::SynthLanguage;
 use crate::{
     enumo::{Filter, Metric, Rule, Ruleset, Scheduler, Workload},
     halide::Pred,
@@ -33,7 +34,7 @@ pub async fn get_condition_workload() -> Workload {
             "c".to_string(),
         ]));
 
-    let mut eq_rules = Ruleset::default();
+    let mut eq_rules: Ruleset<Pred> = Ruleset::default();
     eq_rules.add(
         Rule::from_string("(&& (<= ?a ?b) (<= ?b ?a)) ==> (== ?a ?b)")
             .unwrap()
@@ -69,7 +70,7 @@ pub async fn get_condition_workload() -> Workload {
     branches_better.filter(Filter::MetricLt(Metric::Atoms, 6))
 }
 
-pub fn compress(workload: &Workload, prior: Ruleset<Pred>) -> Workload {
+pub fn compress<L: SynthLanguage>(workload: &Workload, prior: Ruleset<L>) -> Workload {
     let start = std::time::Instant::now();
     println!("[compress] Starting compression of implication workload.");
     let egraph = workload.to_egraph();
