@@ -203,8 +203,7 @@ The syntax is s-expressions with the following operators:
 
 You will be given a list of existing terms.
 Your task is to propose additional terms that are:
-- syntactically valid,
-- structurally rich,
+- significantly different from the input set,
 - likely to be useful in rewrite rules (e.g., distributivity, commutativity, associativity, idempotence),
 - non-trivial (avoid constant-only terms unless they reduce to a single constant),
 - and include variables in most cases.
@@ -215,6 +214,7 @@ Output requirements:
 - Ensure all terms are distinct and not repeats of the input.
 - Output **only the terms**, one per line.
 - Do not include any commentary, numbering, or explanations.
+- Do not introduce any new variables outside the set given.
 - Do not include any markdown backticks.
 
 Example Input Terms:

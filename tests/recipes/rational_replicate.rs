@@ -1,10 +1,10 @@
 use super::*;
 use ruler::{
     enumo::{Filter, Ruleset, Workload},
-    recipe_utils::{base_lang, run_workload},
+    recipe_utils::{base_lang, run_workload, LLMUsage},
 };
 
-pub fn replicate_ruler1_recipe() -> Ruleset<Math> {
+pub async fn replicate_ruler1_recipe(llm_usage: LLMUsage) -> Ruleset<Math> {
     let mut rules = Ruleset::default();
 
     // Domain
@@ -24,13 +24,11 @@ pub fn replicate_ruler1_recipe() -> Ruleset<Math> {
 
     let layer1_rules = run_workload(
         layer1.clone(),
+        None,
         rules.clone(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        false,
-        None,
-        None,
-    );
+        Default::default(),
+        llm_usage.clone(),
+    ).await;
     rules.extend(layer1_rules);
 
     // Layer 2 (two ops)
@@ -46,15 +44,14 @@ pub fn replicate_ruler1_recipe() -> Ruleset<Math> {
         .filter(filter)
         .plug("VAL", &Workload::empty())
         .plug("VAR", &Workload::empty());
+
     let layer2_rules = run_workload(
         layer2.clone(),
+        None,
         rules.clone(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true,
-        None,
-        None,
-    );
+        Default::default(),
+        llm_usage,
+    ).await;
     rules.extend(layer2_rules);
 
     rules

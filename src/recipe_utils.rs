@@ -350,7 +350,7 @@ fn keep_vars_exact<L: SynthLanguage>(wkld: &Workload, vars: &[String]) -> Worklo
     for t in wkld.force() {
         let local_vars = get_vars_local(&t);
         if local_vars.iter().any(|v| !vars.contains(&v)) {
-            println!("throwing awayterm {t} because it has vars {:?}", vars);
+            println!("throwing away term {t} because it has vars {:?}", vars);
             continue;
         } else {
             res = res.append(Workload::new(&[t.to_string()]));
@@ -465,10 +465,20 @@ pub async fn run_workload<L: SynthLanguage>(
 
     let (additional_terms, additional_conditions) = get_llm_ammo::<L>(llm_usage.clone(), &llm_workload, &llm_cond_workload).await;
 
+    let mut actual_additional_terms = Workload::empty();
+    let og_workload = llm_workload.clone();
+    for term in additional_terms.force() {
+        if !og_workload.force().contains(&term) {
+            actual_additional_terms = actual_additional_terms.append(Workload::new(&[term.to_string()]));
+        }
+    }
+
+    println!("Deduped workload of size {} to only contain {} new terms", additional_terms.force().len(), actual_additional_terms.force().len());
+
     let workload = if matches!(llm_usage, LLMUsage::EnumerationOnly(_)) {
-        additional_terms.clone()
+        actual_additional_terms
     } else {
-        workload.append(additional_terms.clone())
+        llm_workload.append(additional_terms.clone())
     };
 
     let cond_workload = if matches!(llm_usage, LLMUsage::EnumerationOnly(_)) {
