@@ -9,9 +9,9 @@ usages = [
     # "baseline",
     "enum_only",
     "baseline_and_enum",
-    "baseline_and_filter_1",
-    "baseline_and_filter_5",
-    "baseline_with_filter_5_and_enum",
+    # "baseline_and_filter_1",
+    # "baseline_and_filter_5",
+    # "baseline_with_filter_5_and_enum",
 ]
 out_dir = Path("out")
 max_workers = 2  # run 2 at a time

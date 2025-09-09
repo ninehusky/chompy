@@ -387,7 +387,7 @@ pub async fn get_llm_terms<L: SynthLanguage>(client: &Client, terms: &Workload, 
         .replace("{term_limit}", &limit.to_string())
         .replace("{operators}", &get_operator_description(&terms.force()));
 
-    // println!("PROMPT TEXT:\n{}", prompt_text);
+    println!("PROMPT TEXT:\n{}", prompt_text);
 
     let response = send_openai_request(client, prompt_text).await.unwrap();
 

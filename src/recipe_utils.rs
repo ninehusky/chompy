@@ -3,7 +3,7 @@ use std::time::Instant;
 use egg::{AstSize, EGraph, ENodeOrVar, Extractor, RecExpr, Runner};
 
 use crate::{
-    conditions::implication_set::{run_implication_workload, ImplicationSet}, enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Workload}, llm::{get_llm_conditions, get_llm_terms, sort_rule_candidates}, Limits, Pattern, SynthAnalysis, SynthLanguage
+    conditions::implication_set::{run_implication_workload, ImplicationSet}, enumo::{ChompyState, Filter, Metric, PredicateMap, Ruleset, Scheduler, Sexp, Workload}, llm::{get_llm_conditions, get_llm_terms, sort_rule_candidates}, Limits, Pattern, SynthAnalysis, SynthLanguage
 };
 
 pub struct ChompyConfig<L: SynthLanguage> {
@@ -152,54 +152,54 @@ async fn run_workload_internal<L: SynthLanguage>(
 
     let mut compressed = Scheduler::Compress(cfg.prior_limits).run(&egraph, &prior);
 
-    let mut changed = true;
-    let mut should_merge = vec![];
-    while changed {
-        // go through each pair of e-classes, and find cvec-equal expressions.
-        let cloned_compressed = compressed.clone();
-        let extractor = Extractor::new(&cloned_compressed, AstSize);
-        changed = false;
-        for ec1 in cloned_compressed.classes() {
-            for ec2 in cloned_compressed.classes() {
-                if ec1.id >= ec2.id {
-                    continue;
-                }
-                // if the cvecs are equal, then we have a candidate.
-                if ec1.data.cvec == ec2.data.cvec {
-                    let e1 = extractor.find_best(ec1.id).1;
-                    let e2 = extractor.find_best(ec2.id).1;
+    // let mut changed = true;
+    // let mut should_merge = vec![];
+    // while changed {
+    //     // go through each pair of e-classes, and find cvec-equal expressions.
+    //     let cloned_compressed = compressed.clone();
+    //     let extractor = Extractor::new(&cloned_compressed, AstSize);
+    //     changed = false;
+    //     for ec1 in cloned_compressed.classes() {
+    //         for ec2 in cloned_compressed.classes() {
+    //             if ec1.id >= ec2.id {
+    //                 continue;
+    //             }
+    //             // if the cvecs are equal, then we have a candidate.
+    //             if ec1.data.cvec == ec2.data.cvec {
+    //                 let e1 = extractor.find_best(ec1.id).1;
+    //                 let e2 = extractor.find_best(ec2.id).1;
 
-                    let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
-                    let l = mini_egraph.add_expr(&e1.to_string().parse().unwrap());
-                    let r = mini_egraph.add_expr(&e2.to_string().parse().unwrap());
-                    let runner: Runner<L, SynthAnalysis> = Runner::default()
-                        .with_egraph(mini_egraph.clone())
-                        .run(
-                            &prior
-                                .iter()
-                                .map(|rule| rule.rewrite.clone())
-                                .collect::<Vec<_>>(),
-                        )
-                        .with_node_limit(100);
+    //                 let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+    //                 let l = mini_egraph.add_expr(&e1.to_string().parse().unwrap());
+    //                 let r = mini_egraph.add_expr(&e2.to_string().parse().unwrap());
+    //                 let runner: Runner<L, SynthAnalysis> = Runner::default()
+    //                     .with_egraph(mini_egraph.clone())
+    //                     .run(
+    //                         &prior
+    //                             .iter()
+    //                             .map(|rule| rule.rewrite.clone())
+    //                             .collect::<Vec<_>>(),
+    //                     )
+    //                     .with_node_limit(100);
 
-                    let mini_egraph = runner.egraph;
-                    if mini_egraph.find(l) == mini_egraph.find(r) {
-                        let size = egraph.total_size();
-                        // e1 and e2 are equivalent in the mini egraph
-                        // println!(
-                        //     "merging {e1} and {e2} because they are equivalent in the mini egraph of size {size}"
-                        // );
-                        should_merge.push((ec1.id, ec2.id));
-                        changed = true;
-                    }
-                }
-            }
-        }
+    //                 let mini_egraph = runner.egraph;
+    //                 if mini_egraph.find(l) == mini_egraph.find(r) {
+    //                     let size = egraph.total_size();
+    //                     // e1 and e2 are equivalent in the mini egraph
+    //                     // println!(
+    //                     //     "merging {e1} and {e2} because they are equivalent in the mini egraph of size {size}"
+    //                     // );
+    //                     should_merge.push((ec1.id, ec2.id));
+    //                     changed = true;
+    //                 }
+    //             }
+    //         }
+    //     }
 
-        for (id1, id2) in &should_merge {
-            compressed.union(*id1, *id2);
-        }
-    }
+    //     for (id1, id2) in &should_merge {
+    //         compressed.union(*id1, *id2);
+    //     }
+    // }
 
     // 2. Discover total candidates using cvec matching.
     let mut total_candidates = Ruleset::fast_cvec_match(&compressed, prior.clone());
@@ -326,10 +326,30 @@ async fn run_workload_internal<L: SynthLanguage>(
 fn keep_vars_exact<L: SynthLanguage>(wkld: &Workload, vars: &[String]) -> Workload {
     println!("keeping vars: {:?}", vars);
     let mut res = Workload::empty();
+
+    fn get_vars_local(sexp: &Sexp) -> Vec<String> {
+        match sexp {
+            Sexp::Atom(a) => {
+                // if it's not a number, it's a variable.
+                let number_parse_result = a.parse::<i64>();
+                match number_parse_result {
+                    Ok(_) => vec![],
+                    Err(_) => vec![a.to_string()]
+                }
+            }
+            Sexp::List(l) => {
+                let mut res = l.iter().skip(1).flat_map(|x| get_vars_local(x)).collect::<Vec<_>>();
+                res.sort();
+                res.dedup();
+                res
+            }
+        }
+    };
+
+
     for t in wkld.force() {
-        let expr: Pattern<L> = t.to_string().parse().unwrap();
-        let vars = expr.vars().iter().map(|v| v.to_string().remove(0)).collect::<Vec<_>>();
-        if vars.iter().any(|v| !vars.contains(&v)) {
+        let local_vars = get_vars_local(&t);
+        if local_vars.iter().any(|v| !vars.contains(&v)) {
             println!("throwing awayterm {t} because it has vars {:?}", vars);
             continue;
         } else {
