@@ -824,6 +824,8 @@ impl<L: SynthLanguage> Ruleset<L> {
                 .with_node_limit(1000)
                 .run(prop_rules);
 
+            println!("prop_rules: {}", prop_rules.len());
+
             // TODO: make this an optimization flag
             if let Some(ref most_recent_condition) = most_recent_condition {
                 if most_recent_condition

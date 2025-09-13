@@ -12,6 +12,11 @@ pub struct ChompyConfig<L: SynthLanguage> {
     pub minimize_limits: Limits,
     pub fast_match: bool,
     pub llm_usage: LLMUsage,
+    // This, generally speaking, should be true.
+    // The only reason you'd want this to be false
+    // is if you want to test the effect of implications
+    // on rule learning.
+    pub use_implications: bool,
 }
 
 impl<L: SynthLanguage> ChompyConfig<L> {
@@ -22,7 +27,13 @@ impl<L: SynthLanguage> ChompyConfig<L> {
             minimize_limits: Limits::minimize(),
             fast_match: true,
             llm_usage: LLMUsage::None,
+            use_implications: true,
         }
+    }
+
+    pub fn with_implications(mut self, use_implications: bool) -> Self {
+        self.use_implications = use_implications;
+        self
     }
 
     pub fn with_llm_usage(mut self, usage: LLMUsage) -> Self {
@@ -137,6 +148,23 @@ pub fn substitute(workload: Workload, sub: Workload, atom: &str) -> Workload {
 async fn run_workload_internal<L: SynthLanguage>(
     cfg: &ChompyConfig<L>,
 ) -> Ruleset<L> {
+    let use_implications = std::env::var("NO_IMPLICATIONS").is_err();
+
+    println!("use_implications: {}", use_implications);
+    let implications = if use_implications {
+        cfg.state.implications()
+    } else {
+        &ImplicationSet::default()
+    };
+
+    let rws = if use_implications {
+        implications.to_egg_rewrites()
+    } else {
+        println!("[run_workload] Again -- Not using implications to minimize conditional candidates.");
+        vec![]
+    };
+    println!("top rws len: {}", rws.len());
+
     let state = &cfg.state;
     let prior: Ruleset<L> = state.chosen().clone();
     let cond_workload = state.predicates().clone();
@@ -227,7 +255,6 @@ async fn run_workload_internal<L: SynthLanguage>(
     // TODO: Make this a parameter; 5 is a bit arbitrary lol.
     let max_cond_size = 5;
 
-    let impl_prop_rules = state.implications();
 
     for cond_size in 1..=max_cond_size {
         println!("[run_workload] cond size: {cond_size}");
@@ -254,11 +281,11 @@ async fn run_workload_internal<L: SynthLanguage>(
             &compressed,
             &chosen,
             &predicates,
-            state.implications(),
+            &implications,
         );
 
-        let rws = impl_prop_rules.to_egg_rewrites();
 
+        println!("rws len: {}", rws.len());
         let (mut chosen_cond, _) = conditional_candidates.minimize_cond(chosen.clone(), &rws);
 
         let filter_cfg: Option<LLMFilterConfig> = match &cfg.llm_usage {
@@ -435,6 +462,11 @@ pub async fn run_workload<L: SynthLanguage>(
     prior_impls: ImplicationSet<L>,
     llm_usage: LLMUsage,
 ) -> Ruleset<L> {
+    let use_implications = std::env::var("NO_IMPLICATIONS").is_err();
+    if !use_implications {
+        println!("[run_workload] Not using implications to minimize candidates.");
+    }
+    println!("toplevel: use_implications: {}", use_implications);
     let mut prior_impls = prior_impls.clone();
     println!("[run_workload] Running workload");
     let start = Instant::now();
@@ -471,7 +503,9 @@ pub async fn run_workload<L: SynthLanguage>(
         prior_impls,
     );
 
-    let cfg = ChompyConfig::default(state).with_llm_usage(llm_usage);
+    let cfg = ChompyConfig::default(state).with_llm_usage(llm_usage).with_implications(use_implications);
+
+    println!("cfg use implications: {}", cfg.use_implications);
 
     let res = run_workload_internal(
         &cfg

@@ -37,7 +37,7 @@ pub struct ChompyState<L: SynthLanguage> {
     terms: Workload,
     chosen: Ruleset<L>,
     predicates: Workload,
-    implications: ImplicationSet<L>,
+    pub implications: ImplicationSet<L>,
 }
 
 impl<L: SynthLanguage> ChompyState<L> {
