@@ -1362,7 +1362,7 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         "min_max_add",
         recursive_rules_cond(
             Metric::Atoms,
-            5,
+            7,
             Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
             all_rules.clone(),
             base_implications.clone(),
