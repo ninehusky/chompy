@@ -3,9 +3,14 @@ use std::path::Path;
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
-    }, enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload}, halide::{mini_recipe, og_recipe, Pred}, recipe_utils::{LLMEnumerationConfig, LLMFilterConfig, LLMUsage}, Limits, SynthLanguage
+    },
+    enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload},
+    halide::{mini_recipe, og_recipe, Pred},
+    recipe_utils::{LLMEnumerationConfig, LLMFilterConfig, LLMUsage},
+    Limits, SynthLanguage,
 };
 
+#[derive(Clone)]
 struct DerivabilityResult<L: SynthLanguage> {
     can: Ruleset<L>,
     cannot: Ruleset<L>,
@@ -638,35 +643,44 @@ pub async fn output_all() {
     // baseline + LLM filtering (limit 1)
     // baseline + LLM filtering (limit 5) + LLM enumeration
     let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
-    let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(100);
+    let default_enum_cfg = LLMEnumerationConfig::default()
+        .with_num_conditions(20)
+        .with_num_terms(100);
 
-    
     // 1. No LLM assistance (baseline)
     usages.push(("baseline".to_string(), LLMUsage::None));
 
     // 2. LLM enumeration ONLY
-    usages.push(("LLM_enum".to_string(), LLMUsage::EnumerationOnly(default_enum_cfg.clone())));
+    usages.push((
+        "LLM_enum".to_string(),
+        LLMUsage::EnumerationOnly(default_enum_cfg.clone()),
+    ));
 
     // 3. Baseline + LLM enumeration.
-    usages.push(("LLM_enum".to_string(), LLMUsage::Enumeration(default_enum_cfg.clone())));
-    
+    usages.push((
+        "LLM_enum".to_string(),
+        LLMUsage::Enumeration(default_enum_cfg.clone()),
+    ));
 
     // 4, 5: baseline + LLM filtering (limit 1, 5)
     for top_k in [1, 5] {
         usages.push((
             format!("baseline_with_LLM_filter_{top_k}"),
-            LLMUsage::Filter(LLMFilterConfig::default().with_on_threshold(50).with_top_k(top_k))));
+            LLMUsage::Filter(
+                LLMFilterConfig::default()
+                    .with_on_threshold(50)
+                    .with_top_k(top_k),
+            ),
+        ));
     }
 
     // 6. baseline + LLM filtering (limit 5) + LLM enumeration
     usages.push((
         "baseline_with_LLM filter_5_and_LLM_enum".to_string(),
-        LLMUsage::Combined(
-            vec![
-                LLMUsage::Filter(default_filter_cfg.clone()),
-                LLMUsage::Enumeration(default_enum_cfg.clone()),
-            ],
-        ),
+        LLMUsage::Combined(vec![
+            LLMUsage::Filter(default_filter_cfg.clone()),
+            LLMUsage::Enumeration(default_enum_cfg.clone()),
+        ]),
     ));
 
     for (label, usage) in usages {
@@ -675,7 +689,6 @@ pub async fn output_all() {
         rules.to_file(&format!("mini_rules_{}.txt", label));
     }
 }
-    
 
 #[cfg(test)]
 pub mod halide_derive_tests {
@@ -690,13 +703,13 @@ pub mod halide_derive_tests {
         enumo::{ChompyState, Filter, Metric},
         halide::og_recipe,
         recipe_utils::{
-            base_lang, iter_metric, recursive_rules_cond, run_workload, LLMFilterConfig, LLMUsage, Lang
+            base_lang, iter_metric, recursive_rules_cond, run_workload, LLMFilterConfig, LLMUsage,
+            Lang,
         },
         time_fn_call, DeriveType, SynthAnalysis,
     };
 
     use super::*;
-
 
     // TODO: fix mii
     const USE_LLM: bool = false;
@@ -705,68 +718,109 @@ pub mod halide_derive_tests {
     #[tokio::test]
     async fn op_min_max_workload() {
         let start_time = std::time::Instant::now();
+
+        let llm_usages = vec![
+            "baseline_and_enum",
+            "baseline_and_filter_1",
+            "baseline_and_filter_5",
+        ];
+
+        let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
+        let default_enum_cfg = LLMEnumerationConfig::default()
+            .with_num_conditions(20)
+            .with_num_terms(100);
+
+        let llm_usage = |usage: &str| match usage {
+            "baseline" => LLMUsage::None,
+            "enum_only" => LLMUsage::EnumerationOnly(default_enum_cfg.clone()),
+            "baseline_and_enum" => LLMUsage::Enumeration(default_enum_cfg.clone()),
+            "baseline_and_filter_1" => LLMUsage::Filter(default_filter_cfg.clone().with_top_k(1)),
+            "baseline_and_filter_5" => LLMUsage::Filter(default_filter_cfg.clone().with_top_k(5)),
+            "baseline_with_filter_5_and_enum" => LLMUsage::Combined(vec![
+                LLMUsage::Filter(default_filter_cfg.clone()),
+                LLMUsage::Enumeration(default_enum_cfg.clone()),
+            ]),
+            _ => panic!("Invalid llm_usage"),
+        };
+
         if std::env::var("RUN_ME").is_err() {
             return;
         }
 
-        // this workload will consist of well-typed lt comparisons, where the child
-        // expressions consist of variables, `+`, and `min` (of up to size 5).
-        let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
-            .filter(Filter::And(vec![
-                Filter::Excludes("VAL".parse().unwrap()),
-                Filter::Excludes("OP1".parse().unwrap()),
-            ]))
-            .plug("OP2", &Workload::new(&["min", "+"]))
-            .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
+        async fn create_rules(llm_usage: LLMUsage) -> Ruleset<Pred> {
+            // this workload will consist of well-typed lt comparisons, where the child
+            // expressions consist of variables, `+`, and `min` (of up to size 5).
+            let int_workload = iter_metric(base_lang(2), "EXPR", Metric::Atoms, 5)
+                .filter(Filter::And(vec![
+                    Filter::Excludes("VAL".parse().unwrap()),
+                    Filter::Excludes("OP1".parse().unwrap()),
+                ]))
+                .plug("OP2", &Workload::new(&["min", "+"]))
+                .plug("VAR", &Workload::new(&["a", "b", "c", "d"]));
 
-        let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
-            .plug("OP", &Workload::new(&["<"]))
-            .plug("V", &int_workload)
-            .filter(Filter::Canon(vec![
-                "a".to_string(),
-                "b".to_string(),
-                "c".to_string(),
-                "d".to_string(),
-            ]));
+            let lt_workload = Workload::new(&["(OP V V)", "0", "1"])
+                .plug("OP", &Workload::new(&["<"]))
+                .plug("V", &int_workload)
+                .filter(Filter::Canon(vec![
+                    "a".to_string(),
+                    "b".to_string(),
+                    "c".to_string(),
+                    "d".to_string(),
+                ]));
 
-        let cond_workload = Workload::new(&["(OP2 V 0)"])
-            .plug("OP2", &Workload::new(&["<"]))
-            .plug(
-                "V",
-                &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
-            );
+            let cond_workload = Workload::new(&["(OP2 V 0)"])
+                .plug("OP2", &Workload::new(&["<"]))
+                .plug(
+                    "V",
+                    &Workload::new(&["(< a 0)", "(< b 0)", "(< 0 c)", "(< d 0)", "(< 0 d)"]),
+                );
 
-        // These are rules which will help compress the workload so we can mimic
-        // focus on "realistic" candidate spaces for large grammars.
-        let mut prior: Ruleset<Pred> = Ruleset::default();
+            // These are rules which will help compress the workload so we can mimic
+            // focus on "realistic" candidate spaces for large grammars.
+            let mut prior: Ruleset<Pred> = Ruleset::default();
 
-        let prior_str = r#"(min ?a ?a) <=> ?a
-(max ?a ?a) <=> (min ?a ?a)
-(min ?b ?a) <=> (min ?a ?b)
-(max ?b ?a) <=> (max ?a ?b)
-(min ?b ?a) ==> ?a if (< ?a ?b)
-(max ?b ?a) ==> ?b if (< ?a ?b)
-(min ?b (max ?b ?a)) ==> ?b
-(max ?a (min ?b ?a)) ==> ?a
-(min ?c (min ?b ?a)) <=> (min ?a (min ?b ?c))
-(min ?b (min ?b ?a)) <=> (min ?a (min ?b ?a))
-(min ?a (max ?b ?a)) <=> (max ?a (min ?b ?a))
-(max ?c (max ?b ?a)) <=> (max ?b (max ?c ?a))
-(max ?c (min ?b ?a)) ==> (min ?a (max ?c ?b)) if  (< ?c ?a)
-(max (min ?a ?c) (min ?b ?c)) <=> (min ?c (max ?b ?a))
-(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a ?c))
-(min ?a (max ?c (min ?b ?a))) <=> (max (min ?c ?a) (min ?b ?a))
-(min (max ?b ?c) (max ?b ?a)) <=> (max ?b (min ?a (max ?b ?c)))
-(max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a (max ?b ?c)))
-(+ ?a 0) <=> ?a
-(+ ?a ?b) <=> (+ ?b ?a)
-(< ?a ?b) ==> 1 if (< ?a ?b)
-(< ?a ?b) ==> 0 if (< ?b ?a)"#;
+            let prior_str = r#"(min ?a ?a) <=> ?a
+                               (max ?a ?a) <=> (min ?a ?a)
+                               (min ?b ?a) <=> (min ?a ?b)
+                               (max ?b ?a) <=> (max ?a ?b)
+                               (min ?b ?a) ==> ?a if (< ?a ?b)
+                               (max ?b ?a) ==> ?b if (< ?a ?b)
+                               (min ?b (max ?b ?a)) ==> ?b
+                               (max ?a (min ?b ?a)) ==> ?a
+                               (min ?c (min ?b ?a)) <=> (min ?a (min ?b ?c))
+                               (min ?b (min ?b ?a)) <=> (min ?a (min ?b ?a))
+                               (min ?a (max ?b ?a)) <=> (max ?a (min ?b ?a))
+                               (max ?c (max ?b ?a)) <=> (max ?b (max ?c ?a))
+                               (max ?c (min ?b ?a)) ==> (min ?a (max ?c ?b)) if  (< ?c ?a)
+                               (max (min ?a ?c) (min ?b ?c)) <=> (min ?c (max ?b ?a))
+                               (max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a ?c))
+                               (min ?a (max ?c (min ?b ?a))) <=> (max (min ?c ?a) (min ?b ?a))
+                               (min (max ?b ?c) (max ?b ?a)) <=> (max ?b (min ?a (max ?b ?c)))
+                               (max ?b (min ?c (max ?b ?a))) <=> (max ?b (min ?a (max ?b ?c)))
+                               (+ ?a 0) <=> ?a
+                               (+ ?a ?b) <=> (+ ?b ?a)
+                               (< ?a ?b) ==> 1 if (< ?a ?b)
+                               (< ?a ?b) ==> 0 if (< ?b ?a)"#;
 
-        for line in prior_str.lines() {
-            let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
-            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
-            prior.add(rule);
+            for line in prior_str.lines() {
+                let line = line.trim();
+                let rule: Rule<Pred> = Rule::from_string(line).unwrap().0;
+                assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+                prior.add(rule);
+            }
+
+            let rules = run_workload(
+                lt_workload.clone(),
+                Some(cond_workload.clone()),
+                prior.clone(),
+                // we don't need any implications for this test; notice how
+                // all the conditions are just `(< ?a ?b)`.
+                ImplicationSet::default(),
+                llm_usage,
+            )
+            .await;
+
+            rules
         }
 
         let mut should_derive: Ruleset<Pred> = Default::default();
@@ -797,57 +851,46 @@ pub mod halide_derive_tests {
             .0,
         );
 
-        for rule in should_derive.iter() {
-            assert!(rule.is_valid(), "Rule is not valid: {}", rule);
+        let no_llm_rules = create_rules(LLMUsage::None).await;
+
+        let to_json = |result: DerivabilityResult<Pred>| {
+            serde_json::json!({
+                "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+                "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+            })
+        };
+
+        let mut results = vec![];
+
+        for usage in llm_usages {
+            let usage_str = usage.to_string();
+            let usage = llm_usage(usage);
+            let rules = create_rules(usage.clone()).await;
+            let vs_baseline =
+                run_derivability_tests(&rules, &no_llm_rules, &ImplicationSet::default());
+            let vs_should_derive =
+                run_derivability_tests(&rules, &should_derive, &ImplicationSet::default());
+
+            results.push(serde_json::json!({
+                "usage": usage_str,
+                "num_rules": rules.len(),
+                "vs_baseline": to_json(vs_baseline),
+                "vs_should_derive": to_json(vs_should_derive),
+            }));
         }
 
-        let rules = run_workload(
-            lt_workload.clone(),
-            Some(cond_workload.clone()),
-            prior.clone(),
-            // we don't need any implications for this test; notice how
-            // all the conditions are just `(< ?a ?b)`.
-            ImplicationSet::default(),
-            LLMUsage::None,
-        ).await;
+        // now, do the big combined one.
+        let binding = std::env::var("OUT_DIR").expect("OUT_DIR environment variable not set")
+            + "/big_workload_derive.json";
 
-        // NOTE : doing this manual derivation scheme for now because I don't have total
-        //        faith that the unsound merge problem has gone away; I want to
-        //        look at the proofs.
-        for rule in should_derive.iter() {
-            let mut egraph: EGraph<Pred, SynthAnalysis> =
-                EGraph::default().with_explanations_enabled();
-            let l_expr = Pred::instantiate(&rule.lhs);
-            let r_expr = Pred::instantiate(&rule.rhs);
-            let cond_expr = Pred::instantiate(&rule.cond.clone().unwrap().chop_assumption());
-            let l_id = egraph.add_expr(&l_expr);
-            let r_id = egraph.add_expr(&r_expr);
-            egraph.add_expr(
-                &format!("({} {})", Pred::assumption_label(), cond_expr)
-                    .parse()
-                    .unwrap(),
-            );
+        let out_path: &Path = Path::new(&binding);
 
-            let runner: Runner<Pred, SynthAnalysis> = egg::Runner::new(SynthAnalysis::default())
-                .with_egraph(egraph.clone())
-                .with_explanations_enabled()
-                .with_node_limit(100000)
-                .run(rules.iter().map(|r| &r.rewrite));
+        let to_write = serde_json::json!({
+            "results": results,
+        });
 
-            let mut out_egraph = runner.egraph;
-
-            let end_time = std::time::Instant::now();
-            println!("Time taken: {:?}", end_time - start_time);
-
-            if out_egraph.find(l_id) == out_egraph.find(r_id) {
-                println!("Derived the rule!");
-                println!("Here's the proof:");
-                let proof = out_egraph.explain_equivalence(&l_expr, &r_expr);
-                println!("\n{proof}");
-            } else {
-                panic!("The rule was NOT derived.");
-            }
-        }
+        std::fs::write(out_path, to_write.to_string())
+            .expect("Failed to write derivability results to file");
     }
 
     #[test]
@@ -1013,7 +1056,8 @@ pub mod halide_derive_tests {
             Ruleset::default(),
             ImplicationSet::default(),
             LLMUsage::None,
-        ).await;
+        )
+        .await;
 
         let cond_workload = compress(&cond_workload, rules.clone());
 
@@ -1032,7 +1076,8 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_workload.clone(),
             LLMUsage::None,
-        ).await;
+        )
+        .await;
 
         println!("min_max_rules: {}", min_max_rules.len());
         for r in min_max_rules.iter() {
@@ -1119,7 +1164,8 @@ pub mod halide_derive_tests {
             Ruleset::default(),
             ImplicationSet::default(),
             LLMUsage::None,
-        ).await;
+        )
+        .await;
 
         all_rules.extend(cond_rules.clone());
 
@@ -1139,8 +1185,9 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            LLMUsage::None
-        ).await;
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(min_max_add_rules);
 
@@ -1151,8 +1198,9 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            LLMUsage::None
-        ).await;
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(min_max_sub_rules);
 
@@ -1163,8 +1211,9 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            LLMUsage::None
-        ).await;
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(min_max_mul_rules);
 
@@ -1187,7 +1236,8 @@ pub mod halide_derive_tests {
     // you've got a ruleset.
     #[allow(dead_code)]
     fn test_derive_no_run() {
-        let mut chompy_rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/chompy-rules-big.txt");
+        let mut chompy_rules: Ruleset<Pred> =
+            Ruleset::from_file("/Users/acheung/research/projects/chompy/chompy-rules-big.txt");
 
         println!("our rules:");
         for r in chompy_rules.iter() {
@@ -1236,7 +1286,13 @@ pub mod halide_derive_tests {
                 println!("I'm trying to derive: {c}");
                 let derive_result = time_fn_call!(
                     format!("can_derive_{}", c.name),
-                    chompy_rules.can_derive_cond(DeriveType::LhsAndRhs, c, Limits::deriving(), &implication_rules.to_egg_rewrites()));
+                    chompy_rules.can_derive_cond(
+                        DeriveType::LhsAndRhs,
+                        c,
+                        Limits::deriving(),
+                        &implication_rules.to_egg_rewrites()
+                    )
+                );
                 if derive_result {
                     can.add(c.clone());
                 } else {
@@ -1265,6 +1321,5 @@ pub mod halide_derive_tests {
 
         std::fs::write(out_path, result_json(result).to_string())
             .expect("Failed to write derivability results to file");
-
     }
 }

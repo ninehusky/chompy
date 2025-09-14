@@ -62,7 +62,11 @@ pub fn get_type(sexp: &Sexp, expected: Option<HalideType>) -> Option<HalideType>
             if let Ok(num) = a.parse::<i64>() {
                 match expected {
                     Some(HalideType::BoolType) => {
-                        if num == 0 || num == 1 { Some(HalideType::BoolType) } else { None }
+                        if num == 0 || num == 1 {
+                            Some(HalideType::BoolType)
+                        } else {
+                            None
+                        }
                     }
                     Some(HalideType::IntType) | None => Some(HalideType::IntType),
                     _ => None,
@@ -73,7 +77,9 @@ pub fn get_type(sexp: &Sexp, expected: Option<HalideType>) -> Option<HalideType>
             }
         }
         Sexp::List(l) => {
-            if l.is_empty() { return None; }
+            if l.is_empty() {
+                return None;
+            }
             let op = match &l[0] {
                 Sexp::Atom(op) => op.as_str(),
                 _ => return None,
@@ -105,12 +111,18 @@ pub fn get_type(sexp: &Sexp, expected: Option<HalideType>) -> Option<HalideType>
                     Some(HalideType::BoolType)
                 }
                 "select" => {
-                    if l.len() != 4 { return None; }
+                    if l.len() != 4 {
+                        return None;
+                    }
                     let cond_type = get_type(&l[1], Some(HalideType::BoolType))?;
-                    if cond_type != HalideType::BoolType { return None; }
+                    if cond_type != HalideType::BoolType {
+                        return None;
+                    }
                     let t1 = get_type(&l[2], None)?;
                     let t2 = get_type(&l[3], Some(t1))?;
-                    if t1 != t2 { return None; }
+                    if t1 != t2 {
+                        return None;
+                    }
                     Some(t1)
                 }
                 _ => None,
@@ -1202,7 +1214,8 @@ pub async fn mini_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
                 all_rules.clone(),
                 base_implications.clone(),
                 llm_usage.clone()
-            ).await
+            )
+            .await
         );
 
         all_rules.extend(rules);
@@ -1268,7 +1281,8 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         all_rules.clone(),
         base_implications.clone(),
         llm_usage.clone(),
-    ).await;
+    )
+    .await;
 
     all_rules.extend(base_comps.clone());
 
@@ -1277,13 +1291,14 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
     let and_comps_rules = time_fn_call!(
         "and_comps",
         run_workload(
-        and_comps,
-        Some(wkld.clone()),
-        all_rules.clone(),
-        base_implications.clone(),
-        llm_usage.clone(),
-    ).await
-            );
+            and_comps,
+            Some(wkld.clone()),
+            all_rules.clone(),
+            base_implications.clone(),
+            llm_usage.clone(),
+        )
+        .await
+    );
 
     all_rules.extend(and_comps_rules.clone());
 
@@ -1363,13 +1378,35 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         recursive_rules_cond(
             Metric::Atoms,
             5,
-            Lang::new(&["0", "1"], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
+            Lang::new(&[], &["a", "b", "c"], &[&[], &["+", "min", "max"]]),
             all_rules.clone(),
             base_implications.clone(),
             wkld.clone(),
             llm_usage.clone()
-        ).await
+        )
+        .await
     );
+
+    let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
+    dummy_ruleset.add(
+        Rule::from_string("(min ?a (+ ?a ?b)) ==> ?a if (<= 0 ?b)")
+            .unwrap()
+            .0,
+    );
+    dummy_ruleset.add(
+        Rule::from_string("(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (<= ?b 0)")
+            .unwrap()
+            .0,
+    );
+
+    for rule in dummy_ruleset.iter() {
+        assert!(min_max_add.clone().can_derive_cond(
+            DeriveType::LhsAndRhs,
+            rule,
+            Limits::deriving(),
+            &base_implications.to_egg_rewrites()
+        ));
+    }
 
     all_rules.extend(min_max_add.clone());
 
@@ -1395,7 +1432,8 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
                 min_max.clone(),
                 base_implications.clone(),
                 llm_usage.clone()
-            ).await
+            )
+            .await
         );
 
         all_rules.extend(eq_simp);
@@ -1411,12 +1449,11 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
             base_implications.clone(),
             wkld.clone(),
             llm_usage.clone()
-        ).await
+        )
+        .await
     );
 
     all_rules.extend(min_max_mul);
-
-
 
     let min_max_mul = time_fn_call!(
         "min_max_div",
@@ -1428,11 +1465,11 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
             base_implications.clone(),
             wkld.clone(),
             llm_usage.clone()
-        ).await
+        )
+        .await
     );
 
     all_rules.extend(min_max_mul);
-
 
     for op in &["min", "max"] {
         // this workload will consist of well-typed lt comparisons, where the child
@@ -1470,7 +1507,8 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
                 all_rules.clone(),
                 base_implications.clone(),
                 llm_usage.clone()
-            ).await
+            )
+            .await
         );
 
         all_rules.extend(rules);

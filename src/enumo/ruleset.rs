@@ -693,28 +693,28 @@ impl<L: SynthLanguage> Ruleset<L> {
             for (idx, e1) in exprs.iter().enumerate() {
                 for e2 in exprs[(idx + 1)..].iter() {
                     // when the limits get high, we get a lot of candidates which should simplify.
-                    let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
-                    let l = mini_egraph.add_expr(&e1.to_string().parse().unwrap());
-                    let r = mini_egraph.add_expr(&e2.to_string().parse().unwrap());
-                    let runner: Runner<L, SynthAnalysis> = Runner::default()
-                        .with_egraph(mini_egraph.clone())
-                        .run(
-                            &prior
-                                .iter()
-                                .map(|rule| rule.rewrite.clone())
-                                .collect::<Vec<_>>(),
-                        )
-                        .with_node_limit(100);
+                    // let mut mini_egraph: EGraph<L, SynthAnalysis> = EGraph::default();
+                    // let l = mini_egraph.add_expr(&e1.to_string().parse().unwrap());
+                    // let r = mini_egraph.add_expr(&e2.to_string().parse().unwrap());
+                    // let runner: Runner<L, SynthAnalysis> = Runner::default()
+                    //     .with_egraph(mini_egraph.clone())
+                    //     .run(
+                    //         &prior
+                    //             .iter()
+                    //             .map(|rule| rule.rewrite.clone())
+                    //             .collect::<Vec<_>>(),
+                    //     )
+                    //     .with_node_limit(100);
 
-                    let mini_egraph = runner.egraph;
-                    if mini_egraph.find(l) == mini_egraph.find(r) {
-                        let size = egraph.total_size();
-                        // e1 and e2 are equivalent in the mini egraph
-                        println!(
-                            "skipping {e1} and {e2} because they are equivalent in the mini egraph of size {size}"
-                        );
-                        continue;
-                    }
+                    // let mini_egraph = runner.egraph;
+                    // if mini_egraph.find(l) == mini_egraph.find(r) {
+                    //     let size = egraph.total_size();
+                    //     // e1 and e2 are equivalent in the mini egraph
+                    //     println!(
+                    //         "skipping {e1} and {e2} because they are equivalent in the mini egraph of size {size}"
+                    //     );
+                    //     continue;
+                    // }
 
                     candidates.add_from_recexprs(e1, e2);
                 }

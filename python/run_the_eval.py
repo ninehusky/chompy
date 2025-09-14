@@ -7,13 +7,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 recipes = ["full"]
 usages = [
     # "baseline",
-    "enum_only",
-    "baseline_and_enum",
-    "baseline_and_filter_1",
-    "baseline_and_filter_5",
+    # "enum_only",
+    # "baseline_and_enum",
+    # "baseline_and_filter_1",
+    # "baseline_and_filter_5",
     "baseline_with_filter_5_and_enum",
 ]
-out_dir = Path("out")
+
+# make the out_dir today's date and time.
+out_dir = Path("eval") / Path(__import__("datetime").datetime.now().strftime("%Y_%m_%d_%H_%M"))
 max_workers = 2  # run 2 at a time
 
 def run_recipe(recipe: str, usage: str):

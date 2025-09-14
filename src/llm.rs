@@ -203,8 +203,7 @@ The syntax is s-expressions with the following operators:
 
 You will be given a list of existing terms.
 Your task is to propose additional terms that are:
-- syntactically valid,
-- structurally rich,
+- significantly different from the input set,
 - likely to be useful in rewrite rules (e.g., distributivity, commutativity, associativity, idempotence),
 - non-trivial (avoid constant-only terms unless they reduce to a single constant),
 - and include variables in most cases.
@@ -215,6 +214,7 @@ Output requirements:
 - Ensure all terms are distinct and not repeats of the input.
 - Output **only the terms**, one per line.
 - Do not include any commentary, numbering, or explanations.
+- Do not introduce any new variables outside the set given.
 - Do not include any markdown backticks.
 
 Example Input Terms:
@@ -305,7 +305,6 @@ fn get_operator_description(terms: &Vec<Sexp>) -> String {
     for (op, arity) in ops {
         // <op>: arity <arity>
         desc.push_str(&format!("- {}: arity {}\n", op, arity));
-
     }
     desc
 }
@@ -374,10 +373,13 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
     println!("OUTPUT:\n{}", text_output);
 
     Ok(text_output)
-
 }
 
-pub async fn get_llm_terms<L: SynthLanguage>(client: &Client, terms: &Workload, limit: usize) -> Workload {
+pub async fn get_llm_terms<L: SynthLanguage>(
+    client: &Client,
+    terms: &Workload,
+    limit: usize,
+) -> Workload {
     let representative_terms = sample_terms(terms);
     // 1. Send the request to the LLM.
     let input_text = representative_terms.join("\n");
@@ -387,7 +389,7 @@ pub async fn get_llm_terms<L: SynthLanguage>(client: &Client, terms: &Workload, 
         .replace("{term_limit}", &limit.to_string())
         .replace("{operators}", &get_operator_description(&terms.force()));
 
-    // println!("PROMPT TEXT:\n{}", prompt_text);
+    println!("PROMPT TEXT:\n{}", prompt_text);
 
     let response = send_openai_request(client, prompt_text).await.unwrap();
 
@@ -406,11 +408,14 @@ pub async fn get_llm_terms<L: SynthLanguage>(client: &Client, terms: &Workload, 
     }
 
     final_wkld
-
 }
 
-
-pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &Workload, terms: &Workload, limit: usize) -> Workload {
+pub async fn get_llm_conditions<L: SynthLanguage>(
+    client: &Client,
+    cond_terms: &Workload,
+    terms: &Workload,
+    limit: usize,
+) -> Workload {
     let representative_terms = sample_terms(terms);
     // 1. Send the request to the LLM.
     let input_text = representative_terms.join("\n");
@@ -418,7 +423,10 @@ pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &
     let prompt_text = ENUMERATE_TERMS_PROMPT
         .replace("{input_text}", &input_text)
         .replace("{cond_limit}", &limit.to_string())
-        .replace("{operators}", &get_operator_description(&cond_terms.force()));
+        .replace(
+            "{operators}",
+            &get_operator_description(&cond_terms.force()),
+        );
 
     println!("PROMPT TEXT:\n{}", prompt_text);
 
@@ -438,7 +446,6 @@ pub async fn get_llm_conditions<L: SynthLanguage>(client: &Client, cond_terms: &
     }
 
     let mut final_wkld = Workload::empty();
-
 
     for sexp in working_wkld.force() {
         let calculated_type = get_type(&sexp, None);
@@ -479,7 +486,6 @@ async fn get_llm_ammo_test() {
         println!("{}", c);
     }
 }
-
 
 fn parse_categorization_response<L: SynthLanguage>(response: String) -> CategorizedRuleset<L> {
     let mut result: CategorizedRuleset<L> = Default::default();
