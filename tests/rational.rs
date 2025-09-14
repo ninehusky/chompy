@@ -393,7 +393,6 @@ impl Math {
     //         invalid.len()
     //     );
 
-
     //     let chosen_conditional = with_condition
     //         .minimize(prior.union(&chosen), Scheduler::Compress(limits))
     //         .0;
@@ -768,7 +767,11 @@ pub mod test {
 
     #[tokio::test]
     async fn just_best() {
-        let llm_usage: LLMUsage = LLMUsage::Enumeration(LLMEnumerationConfig::default().with_num_conditions(0).with_num_terms(50));
+        let llm_usage: LLMUsage = LLMUsage::Enumeration(
+            LLMEnumerationConfig::default()
+                .with_num_conditions(0)
+                .with_num_terms(50),
+        );
         let regular_old_rules = best_enumo_recipe(LLMUsage::None).await;
 
         let llm_augmented_rules = best_enumo_recipe(llm_usage).await;
@@ -776,9 +779,18 @@ pub mod test {
         println!("Regular old rules: {}", regular_old_rules.len());
         println!("LLM augmented rules: {}", llm_augmented_rules.len());
 
-        let forward_result = llm_augmented_rules.derive(DeriveType::LhsAndRhs, &regular_old_rules, Limits::deriving(), None);
-        let backward_result = regular_old_rules.derive(DeriveType::LhsAndRhs, &llm_augmented_rules, Limits::deriving(), None);
-
+        let forward_result = llm_augmented_rules.derive(
+            DeriveType::LhsAndRhs,
+            &regular_old_rules,
+            Limits::deriving(),
+            None,
+        );
+        let backward_result = regular_old_rules.derive(
+            DeriveType::LhsAndRhs,
+            &llm_augmented_rules,
+            Limits::deriving(),
+            None,
+        );
 
         for (can, cannot) in &[&forward_result, &backward_result] {
             println!("CAN:");
@@ -788,10 +800,7 @@ pub mod test {
             cannot.pretty_print();
 
             println!("\n\n");
-
         }
-
-
     }
 
     // #[test]

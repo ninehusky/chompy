@@ -3,7 +3,11 @@ use std::path::Path;
 use ruler::{
     conditions::{
         assumption::Assumption, implication::Implication, implication_set::ImplicationSet,
-    }, enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload}, halide::{mini_recipe, og_recipe, Pred}, recipe_utils::{LLMEnumerationConfig, LLMFilterConfig, LLMUsage}, Limits, SynthLanguage
+    },
+    enumo::{build_pvec_to_patterns, Rule, Ruleset, Workload},
+    halide::{mini_recipe, og_recipe, Pred},
+    recipe_utils::{LLMEnumerationConfig, LLMFilterConfig, LLMUsage},
+    Limits, SynthLanguage,
 };
 
 #[derive(Clone)]
@@ -639,35 +643,44 @@ pub async fn output_all() {
     // baseline + LLM filtering (limit 1)
     // baseline + LLM filtering (limit 5) + LLM enumeration
     let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
-    let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(100);
+    let default_enum_cfg = LLMEnumerationConfig::default()
+        .with_num_conditions(20)
+        .with_num_terms(100);
 
-    
     // 1. No LLM assistance (baseline)
     usages.push(("baseline".to_string(), LLMUsage::None));
 
     // 2. LLM enumeration ONLY
-    usages.push(("LLM_enum".to_string(), LLMUsage::EnumerationOnly(default_enum_cfg.clone())));
+    usages.push((
+        "LLM_enum".to_string(),
+        LLMUsage::EnumerationOnly(default_enum_cfg.clone()),
+    ));
 
     // 3. Baseline + LLM enumeration.
-    usages.push(("LLM_enum".to_string(), LLMUsage::Enumeration(default_enum_cfg.clone())));
-    
+    usages.push((
+        "LLM_enum".to_string(),
+        LLMUsage::Enumeration(default_enum_cfg.clone()),
+    ));
 
     // 4, 5: baseline + LLM filtering (limit 1, 5)
     for top_k in [1, 5] {
         usages.push((
             format!("baseline_with_LLM_filter_{top_k}"),
-            LLMUsage::Filter(LLMFilterConfig::default().with_on_threshold(50).with_top_k(top_k))));
+            LLMUsage::Filter(
+                LLMFilterConfig::default()
+                    .with_on_threshold(50)
+                    .with_top_k(top_k),
+            ),
+        ));
     }
 
     // 6. baseline + LLM filtering (limit 5) + LLM enumeration
     usages.push((
         "baseline_with_LLM filter_5_and_LLM_enum".to_string(),
-        LLMUsage::Combined(
-            vec![
-                LLMUsage::Filter(default_filter_cfg.clone()),
-                LLMUsage::Enumeration(default_enum_cfg.clone()),
-            ],
-        ),
+        LLMUsage::Combined(vec![
+            LLMUsage::Filter(default_filter_cfg.clone()),
+            LLMUsage::Enumeration(default_enum_cfg.clone()),
+        ]),
     ));
 
     for (label, usage) in usages {
@@ -676,7 +689,6 @@ pub async fn output_all() {
         rules.to_file(&format!("mini_rules_{}.txt", label));
     }
 }
-    
 
 #[cfg(test)]
 pub mod halide_derive_tests {
@@ -691,13 +703,13 @@ pub mod halide_derive_tests {
         enumo::{ChompyState, Filter, Metric},
         halide::og_recipe,
         recipe_utils::{
-            base_lang, iter_metric, recursive_rules_cond, run_workload, LLMFilterConfig, LLMUsage, Lang
+            base_lang, iter_metric, recursive_rules_cond, run_workload, LLMFilterConfig, LLMUsage,
+            Lang,
         },
         time_fn_call, DeriveType, SynthAnalysis,
     };
 
     use super::*;
-
 
     // TODO: fix mii
     const USE_LLM: bool = false;
@@ -707,10 +719,16 @@ pub mod halide_derive_tests {
     async fn op_min_max_workload() {
         let start_time = std::time::Instant::now();
 
-        let llm_usages = vec!["baseline_and_enum", "baseline_and_filter_1", "baseline_and_filter_5"];
+        let llm_usages = vec![
+            "baseline_and_enum",
+            "baseline_and_filter_1",
+            "baseline_and_filter_5",
+        ];
 
         let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
-        let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(100);
+        let default_enum_cfg = LLMEnumerationConfig::default()
+            .with_num_conditions(20)
+            .with_num_terms(100);
 
         let llm_usage = |usage: &str| match usage {
             "baseline" => LLMUsage::None,
@@ -718,15 +736,12 @@ pub mod halide_derive_tests {
             "baseline_and_enum" => LLMUsage::Enumeration(default_enum_cfg.clone()),
             "baseline_and_filter_1" => LLMUsage::Filter(default_filter_cfg.clone().with_top_k(1)),
             "baseline_and_filter_5" => LLMUsage::Filter(default_filter_cfg.clone().with_top_k(5)),
-            "baseline_with_filter_5_and_enum" => LLMUsage::Combined(
-                vec![
-                    LLMUsage::Filter(default_filter_cfg.clone()),
-                    LLMUsage::Enumeration(default_enum_cfg.clone()),
-                ]
-            ),
+            "baseline_with_filter_5_and_enum" => LLMUsage::Combined(vec![
+                LLMUsage::Filter(default_filter_cfg.clone()),
+                LLMUsage::Enumeration(default_enum_cfg.clone()),
+            ]),
             _ => panic!("Invalid llm_usage"),
         };
-
 
         if std::env::var("RUN_ME").is_err() {
             return;
@@ -802,7 +817,8 @@ pub mod halide_derive_tests {
                 // all the conditions are just `(< ?a ?b)`.
                 ImplicationSet::default(),
                 llm_usage,
-            ).await;
+            )
+            .await;
 
             rules
         }
@@ -812,8 +828,8 @@ pub mod halide_derive_tests {
             Rule::from_string(
                 "(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)",
             )
-                .unwrap()
-                .0,
+            .unwrap()
+            .0,
         );
 
         // I rewrote the condition. On the sheet, it's `(> ?c0 0)`, but this workload doesn't
@@ -831,8 +847,8 @@ pub mod halide_derive_tests {
             Rule::from_string(
                 "(< (min ?a ?b) (min ?c (+ ?b ?d))) ==> (< (min ?a ?b) ?c) if (< 0 ?d)",
             )
-                .unwrap()
-                .0,
+            .unwrap()
+            .0,
         );
 
         let no_llm_rules = create_rules(LLMUsage::None).await;
@@ -850,16 +866,10 @@ pub mod halide_derive_tests {
             let usage_str = usage.to_string();
             let usage = llm_usage(usage);
             let rules = create_rules(usage.clone()).await;
-            let vs_baseline = run_derivability_tests(
-                &rules,
-                &no_llm_rules,
-                &ImplicationSet::default(),
-            );
-            let vs_should_derive = run_derivability_tests(
-                &rules,
-                &should_derive,
-                &ImplicationSet::default(),
-            );
+            let vs_baseline =
+                run_derivability_tests(&rules, &no_llm_rules, &ImplicationSet::default());
+            let vs_should_derive =
+                run_derivability_tests(&rules, &should_derive, &ImplicationSet::default());
 
             results.push(serde_json::json!({
                 "usage": usage_str,
@@ -881,8 +891,6 @@ pub mod halide_derive_tests {
 
         std::fs::write(out_path, to_write.to_string())
             .expect("Failed to write derivability results to file");
-
-
     }
 
     #[test]
@@ -1048,7 +1056,8 @@ pub mod halide_derive_tests {
             Ruleset::default(),
             ImplicationSet::default(),
             LLMUsage::None,
-        ).await;
+        )
+        .await;
 
         let cond_workload = compress(&cond_workload, rules.clone());
 
@@ -1067,7 +1076,8 @@ pub mod halide_derive_tests {
             implications.clone(),
             cond_workload.clone(),
             LLMUsage::None,
-        ).await;
+        )
+        .await;
 
         println!("min_max_rules: {}", min_max_rules.len());
         for r in min_max_rules.iter() {
@@ -1154,7 +1164,8 @@ pub mod halide_derive_tests {
             Ruleset::default(),
             ImplicationSet::default(),
             LLMUsage::None,
-        ).await;
+        )
+        .await;
 
         all_rules.extend(cond_rules.clone());
 
@@ -1174,8 +1185,9 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            LLMUsage::None
-        ).await;
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(min_max_add_rules);
 
@@ -1186,8 +1198,9 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            LLMUsage::None
-        ).await;
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(min_max_sub_rules);
 
@@ -1198,8 +1211,9 @@ pub mod halide_derive_tests {
             all_rules.clone(),
             implications.clone(),
             cond_wkld.clone(),
-            LLMUsage::None
-        ).await;
+            LLMUsage::None,
+        )
+        .await;
 
         all_rules.extend(min_max_mul_rules);
 
@@ -1222,7 +1236,8 @@ pub mod halide_derive_tests {
     // you've got a ruleset.
     #[allow(dead_code)]
     fn test_derive_no_run() {
-        let mut chompy_rules: Ruleset<Pred> = Ruleset::from_file("/Users/acheung/research/projects/chompy/chompy-rules-big.txt");
+        let mut chompy_rules: Ruleset<Pred> =
+            Ruleset::from_file("/Users/acheung/research/projects/chompy/chompy-rules-big.txt");
 
         println!("our rules:");
         for r in chompy_rules.iter() {
@@ -1271,7 +1286,13 @@ pub mod halide_derive_tests {
                 println!("I'm trying to derive: {c}");
                 let derive_result = time_fn_call!(
                     format!("can_derive_{}", c.name),
-                    chompy_rules.can_derive_cond(DeriveType::LhsAndRhs, c, Limits::deriving(), &implication_rules.to_egg_rewrites()));
+                    chompy_rules.can_derive_cond(
+                        DeriveType::LhsAndRhs,
+                        c,
+                        Limits::deriving(),
+                        &implication_rules.to_egg_rewrites()
+                    )
+                );
                 if derive_result {
                     can.add(c.clone());
                 } else {
@@ -1300,6 +1321,5 @@ pub mod halide_derive_tests {
 
         std::fs::write(out_path, result_json(result).to_string())
             .expect("Failed to write derivability results to file");
-
     }
 }

@@ -28,7 +28,8 @@ pub async fn replicate_ruler1_recipe(llm_usage: LLMUsage) -> Ruleset<Math> {
         rules.clone(),
         Default::default(),
         llm_usage.clone(),
-    ).await;
+    )
+    .await;
     rules.extend(layer1_rules);
 
     // Layer 2 (two ops)
@@ -51,7 +52,8 @@ pub async fn replicate_ruler1_recipe(llm_usage: LLMUsage) -> Ruleset<Math> {
         rules.clone(),
         Default::default(),
         llm_usage,
-    ).await;
+    )
+    .await;
     rules.extend(layer2_rules);
 
     rules

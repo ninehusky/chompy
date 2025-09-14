@@ -370,7 +370,7 @@ pub fn run_implication_workload<L: SynthLanguage>(
     let mut egraph: EGraph<L, SynthAnalysis> = Default::default();
     L::initialize_vars(&mut egraph, vars);
 
-    for size in 1..= 10 {
+    for size in 1..=10 {
         let curr_workload = wkld.clone().filter(Filter::MetricEq(Metric::Atoms, size));
         if curr_workload.is_empty() {
             continue;
@@ -623,7 +623,8 @@ mod pvec_match_tests {
             Ruleset::default(),
             Default::default(),
             LLMUsage::None,
-        ).await;
+        )
+        .await;
 
         all_rules.extend(and_rules.clone());
 

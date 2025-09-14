@@ -49,8 +49,9 @@ pub async fn get_condition_workload() -> Workload {
             &[&[], &["<", "<=", "==", "!=", "&&"]],
         ),
         Ruleset::default(),
-        llm_usage.clone()
-    ).await;
+        llm_usage.clone(),
+    )
+    .await;
 
     eq_rules.extend(new_rules);
 
@@ -59,8 +60,9 @@ pub async fn get_condition_workload() -> Workload {
         None,
         eq_rules,
         ImplicationSet::default(),
-        llm_usage.clone()
-    ).await;
+        llm_usage.clone(),
+    )
+    .await;
 
     let branches_better = compress(&branches, rules.clone());
 

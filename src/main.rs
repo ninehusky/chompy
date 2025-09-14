@@ -52,7 +52,9 @@ pub async fn main() {
     let args = ChompyArgs::parse();
 
     let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
-    let default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(20).with_num_terms(100);
+    let default_enum_cfg = LLMEnumerationConfig::default()
+        .with_num_conditions(20)
+        .with_num_terms(100);
 
     let llm_usage = match args.llm_usage.as_str() {
         "baseline" => LLMUsage::None,
@@ -60,12 +62,10 @@ pub async fn main() {
         "baseline_and_enum" => LLMUsage::Enumeration(default_enum_cfg.clone()),
         "baseline_and_filter_1" => LLMUsage::Filter(default_filter_cfg.clone().with_top_k(1)),
         "baseline_and_filter_5" => LLMUsage::Filter(default_filter_cfg.clone().with_top_k(5)),
-        "baseline_with_filter_5_and_enum" => LLMUsage::Combined(
-            vec![
-                LLMUsage::Filter(default_filter_cfg.clone()),
-                LLMUsage::Enumeration(default_enum_cfg.clone()),
-            ]
-        ),
+        "baseline_with_filter_5_and_enum" => LLMUsage::Combined(vec![
+            LLMUsage::Filter(default_filter_cfg.clone()),
+            LLMUsage::Enumeration(default_enum_cfg.clone()),
+        ]),
         _ => panic!("Invalid llm_usage"),
     };
 
@@ -85,14 +85,19 @@ pub async fn main() {
     println!("Wrote {} rules to {:?}", rules.len(), args.output_path);
 
     for against in &[Against::Halide, Against::Caviar] {
-        get_derivability_results(rules.clone(), against.clone(), args.output_path.clone(), true);
+        get_derivability_results(
+            rules.clone(),
+            against.clone(),
+            args.output_path.clone(),
+            true,
+        );
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum Against {
     Halide,
-    Caviar
+    Caviar,
 }
 
 // Grabbed using the script in python/halide_to_chompy.py.
@@ -622,112 +627,110 @@ fn run_derivability_tests<L: SynthLanguage>(
     DerivabilityResult { can, cannot }
 }
 
-pub fn get_derivability_results(ours: Ruleset<Pred>, against: Against, output_path: String, only_conditional: bool) {
+pub fn get_derivability_results(
+    ours: Ruleset<Pred>,
+    against: Against,
+    output_path: String,
+    only_conditional: bool,
+) {
     // remove the ".txt" from output_path, and add "against_halide.json" or "against_caviar.json"
     let output_path = if output_path.ends_with(".txt") {
-        format!("{}{}", &output_path[..output_path.len() - 4], match against {
-            Against::Halide => "_against_halide.json",
-            Against::Caviar => "_against_caviar.json",
-        })
+        format!(
+            "{}{}",
+            &output_path[..output_path.len() - 4],
+            match against {
+                Against::Halide => "_against_halide.json",
+                Against::Caviar => "_against_caviar.json",
+            }
+        )
     } else {
         panic!("Output path must end with .txt");
     };
-
 
     let against: Ruleset<Pred> = match against {
         Against::Halide => read_rules(HALIDE_RULES),
         Against::Caviar => read_rules(CAVIAR_RULES),
     };
 
-        let all_conditions: Vec<_> = against
-            .iter()
-            .chain(ours.iter())
-            .filter_map(|r| {
-                r.cond.as_ref().and_then(|c| {
-                    Assumption::new(
-                        Pred::generalize(
-                            &Pred::instantiate(&c.chop_assumption()),
-                            &mut Default::default(),
-                        )
-                        .to_string(),
+    let all_conditions: Vec<_> = against
+        .iter()
+        .chain(ours.iter())
+        .filter_map(|r| {
+            r.cond.as_ref().and_then(|c| {
+                Assumption::new(
+                    Pred::generalize(
+                        &Pred::instantiate(&c.chop_assumption()),
+                        &mut Default::default(),
                     )
-                    .ok()
-                })
+                    .to_string(),
+                )
+                .ok()
             })
-            .collect();
+        })
+        .collect();
 
-        let mut all_conditions = all_conditions.clone();
-        all_conditions.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
-        all_conditions.dedup();
+    let mut all_conditions = all_conditions.clone();
+    all_conditions.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+    all_conditions.dedup();
 
-        let mut implication_rules: ImplicationSet<Pred> =
-            pairwise_implication_building(&all_conditions);
+    let mut implication_rules: ImplicationSet<Pred> =
+        pairwise_implication_building(&all_conditions);
 
-        let and_implies_left: Implication<Pred> = Implication::new(
-            "and_implies_left".into(),
-            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
-            Assumption::new_unsafe("?a".to_string()).unwrap(),
-        )
-        .unwrap();
+    let and_implies_left: Implication<Pred> = Implication::new(
+        "and_implies_left".into(),
+        Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        Assumption::new_unsafe("?a".to_string()).unwrap(),
+    )
+    .unwrap();
 
-        let and_implies_right: Implication<Pred> = Implication::new(
-            "and_implies_right".into(),
-            Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
-            Assumption::new_unsafe("?b".to_string()).unwrap(),
-        )
-        .unwrap();
+    let and_implies_right: Implication<Pred> = Implication::new(
+        "and_implies_right".into(),
+        Assumption::new("(&& ?a ?b)".to_string()).unwrap(),
+        Assumption::new_unsafe("?b".to_string()).unwrap(),
+    )
+    .unwrap();
 
-        implication_rules.add(and_implies_left);
-        implication_rules.add(and_implies_right);
+    implication_rules.add(and_implies_left);
+    implication_rules.add(and_implies_right);
 
-        let keep_conditional = |rs: &Ruleset<Pred>| -> Ruleset<Pred> {
-            let (conditional, _) = rs.partition(|r| r.cond.is_some());
-            conditional
-        };
+    let keep_conditional = |rs: &Ruleset<Pred>| -> Ruleset<Pred> {
+        let (conditional, _) = rs.partition(|r| r.cond.is_some());
+        conditional
+    };
 
-        let against_forward = if only_conditional {
-                &keep_conditional(&against)
-            } else {
-                &against
-            };
+    let against_forward = if only_conditional {
+        &keep_conditional(&against)
+    } else {
+        &against
+    };
 
-        let ours_backward =
-            if only_conditional {
-                &keep_conditional(&ours)
-            } else {
-                &ours
-            };
+    let ours_backward = if only_conditional {
+        &keep_conditional(&ours)
+    } else {
+        &ours
+    };
 
-        let forward_result = run_derivability_tests(
-            &ours,
-            against_forward,
-            &implication_rules,
-        );
+    let forward_result = run_derivability_tests(&ours, against_forward, &implication_rules);
 
-        let backward_result = run_derivability_tests(
-            &against,
-            ours_backward,
-            &implication_rules,
-        );
+    let backward_result = run_derivability_tests(&against, ours_backward, &implication_rules);
 
-        let to_json = |result: DerivabilityResult<Pred>| {
-            serde_json::json!({
-                "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
-                "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
-            })
-        };
+    let to_json = |result: DerivabilityResult<Pred>| {
+        serde_json::json!({
+            "can": result.can.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+            "cannot": result.cannot.iter().map(|r| r.to_string()).collect::<Vec<_>>(),
+        })
+    };
 
-        let to_write = serde_json::json!({
-            "forwards": to_json(forward_result),
-            "backwards": to_json(backward_result),
-        });
+    let to_write = serde_json::json!({
+        "forwards": to_json(forward_result),
+        "backwards": to_json(backward_result),
+    });
 
     println!("wrote derivability results to {}", output_path);
 
-
-    std::fs::write(output_path, serde_json::to_string_pretty(&to_write).unwrap())
-        .expect("Failed to write derivability results to file");
-
-
-
+    std::fs::write(
+        output_path,
+        serde_json::to_string_pretty(&to_write).unwrap(),
+    )
+    .expect("Failed to write derivability results to file");
 }
