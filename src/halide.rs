@@ -1387,26 +1387,6 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         .await
     );
 
-    let mut dummy_ruleset: Ruleset<Pred> = Ruleset::default();
-    dummy_ruleset.add(
-        Rule::from_string("(min ?a (+ ?a ?b)) ==> ?a if (<= 0 ?b)")
-            .unwrap()
-            .0,
-    );
-    dummy_ruleset.add(
-        Rule::from_string("(min ?a (+ ?a ?b)) ==> (+ ?a ?b) if (<= ?b 0)")
-            .unwrap()
-            .0,
-    );
-
-    for rule in dummy_ruleset.iter() {
-        assert!(min_max_add.clone().can_derive_cond(
-            DeriveType::LhsAndRhs,
-            rule,
-            Limits::deriving(),
-            &base_implications.to_egg_rewrites()
-        ));
-    }
 
     all_rules.extend(min_max_add.clone());
 

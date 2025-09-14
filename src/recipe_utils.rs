@@ -435,7 +435,6 @@ pub async fn get_llm_ammo<L: SynthLanguage>(
                 }
                 new_conds
             } else {
-                println!("NOT USING LLMS FOR CONDITIONS");
                 Workload::empty()
             }
         } else {
@@ -470,6 +469,71 @@ pub fn get_vars<L: SynthLanguage>(terms: &Workload) -> Vec<String> {
     vars
 }
 
+fn dedup_workload(
+    workload: &Workload,
+    llm_generated: &Workload,
+) -> Workload {
+    let initial = workload.force();
+    let llm_generated = llm_generated.force();
+    let llm_generated_len = llm_generated.len();
+    println!("[dedup_workload] Considering adding {} LLM-generated terms to workload of size {}",
+        llm_generated_len, initial.len());
+    let mut deduped = workload.clone();
+    let mut added = 0;
+    for term in llm_generated {
+        if !initial.contains(&term) {
+            added += 1;
+            deduped = deduped.append(Workload::new(&[term.to_string()]));
+        }
+    }
+    assert_eq!(
+        deduped.force().len(),
+        initial.len() + added,
+        "deduped workload size should be initial + added"
+    );
+    println!("Out of {} terms, kept {} new terms, for a total workload size of {}",
+        llm_generated_len, added, deduped.force().len());
+    deduped
+}
+
+fn get_enum_cfg(llm_usage: LLMUsage) -> Option<LLMUsage> {
+    match llm_usage {
+        LLMUsage::Enumeration(_) | LLMUsage::EnumerationOnly(_) => {
+            Some(llm_usage.clone())
+        }
+        LLMUsage::Combined(usages) => {
+            // find the configs in `usages` which are Enumeration or EnumerationOnly
+            let cfgs = usages
+                .iter()
+                .filter_map(|u| {
+                    match u {
+                        LLMUsage::Enumeration(cfg) => Some(LLMUsage::Enumeration(cfg.clone())),
+                        LLMUsage::EnumerationOnly(cfg) => Some(LLMUsage::EnumerationOnly(cfg.clone())),
+                        _ => None,
+                    }
+                })
+                .collect::<Vec<_>>();
+            match cfgs.len() {
+                0 => {
+                    println!("Not using LLM enumeration");
+                    None
+                }
+                1 => {
+                    let cfg = cfgs[0].clone();
+                    Some(cfg)
+                }
+                _ => {
+                    panic!("Cannot have both Enumeration and EnumerationOnly in Combined LLMUsage");
+                }
+            }
+        }
+        _ => {
+            println!("Not using LLM enumeration");
+            None
+        }
+    }
+}
+
 /// Runs rule inference:
 ///     1. convert workload to e-graph
 ///     2. If there are prior rules, compress the e-graph using them
@@ -493,41 +557,11 @@ pub async fn run_workload<L: SynthLanguage>(
     let (additional_terms, additional_conditions) =
         get_llm_ammo::<L>(llm_usage.clone(), &llm_workload, &llm_cond_workload).await;
 
-    let og_workload = llm_workload.clone();
-    let before_len = og_workload.force().len();
-    println!("workload size before: {}", before_len);
-
-    let mut actual_additional_terms = Workload::empty();
-    for term in additional_terms.force() {
-        if !og_workload.force().contains(&term) {
-            actual_additional_terms =
-                actual_additional_terms.append(Workload::new(&[term.to_string()]));
-        }
-    }
-
-    let addition_len = actual_additional_terms.force().len();
-    println!(
-        "Deduped workload of size {} to only contain {} new terms",
-        additional_terms.force().len(),
-        addition_len
-    );
-
-    let workload = if matches!(llm_usage, LLMUsage::EnumerationOnly(_)) {
-        additional_terms
-    } else {
-        llm_workload.append(actual_additional_terms.clone())
+    let (workload, cond_workload) = match get_enum_cfg(llm_usage.clone()) {
+        Some(LLMUsage::EnumerationOnly(_)) => (additional_terms.clone(), additional_conditions.clone()),
+        Some(LLMUsage::Enumeration(_)) => (dedup_workload(&llm_workload, &additional_terms), dedup_workload(&llm_cond_workload, &additional_conditions)),
+        _ => (workload, cond_workload.unwrap_or_else(Workload::empty)),
     };
-    assert_eq!(workload.force().len(), addition_len + before_len);
-
-    let cond_workload = if matches!(llm_usage, LLMUsage::EnumerationOnly(_)) {
-        additional_conditions.clone()
-    } else {
-        cond_workload
-            .unwrap_or_else(Workload::empty)
-            .append(additional_conditions.clone())
-    };
-
-    println!("workload size after: {}", workload.force().len());
 
     if additional_conditions.clone() != Workload::empty() {
         let additional_impls = run_implication_workload(
