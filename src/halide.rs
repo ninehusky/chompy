@@ -1736,7 +1736,7 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         .await
     );
 
-    all_rules.extend(min_max_mul);
+    extend_rules!(all_rules, min_max_mul.clone());
 
     let min_max_div = time_fn_call!(
         "min_max_div",
@@ -1752,7 +1752,7 @@ pub async fn og_recipe(llm_usage: LLMUsage) -> Ruleset<Pred> {
         .await
     );
 
-    all_rules.extend(min_max_div);
+    extend_rules!(all_rules, min_max_div.clone());
 
     for op in &["min", "max"] {
         // this workload will consist of well-typed lt comparisons, where the child

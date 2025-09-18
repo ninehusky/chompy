@@ -519,6 +519,12 @@ impl<L: SynthLanguage> Ruleset<L> {
         predicate.insert_into_egraph(&mut colored_egraph);
 
         // 2. Run the implication rules on the egraph.
+
+        let impl_rules = if std::env::var("SKIP_IMPLICATIONS").is_ok() {
+            &ImplicationSet::default()
+        } else {
+            &impl_rules.clone()
+        };
         let rules = impl_rules.to_egg_rewrites();
 
         let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
@@ -764,6 +770,12 @@ impl<L: SynthLanguage> Ruleset<L> {
         most_recent_condition: Option<Assumption<L>>,
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
+
+        let prop_rules = if std::env::var("SKIP_IMPLICATIONS").is_ok() {
+            &vec![]
+        } else {
+            &prop_rules.clone()
+        };
 
         for (_, rule) in self.0.iter() {
             if let Some(cond) = &rule.cond {
