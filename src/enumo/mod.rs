@@ -79,9 +79,7 @@ impl<L: SynthLanguage> ChompyState<L> {
         predicates: Workload,
         prior_impls: ImplicationSet<L>,
     ) -> Self {
-        println!("finding variables on terms");
         let vars = get_vars::<L>(&terms);
-        println!("found variables: {:?}", vars);
 
         let implications = if predicates.is_empty() {
             ImplicationSet::default()

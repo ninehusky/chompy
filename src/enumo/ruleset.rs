@@ -457,11 +457,6 @@ impl<L: SynthLanguage> Ruleset<L> {
             start_time.elapsed().as_millis(),
             skipped_rules
         );
-
-        for c in candidates.iter() {
-            println!("[conditional_cvec_match] Candidate: {c}");
-        }
-
         candidates
     }
 
@@ -780,7 +775,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         for (condition, _) in actual_by_cond.iter() {
-            println!("condition: {condition:?}");
             let candidates = self
                 .0
                 .values()
@@ -793,11 +787,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 })
                 .collect::<Vec<_>>();
 
-            println!("candidates:");
-            for c in &candidates {
-                println!("{c}");
-            }
-
             // 1. Make a new e-graph.
             let mut egraph = EGraph::default();
 
@@ -806,7 +795,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 let dummy: Assumption<L> = Assumption::new(condition.to_string()).unwrap();
                 Assumption::new(L::instantiate(&dummy.chop_assumption()).to_string()).unwrap()
             };
-            println!("adding {assumption} into the egraph");
             assumption.insert_into_egraph(&mut egraph);
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
@@ -831,7 +819,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     .search(&runner.egraph)
                     .is_empty()
                 {
-                    println!("skipping {condition}");
+                    // println!("skipping {condition}");
                     // if the most recent condition is not in the e-graph, then it's not relevant
                     continue;
                 }

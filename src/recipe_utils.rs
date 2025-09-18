@@ -105,7 +105,7 @@ impl LLMEnumerationConfig {
 #[macro_export]
 macro_rules! time_fn_call {
     ($label:expr, $fn_call:expr) => {{
-        println!("I'm starting {}...", $label);
+        println!("\n🐊 nom nom nom... CHOMPY is starting `{}` 🚀\n", $label);
         use std::time::Instant;
         let start = Instant::now();
         let result = $fn_call;
@@ -150,11 +150,6 @@ async fn run_workload_internal<L: SynthLanguage>(cfg: &ChompyConfig<L>) -> Rules
 
     // 1. Create an e-graph from the workload, and compress
     //    it using the prior rules.
-    println!("variables in the terms:{:?}", get_vars::<L>(state.terms()));
-    println!(
-        "variables in the predicates:{:?}",
-        get_vars::<L>(state.predicates())
-    );
     let egraph: EGraph<L, SynthAnalysis> = state.terms().to_egraph();
 
     let compressed = Scheduler::Compress(cfg.prior_limits).run(&egraph, &prior);
@@ -756,16 +751,6 @@ async fn recursive_rules_cond_internal<L: SynthLanguage>(
         }
 
         wkld = wkld.append(Workload::new(&["0", "1"]));
-
-        println!("additional terms:");
-        for t in additional_terms.force() {
-            println!("  {}", t);
-        }
-
-        println!("additional conditions:");
-        for t in additional_conditions.force() {
-            println!("  {}", t);
-        }
 
         let wkld = match llm_usage {
             LLMUsage::EnumerationOnly(_) => {
