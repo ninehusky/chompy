@@ -28,4 +28,17 @@ Our paper makes three claims:
 - If Chompy does not use our technique of implication propagation, it runs for several hours --
   much longer than the baseline time. In this time, it discovers many more rules
   than the final output of Chompy, as described in `Section 4.3`.
+  
+
+## Kick The Tires
+
+On a fresh machine, type:
+
+```
+cargo run --release --bin ruler -- --recipe mini --llm-usage baseline --output-path mini.txt
+```
+
+This should take about a minute. The ruleset included inside
+`mini.txt` should include 57 rules (i.e., `wc -l mini.txt` should
+include 57 rules).
 
