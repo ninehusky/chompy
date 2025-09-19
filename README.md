@@ -64,9 +64,20 @@ usages = [
 ```
 
 Any configuration besides `baseline` will require the usage of an `OPENAI_KEY` environment
-variable.
+variable, hooked up to a OpenAI account with relevant credits. Running one run of the experiment
+costs `todo` dollars.
 
-Begin testing with just `baseline` by commenting the other usages out.
+Once the run has finished, `eval/<date>_<time>/full/<run_type>` will be populated with several files.
+Each `run_type` will have four files associated with it:
+1. A `.log` file containing the `stdout` messages Chompy outputs during that run.
+2. A `.txt` file with Chompy's ruleset.
+3. A `...against_caviar.json` containing Chompy's derivability performance against Caviar.
+   The forward derivability metric is `len(can) / len(cannot)` for the `forwards` item
+   in the `json`.
+4. A `...against_halide.json` containing Chompy's derivability performance against Halide.
+   The forward derivability metric is the same as above.
+   
+For a quick peek at the runs from a glance, run `python3 python/show_results.py`.
 
 ### Table 2
 
