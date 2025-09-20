@@ -29,6 +29,27 @@ Our paper makes three claims:
   much longer than the baseline time. In this time, it discovers many more rules
   than the final output of Chompy, as described in `Section 4.3`.
   
+  
+  
+## Installation
+
+This is all experimented on MacOS, and a Docker image running Ubuntu.
+
+``` bash
+apt update
+apt install -y git
+apt install -y curl
+curl --proto '=https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+source $HOME/.cargo/env
+apt install -y build-essential
+apt install -y libssl-dev pkg-config
+apt install -y cmake
+apt install -y python3
+apt install -y clang libclang-dev
+git clone https://github.com/ninehusky/chompy.git
+cd chompy/
+cargo build
+```
 
 ## Kick The Tires
 
@@ -42,10 +63,17 @@ This should take about a minute. The ruleset included inside
 `mini.txt` should include 57 rules (i.e., `wc -l mini.txt` should
 include 57 rules).
 
+In addition to `mini.txt`, you should also find `mini_against_caviar.json` and `mini_against_halide.json`.
+
+That should include `TODO`...
+
+`eval/run_*` includes the `json` files. Go through them and `TODO`...
+
 
 ## Recreating Experiments
 
 This section describes how to re-run the experiments we have in the paper.
+
 
 ### Table 1
 
@@ -63,9 +91,21 @@ usages = [
 ]
 ```
 
-Any configuration besides `baseline` will require the usage of an `OPENAI_KEY` environment
-variable, hooked up to a OpenAI account with relevant credits. Running one run of the experiment
-costs `todo` dollars.
+Any configuration besides `baseline` requires the usage of an `OPENAI_API_KEY` environment variable,
+hooked up to an OpenAI account with enough credits. For reproducibility and reviewer's convenience,
+we have cached several OpenAI API calls, which we store in `llm_cache/`.
+
+Importantly, the cached OpenAI API calls are not those which are used in the paper, so the numbers
+will not be exactly the same as `Table 1`, but they should be close enough.
+To use these cached API calls, do:
+
+``` c
+export FAKE_LLM="hehehe"
+```
+If you do wish to run using an LLM, do not have `FAKE_LLM` declared, and set `OPENAI_API_KEY`to your
+account's. Running one run of the experiment costs `todo` dollars. 
+
+Run one run of the experiments using `python3/run_the_eval.py`. 
 
 Once the run has finished, `eval/<date>_<time>/full/<run_type>` will be populated with several files.
 Each `run_type` will have four files associated with it:
@@ -78,6 +118,8 @@ Each `run_type` will have four files associated with it:
    The forward derivability metric is the same as above.
    
 For a quick peek at the runs from a glance, run `python3 python/show_results.py`.
+
+TODO: make `show_results.py` spit out a CSV, explain roughly what a workload is
 
 ### Table 2
 
@@ -128,7 +170,18 @@ cargo run --release --bin ruler -- --recipe mini --llm-usage baseline --output-p
 While Chompy runs, you should observe that after an hour, the workload
 `min_max_mul` will still be running.
 
+TODO: on a MacBook with <blah> GB of RAM, it did not terminate in 2 hours, which is our
+threshold for stopping the process.
 
-## Extending Chompy
 
-todo
+## Reusability
+
+TODO: here's our code structure:
+`src/conditions/...`
+`src/llm.rs`
+
+Here, we explain how to extend Chompy to different domains.
+You would change `x.rs` to generate conditional rules for blah, and then...
+
+
+
