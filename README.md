@@ -92,37 +92,47 @@ usages = [
 ```
 
 Any configuration besides `baseline` requires the usage of an `OPENAI_API_KEY` environment variable,
-hooked up to an OpenAI account with enough credits. For reproducibility and reviewer's convenience,
-we have cached several OpenAI API calls, which we store in `llm_cache/`.
+hooked up to an OpenAI account with enough credits. With real LLM calls,
+a full run of `run_the_eval.py` takes about an hour and costs about $3.00.
 
-Importantly, the cached OpenAI API calls are not those which are used in the paper, so the numbers
-will not be exactly the same as `Table 1`, but they should be close enough.
-To use these cached API calls, do:
+For reproducibility and reviewer's convenience, we have allowed the option to
+run the evaluation without actually calling ChatGPT. We have cached several
+OpenAI API calls, which are stored in `llm_cache/`. The names of the files within
+that directory are a hash of the LLM request. To use these cached results instead
+of ChatGPT, do the following before you run:
+
 
 ``` c
 export FAKE_LLM="hehehe"
 ```
+
+Take note! The cached OpenAI API calls are not those which are used in the paper, so the numbers
+will not be exactly the same as `Table 1`. 
+
 If you do wish to run using an LLM, do not have `FAKE_LLM` declared, and set `OPENAI_API_KEY`to your
-account's. Running one run of the experiment costs `todo` dollars. 
+account's.
 
-With LLMs, this should take
-4:38 PM strart
-
-Run one run of the experiments using `python3/run_the_eval.py`. 
-
-Once the run has finished, `eval/<date>_<time>/full/<run_type>` will be populated with several files.
-Each `run_type` will have four files associated with it:
-1. A `.log` file containing the `stdout` messages Chompy outputs during that run.
-2. A `.txt` file with Chompy's ruleset.
-3. A `...against_caviar.json` containing Chompy's derivability performance against Caviar.
-   The forward derivability metric is `len(can) / len(cannot)` for the `forwards` item
-   in the `json`.
-4. A `...against_halide.json` containing Chompy's derivability performance against Halide.
-   The forward derivability metric is the same as above.
+Running the evaluation takes about an hour on a MacBook Pro with an M3 CPU and 18 GB of RAM.
    
-For a quick peek at the runs from a glance, run `python3 python/show_results.py`.
+For a quick peek at the runs from a glance, run `python3 python/summarize.py <eval/your_dir> out.csv`.
+Open `out.csv` to see the equivalent results of `Table 1`, adjusted for our new LLM calls.
 
-TODO: make `show_results.py` spit out a CSV, explain roughly what a workload is
+Here is the results of `python3 python/summarize.py`:
+
+```
+$ python3 python/summarize.py eval/2025_09_20_21_51        
+enum_only/halide: 3/84 (3.57% derivable)
+enum_only/caviar: 6/45 (13.33% derivable)
+filter_1/halide: 46/84 (54.76% derivable)
+filter_1/caviar: 26/45 (57.78% derivable)
+filter_5/halide: 52/84 (61.90% derivable)
+filter_5/caviar: 30/45 (66.67% derivable)
+with_enum/halide: 50/84 (59.52% derivable)
+with_enum/caviar: 31/45 (68.89% derivable)
+enum+filter/halide: 48/84 (57.14% derivable)
+enum+filter/caviar: 32/45 (71.11% derivable)
+```
+
 
 ### Table 2
 
