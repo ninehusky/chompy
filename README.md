@@ -10,10 +10,14 @@ rewrite rule synthesis
 - Reusable: Finally, we provide instructions for extending Chompy. These instructions describe
   how to set up Enumo on a different machine, modify the code, and extend it to
   find rewrites for new domains.
+  
+We have verified that the instructions and runtimes
+below are correct for machines running MacOS with 18 and 96 GB
+of RAM, respectively.
 
 ## Overview
 
-Our paper makes three claims:
+This artifact allows for the reconstruction of the following claims:
 
 **How powerful are Chompy's rules?** 
 - Without LLM assistance, Chompy's rules subsume up to 71.1% of handwritten rules, as seen in the
@@ -23,17 +27,11 @@ Our paper makes three claims:
 - Using LLMs to guide Chompy's filtering mechanism, Chompy's ruleset size decreases by up to
   44.3%
   with a decrease in derivability of as little as 4.5%, as shown in the `filter_5` row of `Table 1`.
-
-**How does our technique of implication propagation affect conditional rule synthesis?** 
-- If Chompy does not use our technique of implication propagation, it runs for several hours --
-  much longer than the baseline time. In this time, it discovers many more rules
-  than the final output of Chompy, as described in `Section 4.3`.
-  
   
   
 ## Installation
 
-This is all experimented on MacOS, and a Docker image running Ubuntu.
+To run Chompy using Docker, do the following:
 
 ``` bash
 apt update
@@ -51,6 +49,50 @@ cd chompy/
 cargo build
 ```
 
+## Verify Original Experiments
+
+The original data used to create `Table 1` is included inside the `eval/` folder.
+`Table 1` of the paper contains Chompy's performance across LLM settings, averaged
+across three runs. Each run, e.g., `run_one`, contains the results of running Chompy
+with 6 different LLM configurations, each lining up with a row in `Table 1`.
+
+To quickly see a summary of these results, from
+Chompy's root directory, run:
+
+``` c
+python3 summarize_original_eval.py og-out.csv
+```
+
+Opening `og-out.csv` will reveal the numbers in the original paper.
+
+We now describe the file layout in more detail for the curious. In each LLM usage subfolder,
+e.g., `eval/run_one/full/baseline_with_enum`,
+there are four files:
+
+- `<usage>.log`: the output Chompy produced while generating a ruleset.
+- `<usage>.txt`: the final ruleset Chompy produced.
+- `<usage>_against_caviar.json`: a file showing forwards derivability vs. the "Caviar" ruleset.
+- `<usage>_against_halide.json`: a file showing forwards derivability vs. the "Halide" ruleset.
+
+> [!NOTE]  
+> The forwards derivability metric in each JSON file can be computed as  
+> 
+> ```
+> json["forwards"]["can"] / (json["forwards"]["can"] + json["forwards"]["cannot"])
+> ```
+> 
+> In the original runs included with the respository,
+> the denominators in the `_against_halide` JSONs correspond to 112 rules,
+> whereas the paper reports results over 84 rules.  
+> 
+> This discrepancy arises because the original Halide ruleset contained 112 rules,
+> but 28 of them involved the `select` operator, which Chompy does not support.
+> We therefore excluded these 28 rules, leaving a denominator of 84.  
+> 
+> Both the current version of Chompy and the `summarize_original_eval.py` script
+> account for this adjustment, so the reported results are consistent.
+
+
 ## Kick The Tires
 
 On a fresh machine, type:
@@ -65,11 +107,6 @@ include 57 rules).
 
 In addition to `mini.txt`, you should also find `mini_against_caviar.json` and `mini_against_halide.json`.
 
-That should include `TODO`...
-
-`eval/run_*` includes the `json` files. Go through them and `TODO`...
-
-
 ## Recreating Experiments
 
 This section describes how to re-run the experiments we have in the paper.
@@ -78,7 +115,7 @@ This section describes how to re-run the experiments we have in the paper.
 ### Table 1
 
 `python3/run_the_eval.py` produces one run of the experiments used to build up Table 1.
-Chompy is able to be augmented with LLMs in different ways, each of which are within:
+Chompy is able to be augmented with LLMs in different ways. The usages are:
 
 ```py
 usages = [
