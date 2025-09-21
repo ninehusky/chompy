@@ -35,6 +35,7 @@ rayon = "1"
 smallstr = "0.3"
 reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
+sha2 = "0.10"
 [dependencies.egg]
 version = "0.9"
 # git = "https://github.com/egraphs-good/egg"

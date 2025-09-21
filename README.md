@@ -105,6 +105,9 @@ export FAKE_LLM="hehehe"
 If you do wish to run using an LLM, do not have `FAKE_LLM` declared, and set `OPENAI_API_KEY`to your
 account's. Running one run of the experiment costs `todo` dollars. 
 
+With LLMs, this should take
+4:38 PM strart
+
 Run one run of the experiments using `python3/run_the_eval.py`. 
 
 Once the run has finished, `eval/<date>_<time>/full/<run_type>` will be populated with several files.
