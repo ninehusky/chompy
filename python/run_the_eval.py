@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Configurations
 recipes = ["full"]
 usages = [
-    # "baseline",
+    "baseline",
     "enum_only",
     "baseline_and_enum",
     "baseline_and_filter_1",
