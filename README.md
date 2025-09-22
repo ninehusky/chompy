@@ -2,7 +2,7 @@
 
 This is the artifact for our paper "Conditional Rewrite Rule Synthesis Using E-Graphs and LLMs".
 In our paper, we discuss an extension to theory explorers that allow for (1) conditional
-rewrite rule synthesis 
+rule synthesis, and (2) LLM-guided theory exploration.
 
 - Available: The artifact is available on Zenodo.
 - Functional: Below we provide instructions for setting up the artifact. Then, we list the claims
@@ -12,8 +12,8 @@ rewrite rule synthesis
   find rewrites for new domains.
   
 We have verified that the instructions and runtimes
-below are correct for machines running MacOS with 18 and 96 GB
-of RAM, respectively.
+below are good with machines running MacOS with an M3 chip with 18 GB of RAM, and
+an M2 chip with 96 GB of RAM.
 
 ## Overview
 
@@ -49,9 +49,9 @@ cd chompy/
 cargo build
 ```
 
-## Verify Original Experiments
+## Verify Original Experiments (1 minute)
 
-The original data used to create `Table 1` is included inside the `eval/` folder.
+The original data used to create `Table 1` is included inside the `original-eval/` folder.
 `Table 1` of the paper contains Chompy's performance across LLM settings, averaged
 across three runs. Each run, e.g., `run_one`, contains the results of running Chompy
 with 6 different LLM configurations, each lining up with a row in `Table 1`.
@@ -63,10 +63,15 @@ Chompy's root directory, run:
 python3 summarize_original_eval.py og-out.csv
 ```
 
-Opening `og-out.csv` will reveal the numbers in the original paper.
+Opening `og-out.csv` will reveal the results used in the paper, with the exception of
+two differences:
+- Cells blah1 and blah2 are different because of a rounding error.
+- Row `with_enum` has different numbers because of a folder name typo which
+  caused that row to only contain the averages of 2 runs as opposed to 3.
+  The numbers in the paper only differ by blah3.
 
 We now describe the file layout in more detail for the curious. In each LLM usage subfolder,
-e.g., `eval/run_one/full/baseline_with_enum`,
+e.g., `original-eval/run_one/full/baseline_with_enum`,
 there are four files:
 
 - `<usage>.log`: the output Chompy produced while generating a ruleset.
@@ -92,25 +97,27 @@ there are four files:
 > Both the current version of Chompy and the `summarize_original_eval.py` script
 > account for this adjustment, so the reported results are consistent.
 
-
-## Kick The Tires
+## Kick The Tires (1 minute)
 
 On a fresh machine, type:
 
 ```
-cargo run --release --bin ruler -- --recipe mini --llm-usage baseline --output-path mini.txt
+python3 python/kick_the_tires.py
 ```
 
-This should take about a minute. The ruleset included inside
-`mini.txt` should include 57 rules (i.e., `wc -l mini.txt` should
-include 57 rules).
+This should take about a minute. This runs a small version of Chompy on a "mini recipe",
+and moves any files created into `mini-artifacts`. You'll know this step worked when the output
+of the script included:
 
-In addition to `mini.txt`, you should also find `mini_against_caviar.json` and `mini_against_halide.json`.
+```
+mini.txt contains 57 rules ✅
+```
 
-## Recreating Experiments
+Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
+
+## Recreating Experiments (~1 hour)
 
 This section describes how to re-run the experiments we have in the paper.
-
 
 ### Table 1
 
@@ -151,77 +158,22 @@ account's.
 
 Running the evaluation takes about an hour on a MacBook Pro with an M3 CPU and 18 GB of RAM.
    
-For a quick peek at the runs from a glance, run `python3 python/summarize.py <eval/your_dir> out.csv`.
+For a quick peek at the runs from a glance, once
+`run_the_eval.py` has concluded,
+run `python3 python/summarize.py <eval/your_dir> out.csv`.
 Open `out.csv` to see the equivalent results of `Table 1`, adjusted for our new LLM calls.
 
-Here is the results of `python3 python/summarize.py`:
+With cached LLM responses, you should see this as the result of `python3 python/summarize.py out.csv`:
 
 ```
-$ python3 python/summarize.py eval/2025_09_20_21_51        
-enum_only/halide: 3/84 (3.57% derivable)
-enum_only/caviar: 6/45 (13.33% derivable)
-filter_1/halide: 46/84 (54.76% derivable)
-filter_1/caviar: 26/45 (57.78% derivable)
-filter_5/halide: 52/84 (61.90% derivable)
-filter_5/caviar: 30/45 (66.67% derivable)
-with_enum/halide: 50/84 (59.52% derivable)
-with_enum/caviar: 31/45 (68.89% derivable)
-enum+filter/halide: 48/84 (57.14% derivable)
-enum+filter/caviar: 32/45 (71.11% derivable)
+$ cat out.csv
+run_type,num_rules,caviar_derivability,halide_derivability,runtime_seconds
+enum_only,181,13.3,3.6,31.9
+filter_1,653,57.8,54.8,1587.3
+filter_5,910,66.7,61.9,1559.4
+with_enum,970,68.9,59.5,1545.2
+enum+filter,1574,71.1,57.1,1562.0
 ```
-
-
-### Table 2
-
-Table 2 describes the different workloads added to Chompy's overall ruleset.
-
-Run:
-
-```
-cargo run --release --bin ruler -- --recipe full --llm-usage baseline --output-path fullpath.txt > fulllog.log
-python3 python/get_workload_stats.py fulllog.log
-```
-
-You should see:
-
-```
-rules added by workload:
-find_base_implications: 20
-and_comps: 126
-simp_comps: 82
-arith_basic: 84
-mul_div_mod: 37
-min_max: 13
-min_max_add: 6
-eq_simp_min: 7
-eq_simp_max: 6
-min_max_mul: 53
-min_max_div: 410
-lt_add_min: 341
-lt_add_max: 394
-total: 1579
-```
-
-### Sensitivity Study
-
-This step should take several hours. In our paper, we contribute a new
-technique called implication propagation which helps conditional
-rewrite synthesis scale to large grammars. Our sensitivity study's main
-claim is that Chompy does not terminate if this step is disabled.
-
-To disable implication propagation, set the environment variable `NO_IMPLICATIONS` to any value.
-The following should suffice:
-
-```
-export NO_IMPLICATIONS="goodluck"
-cargo run --release --bin ruler -- --recipe mini --llm-usage baseline --output-path mini.txt
-```
-
-While Chompy runs, you should observe that after an hour, the workload
-`min_max_mul` will still be running.
-
-TODO: on a MacBook with <blah> GB of RAM, it did not terminate in 2 hours, which is our
-threshold for stopping the process.
 
 
 ## Reusability
