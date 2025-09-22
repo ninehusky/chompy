@@ -119,8 +119,6 @@ Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
 
 This section describes how to re-run the experiments we have in the paper.
 
-### Table 1
-
 `python3/run_the_eval.py` produces one run of the experiments used to build up Table 1.
 Chompy is able to be augmented with LLMs in different ways. The usages are:
 
