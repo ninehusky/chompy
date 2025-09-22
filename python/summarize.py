@@ -1,8 +1,7 @@
 import os
 import sys
-import re
-import csv
 import json
+import csv
 
 def parse_runtime(log_file):
     with open(log_file) as f:
@@ -21,7 +20,7 @@ def parse_derivability(json_file):
     forwards = data["forwards"]
     can = len(forwards["can"])
     total = can + len(forwards["cannot"])
-    return can, total, (can / total * 100) if total > 0 else 0.0
+    return can, total
 
 def main():
     if len(sys.argv) < 2:
@@ -40,8 +39,11 @@ def main():
     ]
 
     rows = []
+
     for run_name, dirname in run_types:
         run_dir = os.path.join(eval_dir, "full", dirname)
+        if not os.path.isdir(run_dir):
+            continue
 
         # runtime
         runtime = None
@@ -56,26 +58,44 @@ def main():
             num_rules = count_rules(os.path.join(run_dir, txt_files[0]))
 
         # derivabilities
-        halide_json = [f for f in os.listdir(run_dir) if f.endswith("_halide.json")]
-        caviar_json = [f for f in os.listdir(run_dir) if f.endswith("_caviar.json")]
+        halide_json_files = [f for f in os.listdir(run_dir) if f.endswith("_halide.json")]
+        caviar_json_files = [f for f in os.listdir(run_dir) if f.endswith("_caviar.json")]
 
         halide = None
         caviar = None
-        if halide_json:
-            can, total, halide = parse_derivability(os.path.join(run_dir, halide_json[0]))
-            print(f"{run_name}/halide: {can}/{total} ({halide:.2f}% derivable)")
-        if caviar_json:
-            can, total, caviar = parse_derivability(os.path.join(run_dir, caviar_json[0]))
-            print(f"{run_name}/caviar: {can}/{total} ({caviar:.2f}% derivable)")
 
-        rows.append([run_name, runtime, num_rules, halide, caviar])
+        if halide_json_files:
+            frac_list = []
+            for f in halide_json_files:
+                can, total = parse_derivability(os.path.join(run_dir, f))
+                if total > 0:
+                    frac_list.append(can / total)
+            if frac_list:
+                halide = round(sum(frac_list) / len(frac_list) * 100, 1)
+
+        if caviar_json_files:
+            frac_list = []
+            for f in caviar_json_files:
+                can, total = parse_derivability(os.path.join(run_dir, f))
+                if total > 0:
+                    frac_list.append(can / total)
+            if frac_list:
+                caviar = round(sum(frac_list) / len(frac_list) * 100, 1)
+
+        rows.append([
+            run_name,
+            round(num_rules, 1) if num_rules is not None else None,
+            caviar,
+            halide,
+            round(runtime, 1) if runtime is not None else None,
+        ])
 
     if out_csv:
         with open(out_csv, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["run_type", "runtime_seconds", "num_rules", "halide_derivability", "caviar_derivability"])
+            writer.writerow(["run_type", "num_rules", "caviar_derivability", "halide_derivability", "runtime_seconds"])
             writer.writerows(rows)
-        print(f"\nWrote summary CSV to {out_csv}")
+        print(f"Wrote summary CSV to {out_csv}")
 
 if __name__ == "__main__":
     main()
