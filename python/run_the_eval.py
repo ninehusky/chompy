@@ -7,11 +7,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 recipes = ["full"]
 usages = [
     "baseline",
-    # "enum_only",
-    # "baseline_and_enum",
-    # "baseline_and_filter_1",
-    # "baseline_and_filter_5",
-    # "baseline_with_filter_5_and_enum",
+    "enum_only",
+    "baseline_and_enum",
+    "baseline_and_filter_1",
+    "baseline_and_filter_5",
+    "baseline_with_filter_5_and_enum",
 ]
 
 # make the out_dir today's date and time.
