@@ -63,7 +63,7 @@ To quickly see a summary of these results, from
 Chompy's root directory, run:
 
 ``` c
-python3 summarize_original_eval.py original-eval original_summary.csv
+python3 python/summarize_original_eval.py original-eval original_summary.csv
 ```
 
 `original_summary.csv` should match:
