@@ -1,164 +1,230 @@
-# <img src="ruler.svg" alt="ruler logo" height="40" align="left"> Enumo
+# Conditional Rewrite Rule Synthesis Using E-Graphs and LLMs
 
-Enumo is a domain-specific language for programmable theory exploration.
-It uses equality saturation to infer small, expressive rulesets for a domain.
+This is the artifact for our paper "Conditional Rewrite Rule Synthesis Using E-Graphs and LLMs".
+In our paper, we discuss an extension to theory explorers that allow for (1) conditional
+rule synthesis, and (2) LLM-guided theory exploration.
 
-### Publications
+- Available: The artifact is available on Zenodo.
+- Functional: Below we provide instructions for setting up the artifact. Then, we list the claims
+  in the paper and provide instructions for how to recreate each claim.
+- Reusable: Finally, we provide instructions for extending Chompy. These instructions describe
+  how to set up Enumo on a different machine, modify the code, and extend it to
+  find rewrites for new domains.
+  
 
-- (OOPSLA 2023) A. Pal, B. Saiki, R. Tjoa, C. Richey, A. Zhu, O. Flatt, M. Willsey, Z. Tatlock, C. Nandi,
-  [_Equality Saturation Theory Exploration à la Carte_](https://dl.acm.org/doi/10.1145/3622834)
+## Overview
 
-- (OOPSLA 2021, Distinguished Paper Award) C. Nandi, M. Willsey, A. Zhu, Y. Wang, B. Saiki, A. Anderson, A. Schulz, D. Grossman, Z. Tatlock,
-  [_Rewrite Rule Inference Using Equality Saturation_](https://dl.acm.org/doi/abs/10.1145/3485496). \*
+This artifact allows for the reconstruction of the following claims:
 
-\* This paper is based on an older version of this repository. If you are looking for the code
-associated with this paper, please use [this branch](https://github.com/uwplse/ruler/tree/oopsla21-aec).
+**How powerful are Chompy's rules?** 
+- Without LLM assistance, Chompy's rules subsume up to 71.1% of handwritten rules, as seen in the
+  `baseline` row of `Table 1`.
 
-### Getting Started
+**How do LLMs impact ruleset quality?** 
+- Using LLMs to guide Chompy's filtering mechanism, Chompy's ruleset size decreases by up to
+  44.3%
+  with a decrease in derivability of as little as 4.5%, as shown in the `filter_5` row of `Table 1`.
+  
+  
+## Installation
 
-Enumo is implemented in [Rust](rust-lang.org/).
-To install Enumo, the following dependencies must be installed:
+We have verified that the instructions and runtimes below are correct for machines
+running MacOS. In particular, we have tested this using a MacBook with an M3 chip and 18 GB
+of RAM, and an M2 chip with 96 GB of RAM.
 
-- Rust
-- libz3
+If you wish to install Chompy on a machine running Ubuntu, the following commands should suffice
+(although we do recommend using MacOS with the hardware above for best performance).
 
-If `libz3` is not offered on your system, you can edit `Cargo.toml` in this directory
-by changing the dependency `z3 = xxx` to `z3 = {version=xxx, features = ["static-link-z3"]}`.
-This will statically link to a built copy of z3 instead of dynamically linking, but the build
-process will take considerably longer.
-It is recommended that you install `libz3` if possible.
 
-To build Enumo, type `cargo build --release`. This should take a few minutes.
+``` bash
+apt update
+apt install -y git
+apt install -y curl
+curl --proto '=https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+source $HOME/.cargo/env
+apt install -y build-essential
+apt install -y libssl-dev pkg-config
+apt install -y cmake
+apt install -y python3
+apt install -y clang libclang-dev
+git clone https://github.com/ninehusky/chompy.git
+cd chompy/
+cargo build --release
+```
 
-Run `cargo doc --open` to build and open the documentation in a browser.
+## Verify Original Experiments (1 minute)
 
-`cargo test` will run all the tests, including tests that
-find rules for a handful of example domains. See the
-`tests` directory for examples of how to set up a domain,
-construct workloads, and find rules.
+The original data used to create `Table 1` is included inside the `original-eval/` folder.
+`Table 1` of the paper contains Chompy's performance across LLM settings, averaged
+across three runs. Each run, e.g., `run_one`, contains the results of running Chompy
+with 6 different LLM configurations, each lining up with a row in `Table 1`.
+
+To quickly see a summary of these results, from
+Chompy's root directory, run:
+
+``` c
+python3 python/summarize_original_eval.py original-eval original_summary.csv
+```
+
+`original_summary.csv` should match:
+
+```
+run_type,num_rules,caviar_derivability,halide_derivability,runtime_seconds
+enum_only,169.0,5.2,0.8,220.7
+filter_1,628.3,57.8,51.6,1939.3
+with_enum,1684.3,68.1,56.7,1772.6
+filter_5,877.7,68.1,61.5,1942.4
+enum+filter,952.7,69.6,60.3,2086.0
+baseline,1579.0,71.1,57.1,1549.3
+```
+
+
+The above csv shows the results used in the paper,
+with two expected differences that do not affect the core findings:
+-  Due to a rounding error, the `caviar_derivability` and `halide_derivability`
+   values differ for `enum_only` and `with_enum`.
+   The ruleset size for `enum+filter` also differs slightly for the same reason.
+ - The `filter_5` row shows minor differences because one run of Chompy was accidentally
+   ommitted from the original average due to a folder typo. This has been corrected, and
+   the overall results are largely unchanged.
+
+We now describe the file layout in more detail for the curious. In each LLM usage subfolder,
+e.g., `original-eval/run_one/full/baseline_with_enum`,
+there are four files:
+
+- `<usage>.log`: a small snippet of the logs containing the runtime for that run.
+- `<usage>.txt`: the final ruleset Chompy produced.
+- `<usage>_against_caviar.json`: a file showing forwards derivability vs. the "Caviar" ruleset.
+- `<usage>_against_halide.json`: a file showing forwards derivability vs. the "Halide" ruleset.
+
+> [!NOTE]  
+> This is a minor detail, whose result does not affect the validity of previous runs.
+> The `against_halide.json` files have 24 additional Halide rules, but this is
+> because the original file scrapers used for Chompy did not filter out the 28
+> rules containing `select`.
+> 
+> Both the current version of Chompy and the `summarize_original_eval.py` script
+> account for this adjustment, so the reported results from `summarize_original_eval`
+> are consistent with what's in the paper.
+
+## Kick The Tires (1 minute)
+
+On a fresh machine, type:
+
+```
+python3 python/kick_the_tires.py
+```
+
+This should take about a minute. This runs a small version of Chompy on a "mini recipe",
+and moves any files created into `mini-artifacts`. You'll know this step worked when the output
+of the script included:
+
+```
+mini.txt contains 57 rules ✅
+```
+
+Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
+
+## Recreating Experiments (~1 hour)
+
+### Running the evaluation
+
+This section describes how to re-run the experiments we have in the paper, in particular
+`Table 1`.
+
+`python3 python/run_the_eval.py` produces one run of the experiments used to build up Table 1.
+Chompy is able to be augmented with LLMs in different ways. The usages are:
+
+```py
+usages = [
+    "baseline",
+    "enum_only",
+    "baseline_and_enum",
+    "baseline_and_filter_1",
+    "baseline_and_filter_5",
+    "baseline_with_filter_5_and_enum",
+]
+```
+
+Every usage besides `baseline` uses an LLM. Because LLMs are non-deterministic,
+the results we reproduce in this section will not match up one-to-one with the previous results.
+This is to be expected, and the `baseline` result can be used as a "ground truth" to compare
+to the original results. The `baseline` results are unlikely to change across machines,
+and if they do, it is expected they will change by very little.
+
+For reproducibility and reviewer's convenience, we describe hwo to run the evaluation
+without calling ChatGPT. We have cached OpenAI API calls in the `llm_cache` folder.
+The files within `llm_cache` are named after the hash of an LLM request.
+To use these cached results instead of ChatGPT, set the following environment
+variable:
+
+```
+export FAKE_LLM="hehehe"
+```
+
+If you do wish to run with a paid ChatGPT API account, do not set this environment variable.
+Instead, set an `OPENAI_API_KEY` environment variable accordingly. A full run of
+`run_the_eval.py` (cached and not cached) takes about an hour, and if using ChatGPT,
+costs about $3.00.
+
+
+### Analyzing the results
+
+Once `run_the_eval.py` has concluded, you can summarize the results by running
+`python3 python/summarize.py eval/<your_dir> out.csv`.
+
+Open `out.csv` to see the equivalent results of `Table 1`, adjusted for our new LLM calls.
+It should match, or be close to, the following (with the exception of `runtime_seconds`,
+which may differ between machines):
+
+```
+$ cat out.csv
+run_type,num_rules,caviar_derivability,halide_derivability,runtime_seconds
+baseline,1579,71.1,57.1,1939.4
+enum_only,181,13.3,3.6,37.5
+filter_1,653,57.8,54.8,1908.7
+filter_5,910,66.7,61.9,1961.2
+with_enum,970,68.9,60.7,1857.4
+enum+filter,1574,71.1,57.1,1944.0
+```
+
+
+## Reusability
+
+This section describes how to extend Chompy to find conditional rules for other domains.
 
 ### Project Layout
 
-- The source code resides in the `src` directory.
-  - `lib.rs` is the main entrypoint and defines some auxiliary data types.
-  - `language.rs` defines the `SynthLanguage` trait, which must be implemented in order to use the Ruler DSL to find rules for a domain. There are two main things that must be implemented: an interpreter and a rule validator. (In the case of rule lifting, the interpreter is not needed.)
-  - `workload.rs` contains the `Workload` data type. Workloads evaluate to a list of terms (s-expressions). Workloads can be constructed directly from a list of s-expressions (`Workload::Set`), combined (`Workload::Append`), refined with a filter (`Workload::Filter`), or composed via plugs (`Workload::Plug`). Plug is a novel operation for generating workloads from smaller workloads. It takes two workloads, $W_1$ and $W_2$ and a string, $s$; for each term in $W_2$ that contains $s$, it “plugs” in the values in $W_1$ and generates a new workload which is a cross product of all the new plugged terms.
-  - `sexp.rs` contains an implementation of s-expressions.
-  - `equality.rs` defines a rewrite rule.
-  - `ruleset.rs` contains the `Ruleset` data type. Rulesets are implemented as an `IndexMap` of `Equality`. There are several operations over Rulesets that can be used to combine, compose, and refine rulesets. For example, `Ruleset::cvec_match` extracts a set of equalities from an egraph via cvec-matching; `Ruleset::minimize` can be used to eliminate redundant rules from a ruleset; `Ruleset::derive` tests the proving power of one ruleset compared to another.
-  - `filter.rs` defines the `Filter` data type which can be used to filter workloads. `pattern.rs` and `metric.rs` define data types that are used in `Filter`.
-  - `util.rs` has some small helper functions.
+Much of Chompy's code is inherited from Enumo, the theory exploration work which
+precedes Chompy. Here, we describe the key files which are used in Chompy's
+core algorithm.
 
-## Further Use / Extending Enumo
+- The source code resides in the `src/` directory.
+  - The main algorithm used for rule inference, `run_workload`, is located
+    inside `recipe_utils.rs`
+  - `llm.rs` contains the functions used to enumerate terms and semantically
+     categorize existing rulesets.`
+  - `conditions` defines much of the core structure and logic used
+     to support conditional rule synthesis.
+    - `assumption.rs` handles the logic responsible for adding an assumption
+      to an egraph.
+    - `implication.rs` defines an implication and implements the logic responsible
+      for applying an implication to an e-graph.
+    - `implication_set.rs` includes logic for synthesizing implication sets, including
+       pvec matching.
+    - `manager.rs` contains the logic for our implication lattice, which uses
+      `egglog` as a Datalog-style backend.
+      
+### Extending Chompy to discover rules for a new domain
 
-Our goal is that Enumo is extensible and can support rule inference in any domain.
-There are some examples of Enumo programs in [tests/recipes](tests/recipes) that
-can be used as a model. In addition, we provide some brief instructions for
-constructing a basic Enumo program below:
+Chompy inherits Enumo's concept of a `SynthLanguage`, which is a Rust
+trait that can be extended for different languages.
+The example implementation for the Halide `SynthLanguage` can be seen in
+`src/halide.rs` -- the `Pred` struct represents the Halide language.
+Once a `SynthLanguage`'s implementation is complete,
+the top level rule synthesis function, `run_workload`, can be called
+to find new rules.
 
-### Writing a Program to Infer Rules
 
-The Enumo DSL enables rewrite rule inference for any domain
-given a grammar, an interpreter, and a validation technique.
-To understand how to add support for a new domain,
-you can look at the domains in the `tests` directory.
-Note that some domains are experimental and not reported in the paper,
-but they all provide examples of how you can add support for new domains.
 
-To use Enumo for a new domain, you must first implement the `SynthLanguage` trait for your domain. This requires implementing a rule validator and either an interpreter (for non-fast-forwarding domains) or a set of lifting rules (for fast-forwarding domains).
 
-To show how users can write an Enumo program for rule inference, let's take a look at `bv4_fancy.rs`, located in the `tests/recipes` directory. This program showcases several of Enumo's provided features for "guided search"-style rule synthesis using one of the example domains, `bv.rs`, located in `src/`.
-
-```
-// create a new set of rules for bitvectors, initially empty
-let mut rules: Ruleset<Bv> = Ruleset::default();
-
-// define a new language we want to enumerate terms for
-let lang = Lang::new(
-    &["0", "1"],
-    &["a", "b", "c"],
-    &[&["~", "-"], &["&", "|", "*", "--", "+", "<<", ">>"]],
-);
-
-```
-
-After initializing an empty ruleset, `rules`, we define a language we want to enumerate terms over. In this case, our language contains some constants (`0` and `1`), some variables (`a`, `b`, `c`), the unary operators (`~` and `-`), and some binary operators, including (`&`, `|`, `*`), and others. Note that `lang` is actually a subset of the operators supported by the `bv.rs` implementation—the operator `^`, for example, is _not_ included. This is one way Enumo allows users to easily omit information that is not important for their purposes, enabling for faster, more scalable synthesis.
-
-```
-// find rules using terms over the provided language up to 5 atoms in size
-// and add them to our ruleset
-rules.extend(recursive_rules(
-    enumo::Metric::Atoms,
-    5,
-    lang.clone(),
-    Ruleset::default(),
-));
-```
-
-The `recursive_rules` function, included in `src/recipe_utils.rs`, is one of several convenience features included in Enumo. It recursively builds up a ruleset by enumerating all terms over a passed-in `Language` up to a specified size. Enumo supports three
-measures of term size: `Atoms` (number of literals in the term), `Depth`
-(depth of s-expression), and `Lists` (number of operators in the term).
-
-Once we've found all the rules up to 5 atoms in size, we append them to the starting ruleset.
-
-```
-let a6_canon = iter_metric(base_lang(2), "EXPR", enumo::Metric::Atoms, 6)
-        .plug("VAR", &Workload::new(lang.vars))
-        .plug("VAL", &Workload::empty())
-        .plug("OP1", &Workload::new(lang.ops[0].clone()))
-        .plug("OP2", &Workload::new(lang.ops[1].clone()))
-        .filter(Filter::Canon(vec![
-            "a".to_string(),
-            "b".to_string(),
-            "c".to_string(),
-        ]));
-```
-
-Enumo allows its users to decouple workload generation from rule synthesis. In the above code snippet, we are not finding rules at all: we are _just_ building up a workload. `a6_canon` is pretty complicated, so let's break it up a bit to make it easier:
-
-```
-iter_metric(base_lang(2), "EXPR", enumo::Metric::Atoms, 6)
-```
-
-Here, we specify that we want to enumerate all terms up to 6 atoms. `base_lang(n)`
-is a convenience function that constructs a base workload for any language
-consisting of variables, constants, and operators with up to `n` arguments.
-
-```
-.plug("VAR", &Workload::new(lang.vars))
-.plug("VAL", &Workload::empty())
-```
-
-`plug` is the core Enumo operator for constructing and composing workloads.
-An `EXPR` contains `VARS` (variables) and `VALS` (values) as its leaves, and `plug` specifies what can be "plugged in" as variables and values—in this case, a workload containing `lang`'s variables and an empty workload, respectively.
-
-```
-.filter(Filter::Canon(vec![
-            "a".to_string(),
-            "b".to_string(),
-            "c".to_string(),
-        ]));
-```
-
-Enumo also supports filtering terms out of generated workloads that do not interest the user. In this case, after the workload is generated, terms that are not _canonicalized_ are removed. Canonicalization here means that `a` must be the first variable introduced. `a` can be followed by another `a` any number of times, but the next new variable introduced must be `b`, and so on. Canonicalization drastically expedites rule inference by eliminating duplicate terms, often representing the difference between a workload that is too large to perform rule inference over and one that finishes near-instantaneously.
-
-```
-let consts = Workload::new(["0", "1"]);
-let wkld = Workload::Append(vec![a6_canon, consts]);
-```
-
-We can also compose workloads: here, we combine a workload consisting of the constants `0` and `1` with `a6_canon`.
-
-```
-let wkld = Workload::Append(vec![a6_canon, consts]);
-    rules.extend(run_workload(
-        wkld,
-        rules.clone(),
-        Limits::synthesis(),
-        Limits::minimize(),
-        true,
-    ));
-    rules
-```
-
-Finally, we are ready to run rule synthesis for the final time, which we do using the workload we just created, the rules we got from `recursive_rules`, and some resource limits. We return this final ruleset. This is a complete Enumo program!

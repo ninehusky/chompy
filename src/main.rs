@@ -4,6 +4,7 @@ use ruler::conditions::implication_set::ImplicationSet;
 use ruler::enumo::Rule;
 use ruler::enumo::Ruleset;
 use ruler::halide::mini_recipe;
+use ruler::halide::og_recipe_plus_select;
 use ruler::halide::Pred;
 
 use ruler::halide::og_recipe;
@@ -23,7 +24,8 @@ use clap::Parser;
 #[derive(Debug)]
 pub enum Recipe {
     MiniRecipe,
-    FullRecipe,
+    NormalRecipe,
+    SelectRecipe,
 }
 
 impl FromStr for Recipe {
@@ -31,7 +33,8 @@ impl FromStr for Recipe {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "mini" => Ok(Self::MiniRecipe),
-            "full" => Ok(Self::FullRecipe),
+            "full" => Ok(Self::NormalRecipe),
+            "select" => Ok(Self::SelectRecipe),
             _ => Err("Invalid mode.".to_string()),
         }
     }
@@ -77,7 +80,8 @@ pub async fn main() {
 
     let rules = match args.recipe {
         Recipe::MiniRecipe => mini_recipe(llm_usage).await,
-        Recipe::FullRecipe => og_recipe(llm_usage).await,
+        Recipe::SelectRecipe => og_recipe_plus_select(llm_usage).await,
+        Recipe::NormalRecipe => og_recipe(llm_usage).await,
     };
 
     rules.to_file(&args.output_path);
@@ -121,22 +125,6 @@ const HALIDE_RULES: &str = r#"
 (< (max y z) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0)
 (< (max (+ y c0) z) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0)
 (< (max (+ y c0) z) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0)
-(< x (select y (+ x c0) z)) ==> (! (&& y (< x z))) if (<= c0 0)
-(< x (select y (+ x c0) z)) ==> (|| y (< x z)) if (> c0 0)
-(< x (select y z (+ x c0))) ==> (&& y (< x z)) if (<= c0 0)
-(< x (select y z (+ x c0))) ==> (! (|| y (< x z))) if (> c0 0)
-(< x (+ (select y (+ x c0) z) c1)) ==> (! (&& y (< x (+ z c1)))) if (<= (+ c0 c1) 0)
-(< x (+ (select y (+ x c0) z) c1)) ==> (|| y (< x (+ z c1))) if (> (+ c0 c1) 0)
-(< x (+ (select y z (+ x c0)) c1)) ==> (&& y (< x (+ z c1))) if (<= (+ c0 c1) 0)
-(< x (+ (select y z (+ x c0)) c1)) ==> (! (|| y (< x (+ z c1)))) if (> (+ c0 c1) 0)
-(< (select y (+ x c0) z) x) ==> (! (&& y (< z x))) if (>= c0 0)
-(< (select y (+ x c0) z) x) ==> (|| y (< z x)) if (< c0 0)
-(< (select y z (+ x c0)) x) ==> (&& y (< z x)) if (>= c0 0)
-(< (select y z (+ x c0)) x) ==> (! (|| y (< z x))) if (< c0 0)
-(< (select y (+ x c0) z) (+ x c1)) ==> (! (&& y (< z (+ x c1)))) if (>= c0 c1)
-(< (select y (+ x c0) z) (+ x c1)) ==> (|| y (< z (+ x c1))) if (< c0 c1)
-(< (select y z (+ x c0)) (+ x c1)) ==> (&& y (< z (+ x c1))) if (>= c0 c1)
-(< (select y z (+ x c0)) (+ x c1)) ==> (! (|| y (< z (+ x c1)))) if (< c0 c1)
 (< x (* (/ x c1) c1)) ==> 0 if (> c1 0)
 (< (/ (+ x c1) c0) (/ (+ x c2) c0)) ==> 0 if (> c0 (&& 0 (>= c1 c2)))
 (< (/ (+ x c1) c0) (/ (+ x c2) c0)) ==> 1 if (> c0 (&& 0 (<= c1 (- c2 c0))))
@@ -210,17 +198,6 @@ const HALIDE_RULES: &str = r#"
 (< (min x c0) (+ (min x c1) c2)) ==> 0 if (>= c0 (&& (+ c1 c2) (<= c2 0)))
 (< (max x c0) (max x c1)) ==> 0 if (>= c0 c1)
 (< (max x c0) (+ (max x c1) c2)) ==> 0 if (>= c0 (&& (+ c1 c2) (<= c2 0)))
-(select (< 0 x) (min (* x c0) c1) (* x c0)) ==> (min (* x c0) c1) if (>= c1 (&& 0 (>= c0 0)))
-(select (< x c0) 0 (+ (min x c0) c1)) ==> 0 if (== c0 (- c1))
-(select (< 0 x) (/ (+ (* x c0) c1) x) y) ==> (select (< 0 x) (- c0 1) y) if (== c1 (- 1))
-(select (< c0 x) (+ x c1) c2) ==> (max (+ x c1) c2) if (== c2 (|| (+ c0 c1) (== c2 (+ (+ c0 c1) 1))))
-(select (< x c0) c1 (+ x c2)) ==> (max (+ x c2) c1) if (== c1 (|| (+ c0 c2) (== (+ c1 1) (+ c0 c2))))
-(select (< c0 x) c1 (+ x c2)) ==> (min (+ x c2) c1) if (== c1 (|| (+ c0 c2) (== c1 (+ (+ c0 c2) 1))))
-(select (< x c0) (+ x c1) c2) ==> (min (+ x c1) c2) if (== c2 (|| (+ c0 c1) (== (+ c2 1) (+ c0 c1))))
-(select (< c0 x) x c1) ==> (max x c1) if (== c1 (+ c0 1))
-(select (< x c0) c1 x) ==> (max x c1) if (== (+ c1 1) c0)
-(select (< c0 x) c1 x) ==> (min x c1) if (== c1 (+ c0 1))
-(select (< x c0) x c1) ==> (min x c1) if (== (+ c1 1) c0)
 (max x c0) ==> b if (is_max_value c0)
 (max x c0) ==> x if (is_min_value c0)
 (max (* (/ x c0) c0) x) ==> b if (> c0 0)
@@ -246,11 +223,6 @@ const HALIDE_RULES: &str = r#"
 (max (min (- c0 x) x) c1) ==> b if (>= (* 2 c1) (- c0 1))
 (max (min x (- c0 x)) c1) ==> b if (>= (* 2 c1) (- c0 1))
 (max (max (/ x c0) y) (/ z c0)) ==> (max (/ (max x z) c0) y) if (> c0 0)
-(max x (select (== x c0) c1 x)) ==> (select (== x c0) c1 x) if (< c0 c1)
-(max x (select (== x c0) c1 x)) ==> x if (<= c1 c0)
-(max (select (== x c0) c1 x) c2) ==> (max x c2) if (&& (<= c0 c2) (<= c1 c2))
-(max (select (== x c0) c1 x) x) ==> (select (== x c0) c1 x) if (< c0 c1)
-(max (select (== x c0) c1 x) x) ==> x if (<= c1 c0)
 (max (+ (max x y) c0) x) ==> (max x (+ y c0)) if (< c0 0)
 (max (+ (max x y) c0) x) ==> (+ (max x y) c0) if (> c0 0)
 (max (+ (max y x) c0) x) ==> (max (+ y c0) x) if (< c0 0)
@@ -277,8 +249,6 @@ const HALIDE_RULES: &str = r#"
 (max (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (/ (+ x c0) c1) if (<= 0 (&& c0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
 (max (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (* (/ x c3) c4) if (<= (- (+ c0 c3) c1) (&& 0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
 (max (/ x c1) (* (/ x c3) c4)) ==> (/ x c1) if (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))
-(== (select x c0 y) 0) ==> (! (&& x (== y 0))) if (!= c0 0)
-(== (select x y c0) 0) ==> (&& x (== y 0)) if (!= c0 0)
 (== (+ (max x c0) c1) 0) ==> 0 if (> (+ c0 c1) 0)
 (== (+ (min x c0) c1) 0) ==> 0 if (< (+ c0 c1) 0)
 (== (+ (max x c0) c1) 0) ==> (<= x c0) if (== (+ c0 c1) 0)
@@ -343,7 +313,6 @@ const HALIDE_RULES: &str = r#"
 (<= c1 (|| x (< x c0))) ==> 1 if (<= c1 c0)
 (< x (|| c0 (< c1 x))) ==> 1 if (< c1 c0)
 (< c1 (|| x (< x c0))) ==> 1 if (< c1 c0)
-(+ (select x y (+ z c0)) c1) ==> (select x (+ y c1) z) if (== (+ c0 c1) 0)
 (+ (min x (+ y c0)) c1) ==> (min (+ x c1) y) if (== (+ c0 c1) 0)
 (+ (min (+ y c0) x) c1) ==> (min y (+ x c1)) if (== (+ c0 c1) 0)
 (+ (max x (+ y c0)) c1) ==> (max (+ x c1) y) if (== (+ c0 c1) 0)
@@ -387,11 +356,6 @@ const HALIDE_RULES: &str = r#"
 (min (max x (- c0 x)) c1) ==> b if (<= (* 2 c1) (+ c0 1))
 (min (min (/ x c0) y) (/ z c0)) ==> (min (/ (min x z) c0) y) if (> c0 0)
 (min (max x c0) c1) ==> (max (min x c1) c0) if (<= c0 c1)
-(min x (select (== x c0) c1 x)) ==> (select (== x c0) c1 x) if (< c1 c0)
-(min x (select (== x c0) c1 x)) ==> x if (<= c0 c1)
-(min (select (== x c0) c1 x) c2) ==> (min x c2) if (&& (<= c2 c0) (<= c2 c1))
-(min (select (== x c0) c1 x) x) ==> (select (== x c0) c1 x) if (< c1 c0)
-(min (select (== x c0) c1 x) x) ==> x if (<= c0 c1)
 (min (+ (min x y) c0) x) ==> (min x (+ y c0)) if (> c0 0)
 (min (+ (min x y) c0) x) ==> (+ (min x y) c0) if (< c0 0)
 (min (+ (min y x) c0) x) ==> (min (+ y c0) x) if (> c0 0)
@@ -422,8 +386,6 @@ const HALIDE_RULES: &str = r#"
 (min (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (/ (+ x c0) c1) if (<= (- (+ c0 c3) c1) (&& 0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
 (min (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (* (/ x c3) c4) if (<= 0 (&& c0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
 (min (/ x c1) (* (/ x c3) c4)) ==> (* (/ x c3) c4) if (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))
-(- (min (+ x c0) y) (select z (+ (min x y) c1) x)) ==> (select z (- (max (min (- y x) c0) 0) c1) (min (- y x) c0)) if (> c0 0)
-(- (min y (+ x c0)) (select z (+ (min y x) c1) x)) ==> (select z (- (max (min (- y x) c0) 0) c1) (min (- y x) c0)) if (> c0 0)
 "#;
 
 const CAVIAR_RULES: &str = r#"

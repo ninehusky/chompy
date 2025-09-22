@@ -457,11 +457,6 @@ impl<L: SynthLanguage> Ruleset<L> {
             start_time.elapsed().as_millis(),
             skipped_rules
         );
-
-        for c in candidates.iter() {
-            println!("[conditional_cvec_match] Candidate: {c}");
-        }
-
         candidates
     }
 
@@ -524,6 +519,12 @@ impl<L: SynthLanguage> Ruleset<L> {
         predicate.insert_into_egraph(&mut colored_egraph);
 
         // 2. Run the implication rules on the egraph.
+
+        let impl_rules = if std::env::var("SKIP_IMPLICATIONS").is_ok() {
+            &ImplicationSet::default()
+        } else {
+            &impl_rules.clone()
+        };
         let rules = impl_rules.to_egg_rewrites();
 
         let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
@@ -770,6 +771,12 @@ impl<L: SynthLanguage> Ruleset<L> {
     ) {
         let mut actual_by_cond: IndexMap<String, Ruleset<L>> = IndexMap::default();
 
+        let prop_rules = if std::env::var("SKIP_IMPLICATIONS").is_ok() {
+            &vec![]
+        } else {
+            &prop_rules.clone()
+        };
+
         for (_, rule) in self.0.iter() {
             if let Some(cond) = &rule.cond {
                 actual_by_cond
@@ -780,7 +787,6 @@ impl<L: SynthLanguage> Ruleset<L> {
         }
 
         for (condition, _) in actual_by_cond.iter() {
-            println!("condition: {condition:?}");
             let candidates = self
                 .0
                 .values()
@@ -793,11 +799,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 })
                 .collect::<Vec<_>>();
 
-            println!("candidates:");
-            for c in &candidates {
-                println!("{c}");
-            }
-
             // 1. Make a new e-graph.
             let mut egraph = EGraph::default();
 
@@ -806,7 +807,6 @@ impl<L: SynthLanguage> Ruleset<L> {
                 let dummy: Assumption<L> = Assumption::new(condition.to_string()).unwrap();
                 Assumption::new(L::instantiate(&dummy.chop_assumption()).to_string()).unwrap()
             };
-            println!("adding {assumption} into the egraph");
             assumption.insert_into_egraph(&mut egraph);
 
             // 3. Add lhs, rhs of *all* candidates with the condition to the e-graph.
@@ -831,7 +831,7 @@ impl<L: SynthLanguage> Ruleset<L> {
                     .search(&runner.egraph)
                     .is_empty()
                 {
-                    println!("skipping {condition}");
+                    // println!("skipping {condition}");
                     // if the most recent condition is not in the e-graph, then it's not relevant
                     continue;
                 }

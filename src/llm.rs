@@ -3,9 +3,13 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, SeedableRng};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use std::fmt::Display;
+use std::fs;
+use std::path::Path;
 
 use crate::enumo::{Rule, Ruleset, Sexp};
 use crate::halide::{get_type, HalideType};
@@ -15,6 +19,22 @@ use crate::{enumo::Workload, halide::Pred, SynthLanguage};
 use crate::{ConditionRecipe, HashMap, HashSet, IndexMap, Recipe};
 
 pub type CategorizedRuleset<L> = IndexMap<String, Ruleset<L>>;
+
+const CACHE_DIR: &str = "llm_cached";
+
+#[derive(Serialize, Deserialize)]
+struct CacheEntry {
+    prompt: String,
+    model: String,
+    response: String,
+}
+
+fn hash_request(prompt: &str, model: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(prompt.as_bytes());
+    hasher.update(model.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
 
 const SCORE_RULES_PROMPT: &str = r#"
 You are an expert in program optimization and algebraic reasoning.
@@ -333,8 +353,33 @@ fn sample_terms(wkld: &Workload) -> Vec<String> {
 
 pub async fn send_openai_request(client: &Client, prompt: String) -> Result<String, String> {
     // Build the request payload
+    let model = "gpt-4o";
+    let h = hash_request(&prompt, model);
+    let cache_file = format!("{}/{}.json", CACHE_DIR, h);
+
+    // Replay mode
+    if std::env::var("FAKE_LLM").is_ok() {
+        if Path::new(&cache_file).exists() {
+            let cached = fs::read_to_string(&cache_file)
+                .map_err(|e| format!("Failed to read cache: {e}"))?;
+            let cached_json: serde_json::Value =
+                serde_json::from_str(&cached).map_err(|e| format!("Bad cached JSON: {e}"))?;
+
+            if let Some(resp) = cached_json["response"].as_str() {
+                println!("(replay) Using cached LLM response for {}", h);
+                return Ok(resp.to_string());
+            } else {
+                return Err(format!("Cached file missing 'response' field for {}", h));
+            }
+        } else {
+            // return Err(format!("No cached response found for h {}", h));
+            println!("We have to make a new API call!");
+        }
+    }
+
+
     let request_body = json!({
-        "model": "gpt-4o",
+        "model": model,
         "messages": [
             { "role": "system", "content": prompt }
         ],
@@ -371,6 +416,16 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
         .replace("`", ""); // Strip markdown backticks if any
 
     println!("OUTPUT:\n{}", text_output);
+
+    // Save to cache
+    fs::create_dir_all(CACHE_DIR).ok();
+    let entry = CacheEntry {
+        prompt,
+        model: model.to_string(),
+        response: text_output.clone(),
+    };
+    fs::write(&cache_file, serde_json::to_string_pretty(&entry).unwrap())
+        .map_err(|e| format!("Failed to write cache: {e}"))?;
 
     Ok(text_output)
 }
@@ -779,14 +834,35 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
 ) -> Result<String, String> {
     // Build the prompt with existing rules + candidates
     let candidates_text = candidate_rules.to_str_vec().join("\n");
-
     let prompt = GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
 
-    println!("prompt: {prompt}");
+    let model = "gpt-4o";
+    let hash = hash_request(&prompt, model);
+    let cache_path = format!("{}/{}.json", CACHE_DIR, hash);
 
-    // Build the request payload
+    // Replay mode
+    if std::env::var("FAKE_LLM").is_ok() {
+        if Path::new(&cache_path).exists() {
+            let cached = fs::read_to_string(&cache_path)
+                .map_err(|e| format!("Failed to read cache: {e}"))?;
+            let cached_json: serde_json::Value =
+                serde_json::from_str(&cached).map_err(|e| format!("Bad cached JSON: {e}"))?;
+
+            if let Some(resp) = cached_json["response"].as_str() {
+                println!("(replay) Using cached group_rules response for {}", hash);
+                return Ok(resp.to_string());
+            } else {
+                return Err(format!("Cached file missing 'response' field for {}", hash));
+            }
+        } else {
+            println!("We have to make a new API call!");
+            // return Err(format!("No cached response found for hash {}", hash));
+        }
+    }
+
+    // Real request
     let request_body = json!({
-        "model": "gpt-4o",
+        "model": model,
         "messages": [
             { "role": "system", "content": prompt }
         ],
@@ -794,7 +870,6 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         "max_tokens": 1500
     });
 
-    // Send the request
     let response = client
         .post("https://api.openai.com/v1/chat/completions")
         .header(
@@ -815,11 +890,19 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         .await
         .map_err(|e| format!("Failed to parse response: {e}"))?;
 
-    // Return raw text content
     let text_output = response_json["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("")
         .to_string();
+
+    // Write cache
+    let cached_obj = json!({
+        "prompt": prompt,
+        "model": model,
+        "response": text_output,
+    });
+    fs::write(&cache_path, serde_json::to_string_pretty(&cached_obj).unwrap())
+        .map_err(|e| format!("Failed to write cache: {e}"))?;
 
     Ok(text_output)
 }
