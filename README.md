@@ -129,7 +129,7 @@ Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
 
 ### Running the evaluation
 
-This section describes how to re-run the experiments we have in the paper, in particular
+This section describes how to re-run the experiments we have in the paper, presented in
 `Table 1`.
 
 `python3 python/run_the_eval.py` produces _one run_ of the experiments used to build up Table 1.
