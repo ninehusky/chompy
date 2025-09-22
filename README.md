@@ -40,7 +40,7 @@ If you wish to install Chompy on a machine running Ubuntu, the following command
 apt update
 apt install -y git
 apt install -y curl
-curl --proto '=https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source $HOME/.cargo/env
 apt install -y build-essential
 apt install -y libssl-dev pkg-config
@@ -132,7 +132,7 @@ Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
 This section describes how to re-run the experiments we have in the paper, in particular
 `Table 1`.
 
-`python3 python/run_the_eval.py` produces one run of the experiments used to build up Table 1.
+`python3 python/run_the_eval.py` produces _one run_ of the experiments used to build up Table 1.
 Chompy is able to be augmented with LLMs in different ways. The usages are:
 
 ```py
@@ -152,14 +152,15 @@ This is to be expected, and the `baseline` result can be used as a "ground truth
 to the original results. The `baseline` results are unlikely to change across machines,
 and if they do, it is expected they will change by very little.
 
-For reproducibility and reviewer's convenience, we describe hwo to run the evaluation
+For reproducibility and reviewer's convenience, we describe how to run the evaluation
 without calling ChatGPT. We have cached OpenAI API calls in the `llm_cache` folder.
 The files within `llm_cache` are named after the hash of an LLM request.
 To use these cached results instead of ChatGPT, set the following environment
 variable:
 
 ```
-export FAKE_LLM="hehehe"
+$ export FAKE_LLM="hehehe"
+$ python3 python/run_the_eval.py
 ```
 
 If you do wish to run with a paid ChatGPT API account, do not set this environment variable.
