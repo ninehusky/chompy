@@ -40,7 +40,7 @@ If you wish to install Chompy on a machine running Ubuntu, the following command
 apt update
 apt install -y git
 apt install -y curl
-curl --proto '=https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source $HOME/.cargo/env
 apt install -y build-essential
 apt install -y libssl-dev pkg-config
