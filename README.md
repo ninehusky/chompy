@@ -11,9 +11,6 @@ rule synthesis, and (2) LLM-guided theory exploration.
   how to set up Enumo on a different machine, modify the code, and extend it to
   find rewrites for new domains.
   
-We have verified that the instructions and runtimes
-below are good with machines running MacOS with an M3 chip with 18 GB of RAM, and
-an M2 chip with 96 GB of RAM.
 
 ## Overview
 
@@ -31,7 +28,13 @@ This artifact allows for the reconstruction of the following claims:
   
 ## Installation
 
-To run Chompy using Docker, do the following:
+We have verified that the instructions and runtimes below are correct for machines
+running MacOS. In particular, we have tested this using a MacBook with an M3 chip and 18 GB
+of RAM, and an M2 chip with 96 GB of RAM.
+
+If you wish to install Chompy on a machine running Ubuntu, the following commands should suffice
+(although we do recommend using MacOS with the hardware above for best performance).
+
 
 ``` bash
 apt update
@@ -46,7 +49,7 @@ apt install -y python3
 apt install -y clang libclang-dev
 git clone https://github.com/ninehusky/chompy.git
 cd chompy/
-cargo build
+cargo build --release
 ```
 
 ## Verify Original Experiments (1 minute)
@@ -62,13 +65,14 @@ Chompy's root directory, run:
 ``` c
 python3 summarize_original_eval.py og-out.csv
 ```
-
-Opening `og-out.csv` will reveal the results used in the paper, with the exception of
-two differences:
-- Cells blah1 and blah2 are different because of a rounding error.
-- Row `with_enum` has different numbers because of a folder name typo which
-  caused that row to only contain the averages of 2 runs as opposed to 3.
-  The numbers in the paper only differ by blah3.
+Opening og-out.csv shows the results used in the paper,
+with two expected differences that do not affect the core findings:
+-  Due to a rounding error, the `caviar_derivability` and `halide_derivability`
+   values differ for `enum_only` and `with_enum`.
+   The ruleset size for `enum+filter` also differs slightly for the same reason.
+ - The `filter_5` row shows minor differences because one run of Chompy was accidentally
+   ommitted from the original average due to a folder typo. This has been corrected, and
+   the overall results are largely unchanged.
 
 We now describe the file layout in more detail for the curious. In each LLM usage subfolder,
 e.g., `original-eval/run_one/full/baseline_with_enum`,
@@ -80,6 +84,7 @@ there are four files:
 - `<usage>_against_halide.json`: a file showing forwards derivability vs. the "Halide" ruleset.
 
 > [!NOTE]  
+> This is a minor detail, whose result does not affect the validity of previous runs!
 > The forwards derivability metric in each JSON file can be computed as  
 > 
 > ```
@@ -117,9 +122,9 @@ Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
 
 ## Recreating Experiments (~1 hour)
 
-This section describes how to re-run the experiments we have in the paper.
+### Running the evaluation
 
-### Table 1
+This section describes how to re-run the experiments we have in the paper.
 
 `python3/run_the_eval.py` produces one run of the experiments used to build up Table 1.
 Chompy is able to be augmented with LLMs in different ways. The usages are:
@@ -135,35 +140,34 @@ usages = [
 ]
 ```
 
-Any configuration besides `baseline` requires the usage of an `OPENAI_API_KEY` environment variable,
-hooked up to an OpenAI account with enough credits. With real LLM calls,
-a full run of `run_the_eval.py` takes about an hour and costs about $3.00.
+Every usage besides `baseline` uses an LLM. Because LLMs are non-deterministic,
+the results we reproduce in this section will not match up one-to-one with the previous results.
+This is to be expected, and the `baseline` result can be used as a "ground truth" to compare
+to the original results. The `baseline` results are unlikely to change across machines,
+and if they do, it is expected they will change by very little.
 
-For reproducibility and reviewer's convenience, we have allowed the option to
-run the evaluation without actually calling ChatGPT. We have cached several
-OpenAI API calls, which are stored in `llm_cache/`. The names of the files within
-that directory are a hash of the LLM request. To use these cached results instead
-of ChatGPT, do the following before you run:
+For reproducibility and reviewer's convenience, we describe hwo to run the evaluation
+without calling ChatGPT. We have cached OpenAI API calls in the `llm_cache` folder.
+The files within `llm_cache` are named after the hash of an LLM request.
+To use these cached results instead of ChatGPT, set the following environment
+variable:
 
-
-``` c
+```
 export FAKE_LLM="hehehe"
 ```
 
-Take note! The cached OpenAI API calls are not those which are used in the paper, so the numbers
-will not be exactly the same as `Table 1`. 
+If you do wish to run with a paid ChatGPT API account, do not set this environment variable.
+Instead, set an `OPENAI_API_KEY` environment variable accordingly. A full run of
+`run_the_eval.py` (cached and not cached) takes about an hour, and if using ChatGPT,
+costs about $3.00.
 
-If you do wish to run using an LLM, do not have `FAKE_LLM` declared, and set `OPENAI_API_KEY`to your
-account's.
 
-Running the evaluation takes about an hour on a MacBook Pro with an M3 CPU and 18 GB of RAM.
-   
-For a quick peek at the runs from a glance, once
-`run_the_eval.py` has concluded,
-run `python3 python/summarize.py <eval/your_dir> out.csv`.
+### Analyzing the results
+
+Once `run_the_eval.py` has concluded, you can summarize the results by running
+`python3 python/summarize.py eval/<your_dir> out.csv`.
+
 Open `out.csv` to see the equivalent results of `Table 1`, adjusted for our new LLM calls.
-
-With cached LLM responses, you should see this as the result of `python3 python/summarize.py out.csv`:
 
 ```
 $ cat out.csv
