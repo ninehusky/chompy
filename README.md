@@ -183,12 +183,40 @@ enum+filter,1574,71.1,57.1,1562.0
 
 ## Reusability
 
-TODO: here's our code structure:
-`src/conditions/...`
-`src/llm.rs`
+This section describes how to extend Chompy to find conditional rules for other domains.
 
-Here, we explain how to extend Chompy to different domains.
-You would change `x.rs` to generate conditional rules for blah, and then...
+### Project Layout
+
+Much of Chompy's code is inherited from Enumo, the theory exploration work which
+precedes Chompy. Here, we describe the key files which are used in Chompy's
+core algorithm.
+
+- The source code resides in the `src/` directory.
+  - The main algorithm used for rule inference, `run_workload`, is located
+    inside `recipe_utils.rs`
+  - `llm.rs` contains the functions used to enumerate terms and semantically
+     categorize existing rulesets.`
+  - `conditions` defines much of the core structure and logic used
+     to support conditional rule synthesis.
+    - `assumption.rs` handles the logic responsible for adding an assumption
+      to an egraph.
+    - `implication.rs` defines an implication and implements the logic responsible
+      for applying an implication to an e-graph.
+    - `implication_set.rs` includes logic for synthesizing implication sets, including
+       pvec matching.
+    - `manager.rs` contains the logic for our implication lattice, which uses
+      `egglog` as a Datalog-style backend.
+      
+### Extending Chompy to discover rules for a new domain
+
+Chompy inherits Enumo's concept of a `SynthLanguage`, which is a Rust
+trait that can be extended for different languages.
+The example implementation for the Halide `SynthLanguage` can be seen in
+`src/halide.rs` -- the `Pred` struct represents the Halide language.
+Once a `SynthLanguage`'s implementation is complete,
+the top level rule synthesis function, `run_workload`, can be called
+to find new rules.
+
 
 
 
