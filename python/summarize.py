@@ -31,6 +31,7 @@ def main():
     out_csv = sys.argv[2] if len(sys.argv) > 2 else None
 
     run_types = [
+        ("baseline", "baseline"),
         ("enum_only", "enum_only"),
         ("filter_1", "baseline_and_filter_1"),
         ("filter_5", "baseline_and_filter_5"),
