@@ -51,7 +51,7 @@ def parse_json(json_path):
         results[direction] = (can, can + cannot)
     return results
 
-def main(root="eval", out_csv="summary.csv"):
+def main(root="original-eval", out_csv="summary.csv"):
     stats = defaultdict(lambda: {"ruleset_lengths": [], "seconds": []})
     derivs = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
