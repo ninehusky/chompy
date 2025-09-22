@@ -146,28 +146,38 @@ usages = [
 ]
 ```
 
-Every usage besides `baseline` uses an LLM. Because LLMs are non-deterministic,
-the results we reproduce in this section will not match up one-to-one with the previous results.
-This is to be expected, and the `baseline` result can be used as a "ground truth" to compare
-to the original results. The `baseline` results are unlikely to change across machines,
-and if they do, it is expected they will change by very little.
+Running the above Python file will create several files within the `eval/` subdirectory.
+The path to the file is the date and time that the evaluation is ran with a `full/` folder attached
+, e.g., `eval/2025_09_13_18_01/full/`. The `full` folder will contain six subfolders, each
+containing the results from running Chompy with a particular LLM configuration.
 
-For reproducibility and reviewer's convenience, we describe how to run the evaluation
-without calling ChatGPT. We have cached OpenAI API calls in the `llm_cache` folder.
-The files within `llm_cache` are named after the hash of an LLM request.
-To use these cached results instead of ChatGPT, set the following environment
-variable:
+Like with the above section, a subfolder, e.g., `eval/2025_09_13_18_01/full/baseline`, will contain four files:
+- a `.log` storing Chompy's output
+- a `.txt` holding Chompy's ruleset
+- two `.json` files storing Chompy's derivability artifacts
+
+Every usage besides `baseline` uses an LLM. For convenience and reproducibility, we
+have cached OpenAI API calls necessary to reproduce the results without connecting to OpenAI.
+`llm_cache/` stores these cached responses, which are named after the hash for their corresponding
+request. We encourage reviewers to use our cached OpenAI API
+calls. To do this, set the following environment
+variable before running:
 
 ```
 $ export FAKE_LLM="hehehe"
 $ python3 python/run_the_eval.py
 ```
 
-If you do wish to run with a paid ChatGPT API account, do not set this environment variable.
+Because LLMs are non-deterministic,
+the results we reproduce in this section will not match up one-to-one with the previous results.
+This is to be expected, and the `baseline` result can be used as a "ground truth" to compare
+to the original results. The `baseline` results are unlikely to change across machines,
+and if they do, it is expected they will change by very little.
+
+If you do wish to run with a paid ChatGPT API account, do not set the `FAKE_LLM` environment variable.
 Instead, set an `OPENAI_API_KEY` environment variable accordingly. A full run of
 `run_the_eval.py` (cached and not cached) takes about an hour, and if using ChatGPT,
 costs about $3.00.
-
 
 ### Analyzing the results
 
