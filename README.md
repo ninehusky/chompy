@@ -4,7 +4,7 @@ This is the artifact for our paper "Conditional Rewrite Rule Synthesis Using E-G
 In our paper, we discuss an extension to theory explorers that allow for (1) conditional
 rule synthesis, and (2) LLM-guided theory exploration.
 
-- Available: The artifact is available on Zenodo.
+- Available: The artifact is available on Zenodo: DOI is `10.5281/zenodo.17173426`
 - Functional: Below we provide instructions for setting up the artifact. Then, we list the claims
   in the paper and provide instructions for how to recreate each claim.
 - Reusable: Finally, we provide instructions for extending Chompy. These instructions describe
