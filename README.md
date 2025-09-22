@@ -180,11 +180,12 @@ which may differ between machines):
 ```
 $ cat out.csv
 run_type,num_rules,caviar_derivability,halide_derivability,runtime_seconds
-enum_only,181,13.3,3.6,31.9
-filter_1,653,57.8,54.8,1587.3
-filter_5,910,66.7,61.9,1559.4
-with_enum,970,68.9,59.5,1545.2
-enum+filter,1574,71.1,57.1,1562.0
+baseline,1579,71.1,57.1,1939.4
+enum_only,181,13.3,3.6,37.5
+filter_1,653,57.8,54.8,1908.7
+filter_5,910,66.7,61.9,1961.2
+with_enum,970,68.9,60.7,1857.4
+enum+filter,1574,71.1,57.1,1944.0
 ```
 
 
