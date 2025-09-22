@@ -132,7 +132,7 @@ Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
 This section describes how to re-run the experiments we have in the paper, in particular
 `Table 1`.
 
-`python3/run_the_eval.py` produces one run of the experiments used to build up Table 1.
+`python3 python/run_the_eval.py` produces one run of the experiments used to build up Table 1.
 Chompy is able to be augmented with LLMs in different ways. The usages are:
 
 ```py
@@ -174,7 +174,8 @@ Once `run_the_eval.py` has concluded, you can summarize the results by running
 `python3 python/summarize.py eval/<your_dir> out.csv`.
 
 Open `out.csv` to see the equivalent results of `Table 1`, adjusted for our new LLM calls.
-It should match, or be close to, the following (with the exception of `runtime_seconds`):
+It should match, or be close to, the following (with the exception of `runtime_seconds`,
+which may differ between machines):
 
 ```
 $ cat out.csv
