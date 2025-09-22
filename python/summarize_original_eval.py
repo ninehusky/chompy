@@ -51,7 +51,12 @@ def parse_json(json_path):
         results[direction] = (can, can + cannot)
     return results
 
-def main(root="original-eval", out_csv="summary.csv"):
+def main():
+    # get from command line args
+    import sys
+    root = sys.argv[1]
+    out_csv = sys.argv[2]
+
     stats = defaultdict(lambda: {"ruleset_lengths": [], "seconds": []})
     derivs = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 

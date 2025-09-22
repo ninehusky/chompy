@@ -63,9 +63,23 @@ To quickly see a summary of these results, from
 Chompy's root directory, run:
 
 ``` c
-python3 summarize_original_eval.py og-out.csv
+python3 summarize_original_eval.py original-eval original_summary.csv
 ```
-Opening og-out.csv shows the results used in the paper,
+
+`original_summary.csv` should match:
+
+```
+run_type,num_rules,caviar_derivability,halide_derivability,runtime_seconds
+enum_only,169.0,5.2,0.8,220.7
+filter_1,628.3,57.8,51.6,1939.3
+with_enum,1684.3,68.1,56.7,1772.6
+filter_5,877.7,68.1,61.5,1942.4
+enum+filter,952.7,69.6,60.3,2086.0
+baseline,1579.0,71.1,57.1,1549.3
+```
+
+
+The above csv shows the results used in the paper,
 with two expected differences that do not affect the core findings:
 -  Due to a rounding error, the `caviar_derivability` and `halide_derivability`
    values differ for `enum_only` and `with_enum`.
@@ -78,29 +92,20 @@ We now describe the file layout in more detail for the curious. In each LLM usag
 e.g., `original-eval/run_one/full/baseline_with_enum`,
 there are four files:
 
-- `<usage>.log`: the output Chompy produced while generating a ruleset.
+- `<usage>.log`: a small snippet of the logs containing the runtime for that run.
 - `<usage>.txt`: the final ruleset Chompy produced.
 - `<usage>_against_caviar.json`: a file showing forwards derivability vs. the "Caviar" ruleset.
 - `<usage>_against_halide.json`: a file showing forwards derivability vs. the "Halide" ruleset.
 
 > [!NOTE]  
-> This is a minor detail, whose result does not affect the validity of previous runs!
-> The forwards derivability metric in each JSON file can be computed as  
-> 
-> ```
-> json["forwards"]["can"] / (json["forwards"]["can"] + json["forwards"]["cannot"])
-> ```
-> 
-> In the original runs included with the respository,
-> the denominators in the `_against_halide` JSONs correspond to 112 rules,
-> whereas the paper reports results over 84 rules.  
-> 
-> This discrepancy arises because the original Halide ruleset contained 112 rules,
-> but 28 of them involved the `select` operator, which Chompy does not support.
-> We therefore excluded these 28 rules, leaving a denominator of 84.  
+> This is a minor detail, whose result does not affect the validity of previous runs.
+> The `against_halide.json` files have 24 additional Halide rules, but this is
+> because the original file scrapers used for Chompy did not filter out the 28
+> rules containing `select`.
 > 
 > Both the current version of Chompy and the `summarize_original_eval.py` script
-> account for this adjustment, so the reported results are consistent.
+> account for this adjustment, so the reported results from `summarize_original_eval`
+> are consistent with what's in the paper.
 
 ## Kick The Tires (1 minute)
 
@@ -169,6 +174,7 @@ Once `run_the_eval.py` has concluded, you can summarize the results by running
 `python3 python/summarize.py eval/<your_dir> out.csv`.
 
 Open `out.csv` to see the equivalent results of `Table 1`, adjusted for our new LLM calls.
+It should match, or be close to, the following (with the exception of `runtime_seconds`):
 
 ```
 $ cat out.csv
