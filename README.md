@@ -52,6 +52,35 @@ cd chompy/
 cargo build --release
 ```
 
+## Reproducing the paper baseline (Docker)
+
+The paper's results were generated with **Z3 4.12.1** (the version that
+`z3-sys 0.8.1` ships when built with `static-link-z3`). On modern macOS,
+the bundled Z3 4.12.1 no longer compiles (CMake 4.x and AppleClang 21
+incompatibilities), so `.cargo/config.toml` points the build at the
+system Homebrew Z3 — currently 4.15.4. Z3 versions disagree on a small
+number of borderline implications during rule synthesis, so the macOS
+build produces a slightly different ruleset than the paper.
+
+For byte-exact paper reproducibility, build and run inside Docker. The
+included `Dockerfile` builds Z3 4.12.1 from source on Ubuntu 22.04 and
+pre-builds the release binary:
+
+``` bash
+docker build -t chompy:latest .
+
+# Run baseline; outputs land in ./eval-docker
+mkdir -p ./eval-docker
+docker run --rm -v "$(pwd)/eval-docker:/output" chompy:latest \
+    /chompy/target/release/ruler \
+    --recipe full --llm-usage baseline \
+    --output-path /output/docker_baseline.txt
+```
+
+The resulting `docker_baseline.txt` (1579 rules) is byte-identical (when
+sorted) to `original-eval/run_one/full/baseline/full_baseline.txt`, and
+derivability matches `Table 1` exactly: 71.1% Caviar, 57.1% Halide.
+
 ## Verify Original Experiments (1 minute)
 
 The original data used to create `Table 1` is included inside the `original-eval/` folder.
