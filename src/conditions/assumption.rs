@@ -47,11 +47,27 @@ impl<L: SynthLanguage> Assumption<L> {
         } else if !L::pattern_is_predicate(&pat) {
             return Err(format!("Pattern is not a valid predicate: {pat}"));
         }
+        Self::check_wraps_cleanly(&assumption)?;
 
         Ok(Self {
             pat: assumption,
             _marker: std::marker::PhantomData,
         })
+    }
+
+    // egg's Pattern parser silently tolerates trailing tokens (e.g. a string
+    // like "(>= ?a 0) if (>= ?b 0)" parses without error), but downstream code
+    // — notably `chop_assumption` — relies on the wrapped form being a clean
+    // 2-element s-expression. Verify that here so malformed inputs (typically
+    // LLM-emitted multi-`if` rules) fail at construction instead of later.
+    fn check_wraps_cleanly(assumption: &str) -> Result<(), String> {
+        let wrapped = format!("({} {})", L::assumption_label(), assumption);
+        match Sexp::from_str(&wrapped) {
+            Ok(Sexp::List(ref l)) if l.len() == 2 => Ok(()),
+            _ => Err(format!(
+                "Malformed assumption pattern (does not wrap as a 2-element s-expr): {assumption}"
+            )),
+        }
     }
 
     /// Like `new`, but does not check if the pattern is a valid predicate.
@@ -66,6 +82,7 @@ impl<L: SynthLanguage> Assumption<L> {
         if L::pattern_is_assumption(&pat) {
             return Err(format!("Pattern is already an assumption: {pat}"));
         }
+        Self::check_wraps_cleanly(&assumption)?;
 
         Ok(Self {
             pat: assumption,
@@ -106,7 +123,10 @@ impl<L: SynthLanguage> From<Assumption<L>> for Pattern<L> {
     fn from(assumption: Assumption<L>) -> Self {
         let string = format!("({} {})", L::assumption_label(), assumption.pat);
 
-        string.parse().expect("Failed to parse assumption pattern")
+        string.parse().unwrap_or_else(|_| {
+            eprintln!("Warning: failed to parse assumption pattern '{string}'");
+            "parse_error".parse().unwrap()
+        })
     }
 }
 
@@ -114,7 +134,10 @@ impl<L: SynthLanguage> From<Assumption<L>> for RecExpr<L> {
     fn from(assumption: Assumption<L>) -> Self {
         let string = format!("({} {})", L::assumption_label(), assumption.pat);
 
-        string.parse().expect("Failed to parse assumption pattern")
+        string.parse().unwrap_or_else(|_| {
+            eprintln!("Warning: failed to parse assumption pattern '{string}'");
+            "parse_error".parse().unwrap()
+        })
     }
 }
 

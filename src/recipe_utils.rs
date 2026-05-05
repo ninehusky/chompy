@@ -41,6 +41,7 @@ pub enum LLMUsage {
     EnumerationOnly(LLMEnumerationConfig),
     Filter(LLMFilterConfig),
     Combined(Vec<LLMUsage>),
+    LLMOnly,
 }
 
 #[derive(Clone, Debug)]
@@ -529,6 +530,50 @@ fn get_enum_cfg(llm_usage: LLMUsage) -> Option<LLMUsage> {
     }
 }
 
+async fn run_llm_only_workload<L: SynthLanguage>(workload: &Workload) -> Ruleset<L> {
+    use crate::llm::{get_llm_rules, mentions_assumption_label};
+    use reqwest::Client;
+
+    let client = Client::new();
+    let raw_rules = get_llm_rules(&client, workload).await;
+
+    println!("[llm_only] LLM returned {} candidate lines", raw_rules.len());
+    for s in &raw_rules {
+        println!("[llm_only] raw: {}", s);
+    }
+
+    let mut ruleset = Ruleset::default();
+    for s in raw_rules {
+        if mentions_assumption_label::<L>(&s) {
+            println!("[llm_only] FAIL (uses reserved `assume` token): {}", s);
+            continue;
+        }
+        match crate::enumo::Rule::from_string(&s) {
+            Ok((fwd, bkwd)) => {
+                if fwd.is_valid() {
+                    println!("[llm_only] PASS (valid): {}", fwd);
+                    ruleset.add(fwd);
+                } else {
+                    println!("[llm_only] FAIL (invalid): {}", s);
+                }
+                if let Some(bk) = bkwd {
+                    if bk.is_valid() {
+                        println!("[llm_only] PASS (valid): {}", bk);
+                        ruleset.add(bk);
+                    } else {
+                        println!("[llm_only] FAIL (invalid): {}", s);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[llm_only] FAIL (parse error): {:?} — {}", s, e);
+            }
+        }
+    }
+    println!("[llm_only] {} rules passed syntactic + semantic filters", ruleset.len());
+    ruleset
+}
+
 /// Runs rule inference:
 ///     1. convert workload to e-graph
 ///     2. If there are prior rules, compress the e-graph using them
@@ -541,6 +586,10 @@ pub async fn run_workload<L: SynthLanguage>(
     prior_impls: ImplicationSet<L>,
     llm_usage: LLMUsage,
 ) -> Ruleset<L> {
+    if matches!(llm_usage, LLMUsage::LLMOnly) {
+        return run_llm_only_workload(&workload).await;
+    }
+
     let mut prior_impls = prior_impls.clone();
     println!("[run_workload] Running workload");
     let start = Instant::now();

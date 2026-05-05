@@ -56,8 +56,10 @@ pub async fn main() {
 
     let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
     let default_enum_cfg = LLMEnumerationConfig::default()
-        .with_num_conditions(20)
-        .with_num_terms(100);
+        // 2026-05-03 (late): 10/10 and 20/20 both fit on gpt-5.4 + 14 GB;
+        // bumping to 40/40 to find the OOM boundary.
+        .with_num_conditions(40)
+        .with_num_terms(40);
 
     let llm_usage = match args.llm_usage.as_str() {
         "baseline" => LLMUsage::None,
@@ -69,6 +71,7 @@ pub async fn main() {
             LLMUsage::Filter(default_filter_cfg.clone()),
             LLMUsage::Enumeration(default_enum_cfg.clone()),
         ]),
+        "llm_only" => LLMUsage::LLMOnly,
         _ => panic!("Invalid llm_usage"),
     };
 
