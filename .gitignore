@@ -47,3 +47,12 @@ python/bin
 python/include
 python/lib
 python/pyvenv.cfg
+
+# FMCAD-2026 artifact exceptions: rulesets (.txt) and synthesis logs (.log)
+# under eval-docker/ and eval-archive/ ARE the artifact and must be tracked.
+# Placed at end so these exceptions override the broad *.txt and *.log rules
+# above (later rules win in gitignore).
+!eval-docker/**/*.txt
+!eval-docker/**/*.log
+!eval-archive/**/*.txt
+!eval-archive/**/*.log
