@@ -100,6 +100,126 @@ for provenance only and the FMCAD-2026 artifact uses the post-revert sweep.
 
 Commit + push.
 
+### 2.5. Pre-sweep code audit — verify rows match paper spec BEFORE 20+ hours of compute
+
+This is read-only file inspection. No compute. Goal: catch any code-vs-paper
+mismatch before kicking off the sweep, so we don't waste 20+ hours producing
+data that doesn't match the spec.
+
+#### 2.5a. Verify the CLI → `LLMUsage` mapping in `src/main.rs`
+
+`src/main.rs:65-77` should map each CLI flag to the expected variant:
+
+| Paper row | CLI flag | Expected `LLMUsage` variant |
+|---|---|---|
+| baseline | `baseline` | `LLMUsage::None` |
+| enum_only | `enum_only` | `LLMUsage::EnumerationOnly(default_enum_cfg.clone())` |
+| with_enum | `baseline_and_enum` | `LLMUsage::Enumeration(default_enum_cfg.clone())` |
+| filter_1 | `baseline_and_filter_1` | `LLMUsage::Filter(default_filter_cfg.clone().with_top_k(1))` |
+| filter_5 | `baseline_and_filter_5` | `LLMUsage::Filter(default_filter_cfg.clone().with_top_k(5))` |
+| enum + filter | `baseline_with_filter_5_and_enum` | `LLMUsage::Combined([Filter(default_filter_cfg.clone()), Enumeration(default_enum_cfg.clone())])` |
+| llm-only | `llm_only` | `LLMUsage::LLMOnly` |
+
+```bash
+sed -n '65,77p' src/main.rs   # eyeball the mapping
+```
+
+#### 2.5b. Verify the LLM caps and filter threshold in `src/main.rs`
+
+```bash
+grep -nE "with_on_threshold|with_num_conditions|with_num_terms" src/main.rs
+```
+
+Expected:
+- `default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10)` — filter only fires when the minimized candidate set exceeds 10 rules.
+- `default_enum_cfg = LLMEnumerationConfig::default().with_num_conditions(40).with_num_terms(40)` — LLM emissions hard-capped at 40 terms / 40 conditions per call site.
+
+#### 2.5c. Verify LLMOnly short-circuit at `src/main.rs:85-86`
+
+`llm_only` mode must bypass the recipe machinery. Check:
+
+```bash
+sed -n '83,93p' src/main.rs
+```
+
+Expected: an `if matches!(llm_usage, LLMUsage::LLMOnly) { run_llm_only_recipe::<Pred>().await }` branch BEFORE the `match args.recipe { ... }` arm. If the conditional is missing, llm-only would fall into `og_recipe(LLMOnly).await` and the `assert!` in `run_workload` would panic immediately.
+
+#### 2.5d. Verify the LLMOnly assertion in `src/recipe_utils.rs`
+
+The recipe machinery must defensively reject LLMOnly:
+
+```bash
+grep -nA2 "LLMOnly must be handled at the top level" src/recipe_utils.rs
+```
+
+Expected: `assert!(!matches!(llm_usage, LLMUsage::LLMOnly), ...)` near `run_workload`.
+
+#### 2.5e. Verify the conditions-from-LLM gate in `src/recipe_utils.rs`
+
+Only `EnumerationOnly` should fetch LLM conditions. Other LLM-using modes
+(Enumeration, Combined-with-Enumeration) must use chompy-only conditions.
+
+```bash
+grep -nA1 "matches!(cfg.clone(), LLMUsage::EnumerationOnly" src/recipe_utils.rs
+```
+
+Expected: `let conditions = if matches!(cfg.clone(), LLMUsage::EnumerationOnly(_)) {` — this gate is what enforces "with_enum and enum+filter use chompy-only conditions" per the paper. If the gate is missing or expanded, with_enum and enum+filter would also fetch LLM conditions, contradicting the paper.
+
+#### 2.5f. Verify the validator (`check_wraps_cleanly`) is ON
+
+```bash
+grep -c check_wraps_cleanly src/conditions/assumption.rs   # MUST print 3
+```
+
+3 hits = function definition + 2 call sites in `Assumption::new` and `Assumption::new_unsafe`. If the count is 0, the validator is reverted; STOP and verify branch state.
+
+#### 2.5g. Verify the LLM model is gpt-5.4 (intentional bump)
+
+```bash
+grep -c '"gpt-5.4"' src/llm.rs   # should print 8
+```
+
+`gpt-5.4` is the intended model for this artifact. If it's `gpt-4o`, paper text is referencing the older model and code drifted; reconcile before sweep.
+
+#### 2.5h. Verify Z3 4.12.1 pin in Dockerfile
+
+```bash
+grep -nE "Z3_VERSION|z3-4\." Dockerfile Dockerfile.update
+```
+
+Expected: 4.12.1 referenced in both files. This is the Z3 version that empirically reproduced the original eval.
+
+#### 2.5i. Verify `Cargo.lock` exists and isn't drifted
+
+```bash
+ls -la Cargo.lock           # must exist; mtime should be ≥ 2026-04-17
+git ls-files Cargo.lock     # may print empty (still gitignored) — fine
+```
+
+Cargo.lock is gitignored. If it's missing on a fresh clone, `cargo build` will resolve fresh — could pick up a different egg or z3-sys patch version. If you don't see Cargo.lock locally, STOP and copy from the laptop's repo (or `git add -f` it before the sweep starts).
+
+#### 2.5j. Verify `.gitignore` exception placement
+
+```bash
+tail -10 .gitignore
+```
+
+Expected: the `!eval-docker/**/*.txt` and `!eval-docker/**/*.log` exceptions appear AFTER the broad `*.txt` and `*.log` rules. If they're reordered above, the sweep's rulesets and logs won't be tracked, defeating the artifact.
+
+#### Stop signals from this audit
+
+If any of these fail before kicking off:
+
+- `LLMUsage` mapping doesn't match the table in 2.5a → code drift; STOP.
+- `check_wraps_cleanly` count ≠ 3 → unintended revert state; STOP.
+- LLMOnly short-circuit missing in main.rs → would panic on llm-only; STOP.
+- `EnumerationOnly` conditions-gate is broadened → would fetch conditions for with_enum / enum+filter, contradicting paper; STOP.
+- Model name is not `gpt-5.4` → paper-vs-code mismatch; reconcile before sweep.
+- Z3 not pinned to 4.12.1 → derivability could drift; STOP.
+
+Only after **all 2.5a-2.5j checks pass** do you proceed to step 3 (edit
+`run_the_eval.py`) and step 5 (kick off the sweep).
+
 ### 3. Edit `python/run_the_eval.py` for the full sweep
 
 Change `usages` to all 7 modes:
