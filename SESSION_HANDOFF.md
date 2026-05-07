@@ -1,41 +1,55 @@
-# Session handoff — FMCAD-2026 artifact prep (state as of 2026-05-07)
+# Session handoff — FMCAD-2026 artifact prep (state as of 2026-05-07, REVISED)
 
 > Resuming Claude Code on a different machine? Read this top-to-bottom, then
 > begin from the **Next steps** section.
 
-## Where we are
+## Where we are (REVISED 2026-05-07 noon)
 
-The `fmcad-2026` branch is at commit `c6c3795` ("Revert check_wraps_cleanly to
-restore byte-reproducibility of cited 5/3 baseline"). The repo is clean except
-for some untracked `eval-docker/2026_05_07_*` directories from
-investigation/test runs that can be deleted.
+The `fmcad-2026` branch is at commit `f6790c7` ("Revert 'Revert
+check_wraps_cleanly...'"). i.e. `check_wraps_cleanly` is BACK IN — the
+validator is enabled. Branch tip is the post-revert-of-revert state.
 
-**Verified at this state**: rebuilding `chompy:latest` from `c6c3795` and
-running `--llm-usage baseline` produces a `full_baseline.txt` whose MD5 is
+**Verified earlier at the validator-OFF state** (commit `c6c3795`, no longer
+HEAD): rebuilding from that state and running `--llm-usage baseline`
+produced a `full_baseline.txt` with MD5
 `1f9e7cb2fc80a5fff43b13688cbccb36` — byte-identical to all five cited 5/3
-baselines. Halide and Caviar derivability JSONs are also byte-identical.
+baselines. So we KNOW the 5/3 binary functionally matches HEAD-without-validator
+on the deterministic baseline path. We've used that to confirm
+`check_wraps_cleanly` was the only data-affecting drift.
 
-## What we decided
+## What we decided (REVISED)
 
-**Re-run the full 5×7 sweep** with the current binary (post-revert) to produce
-a coherent dataset where every cited number comes from one consistent build.
-This eliminates the "different rows produced from different binaries" worry
-that the 5/3+5/5 split has.
+**Keep the validator on. Do a full 5×7 rerun with the validator-on binary.**
+The cited 5/3 + 5/5 data will be archived (not deleted — used as provenance)
+and replaced with the new sweep's output. All 35 cells will then come from
+ONE coherent binary state (today's HEAD = `f6790c7`, with `check_wraps_cleanly`
+on).
 
-The existing 5/3 + 5/5 data should be archived (NOT deleted — used as
-provenance) and replaced with the new sweep's output.
+This means paper Tables will report SLIGHTLY DIFFERENT numbers than the
+original 5/3 sweep had:
 
-## Why we decided that
+- `baseline` row goes from 1579 rules to 1581 rules (verified earlier today;
+  derivability claims, `forwards.can` against Halide and Caviar, do NOT change)
+- LLM-using rows will produce new rule counts within natural LLM variance
+  (probably small shifts from cited means)
 
-- The 5/3 binary's exact code state isn't fully reconstructable (uncommitted
-  source at the time, ambiguous commit messages). We can verify byte-identity
-  with the deterministic `baseline` row (and we have), but for LLM-using rows
-  we can't verify the historical binary state.
-- Running all 7 rows × 5 from one known binary makes the artifact contract
-  airtight: "build this Docker image, run the pipeline, you get rulesets in
-  the variance range we cite."
-- Time budget allows: ~20-25 hours wallclock, deadline is Monday EOD, ~60+
-  hours of slack from this commit.
+The benefit: the artifact ships a single binary that PROVABLY produces the
+shipped rulesets. No "different rows from different binaries" caveat needed
+in ARTIFACT.md.
+
+## Why we kept the validator (vs continuing with the revert)
+
+- The validator is a real defensive fix for malformed LLM emissions
+  (multi-`if` rules) that would panic `chop_assumption` later. Future work
+  benefits from it.
+- The 0.13% baseline rule-count shift is harmless (derivability identical).
+- Reviewers re-running synthesis with the artifact's Docker image get exactly
+  the data we ship.
+- Empirically, the validator + existing `Assumption::new(...).unwrap()` call
+  sites coexist fine: the 5/3 sweeps that included the validator (per
+  user recollection) completed without panics. LLM-derived strings flow
+  through `Rule::from_string` (`src/enumo/rule.rs:59`) which uses proper
+  `Result` handling, not unwrap.
 
 ## Cross-row mode → paper-row mapping (for reference)
 
@@ -61,7 +75,8 @@ LLM enumeration is hard-capped at 40 terms / 40 conditions per call site
 git fetch
 git checkout fmcad-2026
 git pull
-git rev-parse --short HEAD   # should match c6c3795 or newer revert-preserving commit
+git rev-parse --short HEAD   # should be f6790c7 or newer descendant
+grep -c check_wraps_cleanly src/conditions/assumption.rs   # should print 3 (validator IS in the code)
 ```
 
 Check that `Dockerfile` and `Dockerfile.update` are present, and that
@@ -143,26 +158,32 @@ Then update paper Tables 1/2 numbers from the new data using
 
 ## Critical context (worth re-reading)
 
-### Why `check_wraps_cleanly` is reverted
+### Why `check_wraps_cleanly` is KEPT (revised plan)
 
-The validator (added in commit `a4db5de`) was data-affecting in baseline mode:
-HEAD-with-validator produces 1581 baseline rules; HEAD-without-validator
-produces 1579 (matches cited 5/3 data byte-identical). The 5/3 binary
-empirically did not have this validator. To make today's binary match the
-cited data, the revert is mandatory.
+The validator (added in commit `a4db5de`) is data-affecting: HEAD-with-validator
+produces 1581 baseline rules; HEAD-without-validator produces 1579 (matches
+cited 5/3 baseline byte-identical). The 5/3 binary empirically did not have
+this validator on for the baseline run.
 
-The validator's intended purpose (rejecting malformed LLM-emitted assumption
-patterns earlier in the pipeline) is real but should be re-introduced AFTER
-the FMCAD submission, on a follow-up branch.
+We considered shipping HEAD-without-validator to match cited data, but
+chose to keep the validator on because:
 
-### Artifact contract (Option B from discussion)
+1. It's a defensive fix for malformed LLM emissions; useful going forward.
+2. The full 5×7 rerun under one binary state is methodologically cleaner
+   than retroactively reconstructing the original binary.
+3. Derivability claims (`forwards.can` against Halide and Caviar) don't shift
+   between validator-on and validator-off baseline runs (verified: 48 / 32
+   in both).
 
-- Ship the 35 rulesets (`.txt`) + derivability JSONs + logs + Dockerfile
-  pinned to Z3 4.12.1.
+### Artifact contract
+
+- Ship the 35 NEW rulesets from this rerun (`.txt`) + derivability JSONs +
+  logs + Dockerfile pinned to Z3 4.12.1.
 - Reviewers reproduce Table 1 by running derivability against shipped
-  rulesets. We do NOT promise bit-identical resynthesis from re-runs.
-- Deterministic rows (`baseline`) reproduce byte-identical from the frozen
-  pipeline. LLM-using rows reproduce within natural LLM variance.
+  rulesets. Bit-identical resynthesis is not promised for LLM-using rows
+  (LLM is non-deterministic by design).
+- For deterministic `baseline`, today's HEAD (`f6790c7`) reproduces 1581 rules
+  byte-identical on every run.
 
 Earlier artifact (replay-with-cache) was rejected for fragility under prompt
 drift; this contract sidesteps that by not putting the LLM in the eval loop.
