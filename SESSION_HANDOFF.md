@@ -139,9 +139,14 @@ disown
 Output lands in `eval-docker/<timestamp>/full/<mode>/`. Check progress with
 `tail -F /tmp/chompy_overnight.log`.
 
-### 6. After the sweep completes (~20-25 hours)
+### 6. Post-sweep audit (REQUIRED before declaring artifact ready)
 
-Verify all 35 runs have non-empty `.txt` and both derivability JSONs:
+After the 5×7 sweep completes (~20-25 hours), run this audit. It verifies
+that the data on disk actually matches the paper specification. If any
+check trips a STOP signal, archive the partial sweep and ping the user
+before remediation.
+
+#### 6a. Completeness — all 35 cells have ruleset + 2 derivability JSONs
 
 ```bash
 for d in eval-docker/2026_05_07_*/full/*/; do
@@ -153,8 +158,122 @@ for d in eval-docker/2026_05_07_*/full/*/; do
 done
 ```
 
-Then update paper Tables 1/2 numbers from the new data using
-`python/summarize_runs.py eval-docker out.csv`.
+Should print `OK` for all 35 (5 runs × 7 modes). Any `MISS` → recovery via
+`run_overnight.sh recover_mode` or manual standalone re-run.
+
+#### 6b. Within-row binary consistency — same llm_usage Debug print
+
+Every mode's 5 runs should have a byte-identical `llm_usage:` Debug print.
+If they differ, some run was from a different binary state — STOP.
+
+```bash
+for mode in baseline llm_only enum_only baseline_and_enum \
+            baseline_and_filter_1 baseline_and_filter_5 \
+            baseline_with_filter_5_and_enum; do
+  echo "=== $mode ==="
+  for log in eval-docker/2026_05_07_*/full/$mode/full_$mode.log; do
+    grep -m1 "^llm_usage:" "$log" 2>/dev/null
+  done | sort -u | wc -l   # MUST be 1 (or 0 for baseline which prints differently)
+done
+```
+
+For baseline, the equivalent check is byte-identity:
+```bash
+md5 eval-docker/2026_05_07_*/full/baseline/full_baseline.txt
+# All 5 should print the same hash. Expected: 1581-rule ruleset, deterministic
+# (specific MD5 will differ from the 5/3 cited 1f9e7cb2... because the validator
+# is now on; what matters is that all 5 today match each other).
+```
+
+#### 6c. Per-row sanity check — rule counts and LLM call counts
+
+Each row's 5 runs should land within the expected ranges below. Runs
+outside these ranges aren't necessarily wrong (LLM variance), but very
+large deviations suggest something drifted.
+
+| Paper row | CLI mode | Expected rule count range | Term LLM calls per run | Cond LLM calls per run |
+|---|---|---|---|---|
+| baseline | `baseline` | exactly **1581** (deterministic, validator-on) | 0 | 0 |
+| llm-only | `llm_only` | ~100-150 | N/A | N/A — single GENERATE_RULES_PROMPT call |
+| with_enum | `baseline_and_enum` | ~1450-1600 | ~13 | **0** (chompy-only conditions) |
+| filter_1 | `baseline_and_filter_1` | ~830-900 | 0 | 0 — but ~50-65 filter batch calls |
+| filter_5 | `baseline_and_filter_5` | ~1380-1480 | 0 | 0 — but ~50-65 filter batch calls |
+| enum_only | `enum_only` | ~150-250 | ~13 | ~13 |
+| enum + filter | `baseline_with_filter_5_and_enum` | ~1300-1500 | ~13 | **0** + ~50-65 filter batch calls |
+
+**Critical**: only `enum_only` should have `[get_llm_conditions] kept N/40`
+log lines. If any other LLM-using mode has them, the validator-revert was
+left in place by accident.
+
+```bash
+echo "=== modes that fetched LLM conditions (should be enum_only ONLY) ==="
+for d in eval-docker/2026_05_07_*/full/*/; do
+  m=$(basename "$d")
+  log="$d/full_${m}.log"
+  if grep -q "\[get_llm_conditions\] kept" "$log" 2>/dev/null; then
+    echo "  $d"
+  fi
+done | sort -u
+```
+
+#### 6d. Headline derivability matches paper claims
+
+The cited 5/3 sweep had `forwards.can` against Halide of 48 for `baseline`
+and 32 for the Caviar baseline. These should be unchanged by the validator
+(verified earlier today on a single run). Other rows' `forwards.can` may
+shift slightly due to LLM variance.
+
+```bash
+python3 - <<'PY'
+import json, glob, os
+from collections import defaultdict
+totals = defaultdict(lambda: defaultdict(list))
+for h in glob.glob('eval-docker/2026_05_07_*/full/*/full_*_against_*.json'):
+    parts = h.split('/')
+    mode = parts[-2]
+    target = 'halide' if 'halide' in h else 'caviar'
+    j = json.load(open(h))
+    totals[mode][target].append(len(j.get('forwards',{}).get('can',[])))
+for mode in sorted(totals):
+    h = totals[mode]['halide']; c = totals[mode]['caviar']
+    print(f"  {mode:35s}  halide forwards.can mean={sum(h)/len(h):.1f} runs={h}")
+    print(f"  {' '*35}  caviar forwards.can mean={sum(c)/len(c):.1f} runs={c}")
+PY
+```
+
+Expected anchors (within ±2 due to natural variance for LLM rows):
+- `baseline` Halide: 48 (exact), Caviar: 32 (exact)
+- LLM-using rows: should be in the same ballpark as the cited means
+  (you can compare against `eval-archive/superseded_pre_revert_2026_05_07/`'s
+  derivability JSONs for reference)
+
+#### 6e. Stop signals — do NOT declare artifact ready if any of these fire
+
+1. Any baseline run produces ≠ 1581 rules.
+2. The 5 baselines aren't byte-identical to each other.
+3. `enum_only` doesn't produce both term AND condition prompts (~13 each).
+4. Any LLM-using mode other than `enum_only` produces `get_llm_conditions` log lines.
+5. Any row's `llm_usage:` Debug print differs across its 5 runs.
+6. `baseline` Halide `forwards.can` ≠ 48 or Caviar ≠ 32.
+7. Any row's `forwards.can` mean shifts by ≥ 5 from the cited 5/3 mean
+   (suggests something other than LLM variance is at play).
+
+If a stop signal fires, archive the affected runs to
+`eval-archive/aborted_<reason>_<date>/` and ping the user with the specific
+signal that fired before doing anything else.
+
+#### 6f. Update paper numbers
+
+If the audit passes, regenerate Tables 1/2 from the new data:
+
+```bash
+python3 python/summarize_runs.py eval-docker out.csv
+```
+
+Compare against the 5/3 cited numbers (preserved at
+`eval-archive/superseded_pre_revert_2026_05_07/`). Note any numerical
+shifts in the paper text. Most should be small (within ±5% on rule counts;
+derivability `forwards.can` values should be within ±2).
 
 ## Critical context (worth re-reading)
 
