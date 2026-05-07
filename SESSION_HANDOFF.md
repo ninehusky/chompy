@@ -53,10 +53,10 @@ in ARTIFACT.md.
 
 ## Cross-row mode → paper-row mapping (for reference)
 
-| Paper row | CLI `--llm-usage` | Code path |
+| Paper row | CLI `--llm-usage` | Code path (one-liner) |
 |---|---|---|
 | `baseline` | `baseline` | `og_recipe`, no LLM |
-| `enum_only` | `enum_only` | LLM provides 40 terms + 40 conditions, replaces workload |
+| `llm_terms_only` | `enum_only` | LLM provides 40 terms + 40 conditions, replaces workload |
 | `with_enum` | `baseline_and_enum` | LLM appends 40 terms; conditions still from chompy |
 | `filter_1` | `baseline_and_filter_1` | LLM clusters chompy candidates, top-1 per cluster |
 | `filter_5` | `baseline_and_filter_5` | LLM clusters chompy candidates, top-5 per cluster |
@@ -66,6 +66,30 @@ in ARTIFACT.md.
 LLM enumeration is hard-capped at 40 terms / 40 conditions per call site
 (see `src/main.rs:58-63`). Filter `on_threshold = 10` (filter only fires if
 `chosen_cond.len() > 10`); `top_k = {1, 5}` per the row name.
+
+### What each row means (paper-style description)
+
+This is the canonical row spec — what reviewers will see in the paper text
+and what the code MUST faithfully implement. If at any point you're unsure
+whether the code is doing the right thing for a row, this is the source of
+truth.
+
+- **baseline**: no LLM at all, whatsoever.
+- **llm-only**: GPT prompted directly for whole rules; chompy bypassed; rules
+  kept iff syntactically and semantically (z3) valid.
+- **with_enum** (CLI: `baseline_and_enum`): terms come from chompy ∪ LLM
+  (40 LLM terms appended per call site, capped); conditions still from chompy
+  only. No other LLM use than this.
+- **filter_1** (CLI: `baseline_and_filter_1`): enumeration like baseline; if
+  a minimized candidate set exceeds 10 rules, LLM clusters them and the top 1
+  per cluster is kept.
+- **filter_5** (CLI: `baseline_and_filter_5`): enumeration like baseline; if
+  a minimized candidate set exceeds 10 rules, LLM clusters them and the top 5
+  per cluster is kept.
+- **llm_terms_only** (CLI: `enum_only`): terms AND conditions both come
+  exclusively from the LLM, chompy's enumerator is disabled.
+- **enum + filter** (CLI: `baseline_with_filter_5_and_enum`): with_enum +
+  filter_5-style filtering.
 
 ## Next steps (execute in order on the new machine)
 
