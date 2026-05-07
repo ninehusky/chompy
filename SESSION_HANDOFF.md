@@ -346,8 +346,10 @@ large deviations suggest something drifted.
 | enum + filter | `baseline_with_filter_5_and_enum` | ~1300-1500 | ~13 | **0** + ~50-65 filter batch calls |
 
 **Critical**: only `enum_only` should have `[get_llm_conditions] kept N/40`
-log lines. If any other LLM-using mode has them, the validator-revert was
-left in place by accident.
+log lines. If any other LLM-using mode has them, the `EnumerationOnly`-only
+conditions gate in `get_llm_ammo` (`src/recipe_utils.rs:421`) has been
+broadened — that contradicts the paper spec for `with_enum` and `enum + filter`
+which both say "conditions still from chompy only." STOP and reconcile.
 
 ```bash
 echo "=== modes that fetched LLM conditions (should be enum_only ONLY) ==="
