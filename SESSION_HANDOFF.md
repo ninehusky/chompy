@@ -17,21 +17,24 @@ baselines. So we KNOW the 5/3 binary functionally matches HEAD-without-validator
 on the deterministic baseline path. We've used that to confirm
 `check_wraps_cleanly` was the only data-affecting drift.
 
-## What we decided (REVISED)
+## What we decided (REVISED-AGAIN 2026-05-07 evening)
 
 **Keep the validator on. Do a full 5×7 rerun with the validator-on binary.**
 The cited 5/3 + 5/5 data will be archived (not deleted — used as provenance)
 and replaced with the new sweep's output. All 35 cells will then come from
-ONE coherent binary state (today's HEAD = `f6790c7`, with `check_wraps_cleanly`
-on).
+ONE coherent binary state (today's HEAD with `check_wraps_cleanly` on).
 
-This means paper Tables will report SLIGHTLY DIFFERENT numbers than the
-original 5/3 sweep had:
+**Updated finding (2026-05-07 evening)**: the validator's effect on baseline
+output is **0 rules**. A fresh validator-on baseline run reproduces the
+cited 5/3 baseline byte-identical (1579 rules, MD5 `1f9e7cb2...`).
+Earlier observation that validator-on baseline produced 1581 was an
+ANOMALY — caused by an uncommitted `recipe_utils.rs` patch in the working
+tree at the time of the earlier run, not by the validator itself. With
+that patch gone (and the validator re-introduced), baseline is 1579.
 
-- `baseline` row goes from 1579 rules to 1581 rules (verified earlier today;
-  derivability claims, `forwards.can` against Halide and Caviar, do NOT change)
-- LLM-using rows will produce new rule counts within natural LLM variance
-  (probably small shifts from cited means)
+This means paper Tables do NOT need numerical updates for the baseline row.
+LLM-using rows will produce new rule counts within natural LLM variance
+(probably small shifts from cited means).
 
 The benefit: the artifact ships a single binary that PROVABLY produces the
 shipped rulesets. No "different rows from different binaries" caveat needed
@@ -42,7 +45,8 @@ in ARTIFACT.md.
 - The validator is a real defensive fix for malformed LLM emissions
   (multi-`if` rules) that would panic `chop_assumption` later. Future work
   benefits from it.
-- The 0.13% baseline rule-count shift is harmless (derivability identical).
+- It has NO baseline rule-count effect (verified: 1579 byte-identical to
+  cited with validator on).
 - Reviewers re-running synthesis with the artifact's Docker image get exactly
   the data we ship.
 - Empirically, the validator + existing `Assumption::new(...).unwrap()` call
@@ -337,7 +341,7 @@ large deviations suggest something drifted.
 
 | Paper row | CLI mode | Expected rule count range | Term LLM calls per run | Cond LLM calls per run |
 |---|---|---|---|---|
-| baseline | `baseline` | exactly **1581** (deterministic, validator-on) | 0 | 0 |
+| baseline | `baseline` | exactly **1579** (deterministic; byte-identical to cited 5/3 MD5 1f9e7cb2...) | 0 | 0 |
 | llm-only | `llm_only` | ~100-150 | N/A | N/A — single GENERATE_RULES_PROMPT call |
 | with_enum | `baseline_and_enum` | ~1450-1600 | ~13 | **0** (chompy-only conditions) |
 | filter_1 | `baseline_and_filter_1` | ~830-900 | 0 | 0 — but ~50-65 filter batch calls |
@@ -395,7 +399,7 @@ Expected anchors (within ±2 due to natural variance for LLM rows):
 
 #### 6e. Stop signals — do NOT declare artifact ready if any of these fire
 
-1. Any baseline run produces ≠ 1581 rules.
+1. Any baseline run produces ≠ 1579 rules.
 2. The 5 baselines aren't byte-identical to each other.
 3. `enum_only` doesn't produce both term AND condition prompts (~13 each).
 4. Any LLM-using mode other than `enum_only` produces `get_llm_conditions` log lines.
@@ -447,7 +451,7 @@ chose to keep the validator on because:
 - Reviewers reproduce Table 1 by running derivability against shipped
   rulesets. Bit-identical resynthesis is not promised for LLM-using rows
   (LLM is non-deterministic by design).
-- For deterministic `baseline`, today's HEAD (`f6790c7`) reproduces 1581 rules
+- For deterministic `baseline`, today's HEAD reproduces 1579 rules
   byte-identical on every run.
 
 Earlier artifact (replay-with-cache) was rejected for fragility under prompt
