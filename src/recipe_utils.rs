@@ -530,12 +530,16 @@ fn get_enum_cfg(llm_usage: LLMUsage) -> Option<LLMUsage> {
     }
 }
 
-async fn run_llm_only_workload<L: SynthLanguage>(workload: &Workload) -> Ruleset<L> {
+/// Single LLM prompt (`GENERATE_RULES_PROMPT`) → parse → keep iff syntactically
+/// and semantically valid (z3 via `Rule::is_valid`). No chompy enumeration,
+/// minimization, or recipe — this is the `--llm-usage llm_only` row, and it
+/// must remain a single prompt for the row to mean what the paper claims.
+pub async fn run_llm_only_recipe<L: SynthLanguage>() -> Ruleset<L> {
     use crate::llm::{get_llm_rules, mentions_assumption_label};
     use reqwest::Client;
 
     let client = Client::new();
-    let raw_rules = get_llm_rules(&client, workload).await;
+    let raw_rules = get_llm_rules(&client).await;
 
     println!("[llm_only] LLM returned {} candidate lines", raw_rules.len());
     for s in &raw_rules {
@@ -586,9 +590,10 @@ pub async fn run_workload<L: SynthLanguage>(
     prior_impls: ImplicationSet<L>,
     llm_usage: LLMUsage,
 ) -> Ruleset<L> {
-    if matches!(llm_usage, LLMUsage::LLMOnly) {
-        return run_llm_only_workload(&workload).await;
-    }
+    assert!(
+        !matches!(llm_usage, LLMUsage::LLMOnly),
+        "LLMOnly must be handled at the top level (main.rs) — it is a single-prompt mode and must not enter the recipe machinery"
+    );
 
     let mut prior_impls = prior_impls.clone();
     println!("[run_workload] Running workload");

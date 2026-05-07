@@ -7,14 +7,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Configurations
 recipes = ["full"]
 usages = [
-    # 2026-05-04 (very late): focused batch — only the 3 LLM-enum modes,
-    # which were previously blocked at 20/100 and now run at 40/40 (gpt-5.4).
-    # The other 4 rows (baseline, llm_only, filter_1, filter_5) already have
-    # n=5 in eval-docker/ from earlier runs and aren't affected by the
-    # num_terms/num_conditions knobs.
-    "enum_only",
-    "baseline_and_enum",
-    "baseline_with_filter_5_and_enum",
+    # 2026-05-04 (later): single-mode test of the new llm_only single-prompt
+    # path (recipe machinery bypassed in main.rs). The previously-archived
+    # n=5 llm_only runs in eval-docker/2026_05_03_*/full/llm_only/ are
+    # invalidated (hybrid LLM + baseline-chompy under the bug) and have been
+    # moved to eval-archive/llm_only_pre_single_prompt_2026_05_04/. Expand
+    # this list back out (and to n=5 invocations of run_one_table.sh) once
+    # this single run is verified.
+    "llm_only",
 ]
 
 # Output root is overridable so the docker wrapper can land runs in a separate
@@ -37,9 +37,19 @@ def run_recipe(recipe: str, usage: str):
 
     # Per-mode audit log of every LLM API response (Rust side appends to
     # $CHOMPY_LLM_LOG_DIR/llm_responses.jsonl). Lets us see what the model
-    # said in *this specific run*, separately from the canonical llm_cached/
-    # which is shared across runs and overwritten on hash collision.
-    env = {**os.environ, "CHOMPY_LLM_LOG_DIR": str(recipe_dir)}
+    # said in *this specific run*.
+    #
+    # Per-(run, recipe, mode) cache dir (Rust reads CHOMPY_LLM_CACHE_DIR and
+    # falls back to llm_cached/). Without this override, all runs share
+    # llm_cached/ and last-writer-wins on hash collision — fatal for paper
+    # variance runs because n=5 invocations on the same prompt would all
+    # collapse to whatever response the last run got. With it, each run dir
+    # is self-contained and FAKE_LLM=1-replayable independently.
+    env = {
+        **os.environ,
+        "CHOMPY_LLM_LOG_DIR": str(recipe_dir),
+        "CHOMPY_LLM_CACHE_DIR": str(recipe_dir / "llm_cached"),
+    }
 
     # Invoke cargo run
     with open(output_log, "w") as log_file:

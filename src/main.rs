@@ -8,6 +8,7 @@ use ruler::halide::og_recipe_plus_select;
 use ruler::halide::Pred;
 
 use ruler::halide::og_recipe;
+use ruler::recipe_utils::run_llm_only_recipe;
 use ruler::recipe_utils::LLMEnumerationConfig;
 use ruler::recipe_utils::LLMFilterConfig;
 use ruler::recipe_utils::LLMUsage;
@@ -81,10 +82,14 @@ pub async fn main() {
         panic!("Failed to create output file: {}", e);
     }
 
-    let rules = match args.recipe {
-        Recipe::MiniRecipe => mini_recipe(llm_usage).await,
-        Recipe::SelectRecipe => og_recipe_plus_select(llm_usage).await,
-        Recipe::NormalRecipe => og_recipe(llm_usage).await,
+    let rules = if matches!(llm_usage, LLMUsage::LLMOnly) {
+        run_llm_only_recipe::<Pred>().await
+    } else {
+        match args.recipe {
+            Recipe::MiniRecipe => mini_recipe(llm_usage).await,
+            Recipe::SelectRecipe => og_recipe_plus_select(llm_usage).await,
+            Recipe::NormalRecipe => og_recipe(llm_usage).await,
+        }
     };
 
     rules.to_file(&args.output_path);

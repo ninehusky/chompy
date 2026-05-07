@@ -21,7 +21,21 @@ use crate::{ConditionRecipe, HashMap, HashSet, IndexMap, Recipe};
 
 pub type CategorizedRuleset<L> = IndexMap<String, Ruleset<L>>;
 
-const CACHE_DIR: &str = "llm_cached";
+const DEFAULT_CACHE_DIR: &str = "llm_cached";
+
+/// Resolve the LLM response cache directory. Defaults to `llm_cached/` (the
+/// canonical project-root location). Override with `CHOMPY_LLM_CACHE_DIR` to
+/// scope the cache per (run, recipe, mode), which the eval wrapper does so
+/// that each run's API responses can be replayed independently via
+/// `FAKE_LLM=1` without being clobbered by a later run on the same prompt
+/// hash. Without that override, all runs share `llm_cached/` and last-writer
+/// wins on hash collision — fine for dev, wrong for paper variance runs.
+fn cache_dir() -> String {
+    std::env::var("CHOMPY_LLM_CACHE_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_CACHE_DIR.to_string())
+}
 
 #[derive(Serialize, Deserialize)]
 struct CacheEntry {
@@ -572,7 +586,8 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
     // Build the request payload
     let model = "gpt-5.4";
     let h = hash_request(&prompt, model);
-    let cache_file = format!("{}/{}.json", CACHE_DIR, h);
+    let cache_dir = cache_dir();
+    let cache_file = format!("{}/{}.json", cache_dir, h);
 
     // Replay mode
     if std::env::var("FAKE_LLM").is_ok() {
@@ -630,7 +645,7 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
     println!("OUTPUT:\n{}", text_output);
 
     // Save to cache
-    fs::create_dir_all(CACHE_DIR).ok();
+    fs::create_dir_all(&cache_dir).ok();
     let entry = CacheEntry {
         prompt,
         model: model.to_string(),
@@ -1062,7 +1077,8 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
 
     let model = "gpt-5.4";
     let hash = hash_request(&prompt, model);
-    let cache_path = format!("{}/{}.json", CACHE_DIR, hash);
+    let cache_dir = cache_dir();
+    let cache_path = format!("{}/{}.json", cache_dir, hash);
 
     // Replay mode
     if std::env::var("FAKE_LLM").is_ok() {
@@ -1112,6 +1128,7 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         "model": model,
         "response": text_output,
     });
+    fs::create_dir_all(&cache_dir).ok();
     fs::write(&cache_path, serde_json::to_string_pretty(&cached_obj).unwrap())
         .map_err(|e| format!("Failed to write cache: {e}"))?;
 
@@ -1267,7 +1284,7 @@ pub fn parse_scored_rules<L: SynthLanguage>(text: &str) -> Vec<ScoredRule<L>> {
     results
 }
 
-pub async fn get_llm_rules(client: &Client, _workload: &Workload) -> Vec<String> {
+pub async fn get_llm_rules(client: &Client) -> Vec<String> {
     match send_openai_request(client, GENERATE_RULES_PROMPT.to_string()).await {
         Err(e) => {
             println!("[llm_only] API error: {}", e);
