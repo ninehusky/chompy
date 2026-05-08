@@ -43,17 +43,32 @@ impl FromStr for Recipe {
 
 #[derive(Parser, Debug)]
 struct ChompyArgs {
+    #[clap(long, required_unless_present = "derive_only")]
+    recipe: Option<Recipe>,
+    #[clap(long, required_unless_present = "derive_only")]
+    llm_usage: Option<String>,
+    #[clap(long, required_unless_present = "derive_only")]
+    output_path: Option<String>,
+    /// Load a ruleset from this .txt file and run derivability only (no synthesis).
+    /// Writes _against_halide.json and _against_caviar.json next to the input file.
     #[clap(long)]
-    recipe: Recipe,
-    #[clap(long)]
-    llm_usage: String,
-    #[clap(long)]
-    output_path: String,
+    derive_only: Option<String>,
 }
 
 #[tokio::main]
 pub async fn main() {
     let args = ChompyArgs::parse();
+
+    if let Some(ruleset_path) = &args.derive_only {
+        let contents = std::fs::read_to_string(ruleset_path)
+            .unwrap_or_else(|e| panic!("Failed to read ruleset {}: {}", ruleset_path, e));
+        let rules = read_rules(&contents);
+        println!("Loaded {} rules from {}", rules.len(), ruleset_path);
+        for against in &[Against::Halide, Against::Caviar] {
+            get_derivability_results(rules.clone(), against.clone(), ruleset_path.clone(), true);
+        }
+        return;
+    }
 
     let default_filter_cfg = LLMFilterConfig::default().with_on_threshold(10);
     let default_enum_cfg = LLMEnumerationConfig::default()
@@ -62,7 +77,7 @@ pub async fn main() {
         .with_num_conditions(40)
         .with_num_terms(40);
 
-    let llm_usage = match args.llm_usage.as_str() {
+    let llm_usage = match args.llm_usage.unwrap().as_str() {
         "baseline" => LLMUsage::None,
         "enum_only" => LLMUsage::EnumerationOnly(default_enum_cfg.clone()),
         "baseline_and_enum" => LLMUsage::Enumeration(default_enum_cfg.clone()),
@@ -78,31 +93,28 @@ pub async fn main() {
 
     // create the output file if it doesn't exist.
 
-    if let Err(e) = File::create(&args.output_path) {
+    let output_path = args.output_path.unwrap();
+
+    if let Err(e) = File::create(&output_path) {
         panic!("Failed to create output file: {}", e);
     }
 
     let rules = if matches!(llm_usage, LLMUsage::LLMOnly) {
         run_llm_only_recipe::<Pred>().await
     } else {
-        match args.recipe {
+        match args.recipe.unwrap() {
             Recipe::MiniRecipe => mini_recipe(llm_usage).await,
             Recipe::SelectRecipe => og_recipe_plus_select(llm_usage).await,
             Recipe::NormalRecipe => og_recipe(llm_usage).await,
         }
     };
 
-    rules.to_file(&args.output_path);
+    rules.to_file(&output_path);
 
-    println!("Wrote {} rules to {:?}", rules.len(), args.output_path);
+    println!("Wrote {} rules to {:?}", rules.len(), output_path);
 
     for against in &[Against::Halide, Against::Caviar] {
-        get_derivability_results(
-            rules.clone(),
-            against.clone(),
-            args.output_path.clone(),
-            true,
-        );
+        get_derivability_results(rules.clone(), against.clone(), output_path.clone(), true);
     }
 }
 
