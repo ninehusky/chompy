@@ -90,6 +90,7 @@ script also prints a human-readable table to stdout; after the
 
 ```
 row                       n_runs  num_rules      caviar_derivability  halide_derivability  runtime_seconds
+------------------------  ------  -------------  -------------------  -------------------  ---------------
 baseline                  5       1579.0 ± 0.0   73.3 ± 0.0           57.1 ± 0.0           1551.7 ± 13.9
 llm_only                  5       116.4 ± 11.5   9.8 ± 5.8            3.1 ± 2.5            30.7 ± 3.4
 llm_with_enum             5       1526.4 ± 20.0  73.3 ± 0.0           58.3 ± 1.2           1676.0 ± 47.3
