@@ -1,0 +1,1978 @@
+warning: unused imports: `ENodeOrVar` and `RecExpr`
+ --> src/enumo/mod.rs:7:20
+  |
+7 | use egg::{AstSize, ENodeOrVar, Extractor, RecExpr};
+  |                    ^^^^^^^^^^             ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `DeriveType`, `LLMFilterConfig`, and `enumo::Rule`
+  --> src/halide.rs:9:5
+   |
+ 9 |     enumo::Rule,
+   |     ^^^^^^^^^^^
+10 |     recipe_utils::{base_lang, iter_metric, LLMFilterConfig, LLMUsage},
+   |                                            ^^^^^^^^^^^^^^^
+11 |     time_fn_call, DeriveType, *,
+   |                   ^^^^^^^^^^
+
+warning: unused import: `thread_rng`
+ --> src/llm.rs:4:12
+  |
+4 | use rand::{thread_rng, SeedableRng};
+  |            ^^^^^^^^^^
+
+warning: unused import: `crate::recipe_utils::iter_metric`
+  --> src/llm.rs:17:5
+   |
+17 | use crate::recipe_utils::iter_metric;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `HashSet`
+  --> src/llm.rs:20:39
+   |
+20 | use crate::{ConditionRecipe, HashMap, HashSet, IndexMap, Recipe};
+   |                                       ^^^^^^^
+
+warning: unused imports: `AstSize`, `Extractor`, and `Runner`
+ --> src/recipe_utils.rs:3:11
+  |
+3 | use egg::{AstSize, EGraph, ENodeOrVar, Extractor, RecExpr, Runner};
+  |           ^^^^^^^                      ^^^^^^^^^           ^^^^^^
+
+warning: unused import: `Pattern`
+ --> src/recipe_utils.rs:9:13
+  |
+9 |     Limits, Pattern, SynthAnalysis, SynthLanguage,
+  |             ^^^^^^^
+
+warning: unnecessary trailing semicolon
+   --> src/recipe_utils.rs:356:6
+    |
+356 |     };
+    |      ^ help: remove this semicolon
+    |
+    = note: `#[warn(redundant_semicolons)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `prior`
+   --> src/enumo/ruleset.rs:512:9
+    |
+512 |         prior: &Ruleset<L>,
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_prior`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `prior`
+   --> src/enumo/ruleset.rs:679:63
+    |
+679 |     pub fn fast_cvec_match(egraph: &EGraph<L, SynthAnalysis>, prior: Ruleset<L>) -> Ruleset<L> {
+    |                                                               ^^^^^ help: if this is intentional, prefix it with an underscore: `_prior`
+
+warning: panic message contains unused formatting placeholders
+   --> src/llm.rs:869:75
+    |
+869 | ...                   panic!("send_group_rules_request failed after {attempt} attempts: {e}");
+    |                                                                     ^^^^^^^^^           ^^^
+    |
+    = note: this message is not used as a format string when given without arguments, but will be in Rust 2021
+    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2021/panic-macro-consistency.html>
+    = note: `#[warn(non_fmt_panics)]` (part of `#[warn(rust_2021_compatibility)]`) on by default
+help: add the missing arguments
+    |
+869 |                             panic!("send_group_rules_request failed after {attempt} attempts: {e}", ...);
+    |                                                                                                   +++++
+help: or add a "{}" format string to use the message literally
+    |
+869 |                             panic!("{}", "send_group_rules_request failed after {attempt} attempts: {e}");
+    |                                    +++++
+
+warning: `ruler` (lib) generated 11 warnings (run `cargo fix --lib -p ruler` to apply 10 suggestions)
+warning: unused import: `std::path::PathBuf`
+  --> src/main.rs:19:5
+   |
+19 | use std::path::PathBuf;
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ruler` (bin "ruler") generated 1 warning (run `cargo fix --bin "ruler" -p ruler` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.14s
+     Running `target/release/ruler --recipe full --llm-usage llm_only --output-path eval-docker/2026_05_09_06_18/full/llm_only/full_llm_only.txt`
+[llm] raw response JSON: {"id":"resp_02f151d84c6321d00069fed1cdc55c8195a4ef606eb0ec9e3f","object":"response","created_at":1778307533,"status":"completed","background":false,"billing":{"payer":"developer"},"completed_at":1778307559,"error":null,"frequency_penalty":0.0,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"max_tool_calls":null,"model":"gpt-5.4-2026-03-05","moderation":null,"output":[{"id":"msg_02f151d84c6321d00069fed1ce75588195b25ebf4be9cc449b","type":"message","status":"completed","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":"(+ ?a 0) ==> ?a\n(+ 0 ?a) ==> ?a\n(- ?a 0) ==> ?a\n(- ?a ?a) ==> 0\n(* ?a 1) ==> ?a\n(* 1 ?a) ==> ?a\n(* ?a 0) ==> 0\n(* 0 ?a) ==> 0\n(/ 0 ?a) ==> 0\n(/ ?a 1) ==> ?a\n(% 0 ?a) ==> 0\n(% ?a 1) ==> 0\n(% ?a -1) ==> 0\n(min ?a ?a) ==> ?a\n(max ?a ?a) ==> ?a\n(abs 0) ==> 0\n(abs (abs ?a)) ==> (abs ?a)\n(! (! ?a)) ==> (|| ?a 0)\n(|| ?a 0) ==> 1 if (!= ?a 0)\n(|| 0 ?a) ==> 1 if (!= ?a 0)\n(|| ?a ?a) ==> 1 if (!= ?a 0)\n(&& ?a 0) ==> 0\n(&& 0 ?a) ==> 0\n(&& ?a ?a) ==> 1 if (!= ?a 0)\n(! ?a) ==> 1 if (== ?a 0)\n(! ?a) ==> 0 if (!= ?a 0)\n(|| ?a ?b) ==> 1 if (!= ?a 0)\n(|| ?a ?b) ==> 1 if (!= ?b 0)\n(|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))\n(&& ?a ?b) ==> 0 if (== ?a 0)\n(&& ?a ?b) ==> 0 if (== ?b 0)\n(&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))\n(+ ?a ?b) ==> (+ ?b ?a)\n(* ?a ?b) ==> (* ?b ?a)\n(min ?a ?b) ==> (min ?b ?a)\n(max ?a ?b) ==> (max ?b ?a)\n(+ (+ ?a ?b) ?c) ==> (+ ?a (+ ?b ?c))\n(* (* ?a ?b) ?c) ==> (* ?a (* ?b ?c))\n(+ ?a (- ?b ?a)) ==> ?b\n(+ (- ?a ?b) ?b) ==> ?a\n(- (+ ?a ?b) ?b) ==> ?a\n(- (+ ?a ?b) ?a) ==> ?b\n(- ?a (- ?a ?b)) ==> ?b\n(- ?a (- ?b ?a)) ==> (- (* 2 ?a) ?b)\n(+ ?a ?a) ==> (* 2 ?a)\n(- 0 ?a) ==> (* -1 ?a)\n(- ?a (* -1 ?b)) ==> (+ ?a ?b)\n(+ ?a (* -1 ?b)) ==> (- ?a ?b)\n(* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c))\n(* (+ ?a ?b) ?c) ==> (+ (* ?a ?c) (* ?b ?c))\n(* ?a (- ?b ?c)) ==> (- (* ?a ?b) (* ?a ?c))\n(* (- ?a ?b) ?c) ==> (- (* ?a ?c) (* ?b ?c))\n(/ ?a ?a) ==> 1 if (!= ?a 0)\n(/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)\n(/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)\n(/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))\n(/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))\n(% ?a ?a) ==> 0 if (!= ?a 0)\n(% ?a ?b) ==> ?a if (== ?b 0)\n(% ?a ?b) ==> 0 if (== (% ?a ?b) 0)\n(% (+ ?a ?b) ?c) ==> (% (+ (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)\n(% (- ?a ?b) ?c) ==> (% (- (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)\n(% (* ?a ?b) ?c) ==> 0 if (== (% (* ?a ?b) ?c) 0)\n(min ?a ?b) ==> ?a if (<= ?a ?b)\n(min ?a ?b) ==> ?b if (<= ?b ?a)\n(max ?a ?b) ==> ?a if (>= ?a ?b)\n(max ?a ?b) ==> ?b if (>= ?b ?a)\n(min ?a (max ?a ?b)) ==> ?a\n(max ?a (min ?a ?b)) ==> ?a\n(min (max ?a ?b) ?b) ==> ?b\n(max (min ?a ?b) ?b) ==> ?b\n(min ?a (min ?b ?c)) ==> (min (min ?a ?b) ?c)\n(max ?a (max ?b ?c)) ==> (max (max ?a ?b) ?c)\n(min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)\n(max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)\n(abs ?a) ==> ?a if (>= ?a 0)\n(abs ?a) ==> (* -1 ?a) if (< ?a 0)\n(abs (* -1 ?a)) ==> (abs ?a)\n(abs ?a) ==> 0 if (== ?a 0)\n(abs ?a) ==> (max ?a (* -1 ?a))\n(abs ?a) ==> (min (* -1 ?a) ?a) if (<= ?a 0)\n(< ?a ?a) ==> 0\n(<= ?a ?a) ==> 1\n(> ?a ?a) ==> 0\n(>= ?a ?a) ==> 1\n(== ?a ?a) ==> 1\n(!= ?a ?a) ==> 0\n(< ?a ?b) ==> 1 if (< ?a ?b)\n(< ?a ?b) ==> 0 if (>= ?a ?b)\n(<= ?a ?b) ==> 1 if (<= ?a ?b)\n(<= ?a ?b) ==> 0 if (> ?a ?b)\n(> ?a ?b) ==> 1 if (> ?a ?b)\n(> ?a ?b) ==> 0 if (<= ?a ?b)\n(>= ?a ?b) ==> 1 if (>= ?a ?b)\n(>= ?a ?b) ==> 0 if (< ?a ?b)\n(== ?a ?b) ==> 1 if (== ?a ?b)\n(== ?a ?b) ==> 0 if (!= ?a ?b)\n(!= ?a ?b) ==> 1 if (!= ?a ?b)\n(!= ?a ?b) ==> 0 if (== ?a ?b)\n(< ?a ?b) ==> (> ?b ?a)\n(<= ?a ?b) ==> (>= ?b ?a)\n(> ?a ?b) ==> (< ?b ?a)\n(>= ?a ?b) ==> (<= ?b ?a)\n(== ?a ?b) ==> (== ?b ?a)\n(!= ?a ?b) ==> (!= ?b ?a)\n(< (+ ?a ?c) (+ ?b ?c)) ==> (< ?a ?b)\n(<= (+ ?a ?c) (+ ?b ?c)) ==> (<= ?a ?b)\n(> (+ ?a ?c) (+ ?b ?c)) ==> (> ?a ?b)\n(>= (+ ?a ?c) (+ ?b ?c)) ==> (>= ?a ?b)\n(== (+ ?a ?c) (+ ?b ?c)) ==> (== ?a ?b)\n(!= (+ ?a ?c) (+ ?b ?c)) ==> (!= ?a ?b)\n(< (- ?a ?c) (- ?b ?c)) ==> (< ?a ?b)\n(<= (- ?a ?c) (- ?b ?c)) ==> (<= ?a ?b)\n(> (- ?a ?c) (- ?b ?c)) ==> (> ?a ?b)\n(>= (- ?a ?c) (- ?b ?c)) ==> (>= ?a ?b)\n(== (- ?a ?c) (- ?b ?c)) ==> (== ?a ?b)\n(!= (- ?a ?c) (- ?b ?c)) ==> (!= ?a ?b)\n(< (min ?a ?b) ?a) ==> 0\n(< (min ?a ?b) ?b) ==> 0\n(> (max ?a ?b) ?a) ==> 0\n(> (max ?a ?b) ?b) ==> 0\n(<= (min ?a ?b) ?a) ==> 1\n(<= (min ?a ?b) ?b) ==> 1\n(>= (max ?a ?b) ?a) ==> 1\n(>= (max ?a ?b) ?b) ==> 1\n(min (+ ?a ?c) (+ ?b ?c)) ==> (+ (min ?a ?b) ?c)\n(max (+ ?a ?c) (+ ?b ?c)) ==> (+ (max ?a ?b) ?c)\n(min (- ?a ?c) (- ?b ?c)) ==> (- (min ?a ?b) ?c)\n(max (- ?a ?c) (- ?b ?c)) ==> (- (max ?a ?b) ?c)"}],"phase":"final_answer","role":"assistant"}],"parallel_tool_calls":true,"presence_penalty":0.0,"previous_response_id":null,"prompt_cache_key":null,"prompt_cache_retention":"in_memory","reasoning":{"effort":"none","summary":null},"safety_identifier":null,"service_tier":"default","store":true,"temperature":1.0,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":0.98,"truncation":"disabled","usage":{"input_tokens":1587,"input_tokens_details":{"cached_tokens":1408},"output_tokens":2238,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":3825},"user":null,"metadata":{}}
+OUTPUT:
+(+ ?a 0) ==> ?a
+(+ 0 ?a) ==> ?a
+(- ?a 0) ==> ?a
+(- ?a ?a) ==> 0
+(* ?a 1) ==> ?a
+(* 1 ?a) ==> ?a
+(* ?a 0) ==> 0
+(* 0 ?a) ==> 0
+(/ 0 ?a) ==> 0
+(/ ?a 1) ==> ?a
+(% 0 ?a) ==> 0
+(% ?a 1) ==> 0
+(% ?a -1) ==> 0
+(min ?a ?a) ==> ?a
+(max ?a ?a) ==> ?a
+(abs 0) ==> 0
+(abs (abs ?a)) ==> (abs ?a)
+(! (! ?a)) ==> (|| ?a 0)
+(|| ?a 0) ==> 1 if (!= ?a 0)
+(|| 0 ?a) ==> 1 if (!= ?a 0)
+(|| ?a ?a) ==> 1 if (!= ?a 0)
+(&& ?a 0) ==> 0
+(&& 0 ?a) ==> 0
+(&& ?a ?a) ==> 1 if (!= ?a 0)
+(! ?a) ==> 1 if (== ?a 0)
+(! ?a) ==> 0 if (!= ?a 0)
+(|| ?a ?b) ==> 1 if (!= ?a 0)
+(|| ?a ?b) ==> 1 if (!= ?b 0)
+(|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))
+(&& ?a ?b) ==> 0 if (== ?a 0)
+(&& ?a ?b) ==> 0 if (== ?b 0)
+(&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))
+(+ ?a ?b) ==> (+ ?b ?a)
+(* ?a ?b) ==> (* ?b ?a)
+(min ?a ?b) ==> (min ?b ?a)
+(max ?a ?b) ==> (max ?b ?a)
+(+ (+ ?a ?b) ?c) ==> (+ ?a (+ ?b ?c))
+(* (* ?a ?b) ?c) ==> (* ?a (* ?b ?c))
+(+ ?a (- ?b ?a)) ==> ?b
+(+ (- ?a ?b) ?b) ==> ?a
+(- (+ ?a ?b) ?b) ==> ?a
+(- (+ ?a ?b) ?a) ==> ?b
+(- ?a (- ?a ?b)) ==> ?b
+(- ?a (- ?b ?a)) ==> (- (* 2 ?a) ?b)
+(+ ?a ?a) ==> (* 2 ?a)
+(- 0 ?a) ==> (* -1 ?a)
+(- ?a (* -1 ?b)) ==> (+ ?a ?b)
+(+ ?a (* -1 ?b)) ==> (- ?a ?b)
+(* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c))
+(* (+ ?a ?b) ?c) ==> (+ (* ?a ?c) (* ?b ?c))
+(* ?a (- ?b ?c)) ==> (- (* ?a ?b) (* ?a ?c))
+(* (- ?a ?b) ?c) ==> (- (* ?a ?c) (* ?b ?c))
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)
+(/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)
+(/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))
+(/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))
+(% ?a ?a) ==> 0 if (!= ?a 0)
+(% ?a ?b) ==> ?a if (== ?b 0)
+(% ?a ?b) ==> 0 if (== (% ?a ?b) 0)
+(% (+ ?a ?b) ?c) ==> (% (+ (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)
+(% (- ?a ?b) ?c) ==> (% (- (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)
+(% (* ?a ?b) ?c) ==> 0 if (== (% (* ?a ?b) ?c) 0)
+(min ?a ?b) ==> ?a if (<= ?a ?b)
+(min ?a ?b) ==> ?b if (<= ?b ?a)
+(max ?a ?b) ==> ?a if (>= ?a ?b)
+(max ?a ?b) ==> ?b if (>= ?b ?a)
+(min ?a (max ?a ?b)) ==> ?a
+(max ?a (min ?a ?b)) ==> ?a
+(min (max ?a ?b) ?b) ==> ?b
+(max (min ?a ?b) ?b) ==> ?b
+(min ?a (min ?b ?c)) ==> (min (min ?a ?b) ?c)
+(max ?a (max ?b ?c)) ==> (max (max ?a ?b) ?c)
+(min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)
+(max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)
+(abs ?a) ==> ?a if (>= ?a 0)
+(abs ?a) ==> (* -1 ?a) if (< ?a 0)
+(abs (* -1 ?a)) ==> (abs ?a)
+(abs ?a) ==> 0 if (== ?a 0)
+(abs ?a) ==> (max ?a (* -1 ?a))
+(abs ?a) ==> (min (* -1 ?a) ?a) if (<= ?a 0)
+(< ?a ?a) ==> 0
+(<= ?a ?a) ==> 1
+(> ?a ?a) ==> 0
+(>= ?a ?a) ==> 1
+(== ?a ?a) ==> 1
+(!= ?a ?a) ==> 0
+(< ?a ?b) ==> 1 if (< ?a ?b)
+(< ?a ?b) ==> 0 if (>= ?a ?b)
+(<= ?a ?b) ==> 1 if (<= ?a ?b)
+(<= ?a ?b) ==> 0 if (> ?a ?b)
+(> ?a ?b) ==> 1 if (> ?a ?b)
+(> ?a ?b) ==> 0 if (<= ?a ?b)
+(>= ?a ?b) ==> 1 if (>= ?a ?b)
+(>= ?a ?b) ==> 0 if (< ?a ?b)
+(== ?a ?b) ==> 1 if (== ?a ?b)
+(== ?a ?b) ==> 0 if (!= ?a ?b)
+(!= ?a ?b) ==> 1 if (!= ?a ?b)
+(!= ?a ?b) ==> 0 if (== ?a ?b)
+(< ?a ?b) ==> (> ?b ?a)
+(<= ?a ?b) ==> (>= ?b ?a)
+(> ?a ?b) ==> (< ?b ?a)
+(>= ?a ?b) ==> (<= ?b ?a)
+(== ?a ?b) ==> (== ?b ?a)
+(!= ?a ?b) ==> (!= ?b ?a)
+(< (+ ?a ?c) (+ ?b ?c)) ==> (< ?a ?b)
+(<= (+ ?a ?c) (+ ?b ?c)) ==> (<= ?a ?b)
+(> (+ ?a ?c) (+ ?b ?c)) ==> (> ?a ?b)
+(>= (+ ?a ?c) (+ ?b ?c)) ==> (>= ?a ?b)
+(== (+ ?a ?c) (+ ?b ?c)) ==> (== ?a ?b)
+(!= (+ ?a ?c) (+ ?b ?c)) ==> (!= ?a ?b)
+(< (- ?a ?c) (- ?b ?c)) ==> (< ?a ?b)
+(<= (- ?a ?c) (- ?b ?c)) ==> (<= ?a ?b)
+(> (- ?a ?c) (- ?b ?c)) ==> (> ?a ?b)
+(>= (- ?a ?c) (- ?b ?c)) ==> (>= ?a ?b)
+(== (- ?a ?c) (- ?b ?c)) ==> (== ?a ?b)
+(!= (- ?a ?c) (- ?b ?c)) ==> (!= ?a ?b)
+(< (min ?a ?b) ?a) ==> 0
+(< (min ?a ?b) ?b) ==> 0
+(> (max ?a ?b) ?a) ==> 0
+(> (max ?a ?b) ?b) ==> 0
+(<= (min ?a ?b) ?a) ==> 1
+(<= (min ?a ?b) ?b) ==> 1
+(>= (max ?a ?b) ?a) ==> 1
+(>= (max ?a ?b) ?b) ==> 1
+(min (+ ?a ?c) (+ ?b ?c)) ==> (+ (min ?a ?b) ?c)
+(max (+ ?a ?c) (+ ?b ?c)) ==> (+ (max ?a ?b) ?c)
+(min (- ?a ?c) (- ?b ?c)) ==> (- (min ?a ?b) ?c)
+(max (- ?a ?c) (- ?b ?c)) ==> (- (max ?a ?b) ?c)
+[llm_only] LLM returned 129 candidate lines
+[llm_only] raw: (+ ?a 0) ==> ?a
+[llm_only] raw: (+ 0 ?a) ==> ?a
+[llm_only] raw: (- ?a 0) ==> ?a
+[llm_only] raw: (- ?a ?a) ==> 0
+[llm_only] raw: (* ?a 1) ==> ?a
+[llm_only] raw: (* 1 ?a) ==> ?a
+[llm_only] raw: (* ?a 0) ==> 0
+[llm_only] raw: (* 0 ?a) ==> 0
+[llm_only] raw: (/ 0 ?a) ==> 0
+[llm_only] raw: (/ ?a 1) ==> ?a
+[llm_only] raw: (% 0 ?a) ==> 0
+[llm_only] raw: (% ?a 1) ==> 0
+[llm_only] raw: (% ?a -1) ==> 0
+[llm_only] raw: (min ?a ?a) ==> ?a
+[llm_only] raw: (max ?a ?a) ==> ?a
+[llm_only] raw: (abs 0) ==> 0
+[llm_only] raw: (abs (abs ?a)) ==> (abs ?a)
+[llm_only] raw: (! (! ?a)) ==> (|| ?a 0)
+[llm_only] raw: (|| ?a 0) ==> 1 if (!= ?a 0)
+[llm_only] raw: (|| 0 ?a) ==> 1 if (!= ?a 0)
+[llm_only] raw: (|| ?a ?a) ==> 1 if (!= ?a 0)
+[llm_only] raw: (&& ?a 0) ==> 0
+[llm_only] raw: (&& 0 ?a) ==> 0
+[llm_only] raw: (&& ?a ?a) ==> 1 if (!= ?a 0)
+[llm_only] raw: (! ?a) ==> 1 if (== ?a 0)
+[llm_only] raw: (! ?a) ==> 0 if (!= ?a 0)
+[llm_only] raw: (|| ?a ?b) ==> 1 if (!= ?a 0)
+[llm_only] raw: (|| ?a ?b) ==> 1 if (!= ?b 0)
+[llm_only] raw: (|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))
+[llm_only] raw: (&& ?a ?b) ==> 0 if (== ?a 0)
+[llm_only] raw: (&& ?a ?b) ==> 0 if (== ?b 0)
+[llm_only] raw: (&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))
+[llm_only] raw: (+ ?a ?b) ==> (+ ?b ?a)
+[llm_only] raw: (* ?a ?b) ==> (* ?b ?a)
+[llm_only] raw: (min ?a ?b) ==> (min ?b ?a)
+[llm_only] raw: (max ?a ?b) ==> (max ?b ?a)
+[llm_only] raw: (+ (+ ?a ?b) ?c) ==> (+ ?a (+ ?b ?c))
+[llm_only] raw: (* (* ?a ?b) ?c) ==> (* ?a (* ?b ?c))
+[llm_only] raw: (+ ?a (- ?b ?a)) ==> ?b
+[llm_only] raw: (+ (- ?a ?b) ?b) ==> ?a
+[llm_only] raw: (- (+ ?a ?b) ?b) ==> ?a
+[llm_only] raw: (- (+ ?a ?b) ?a) ==> ?b
+[llm_only] raw: (- ?a (- ?a ?b)) ==> ?b
+[llm_only] raw: (- ?a (- ?b ?a)) ==> (- (* 2 ?a) ?b)
+[llm_only] raw: (+ ?a ?a) ==> (* 2 ?a)
+[llm_only] raw: (- 0 ?a) ==> (* -1 ?a)
+[llm_only] raw: (- ?a (* -1 ?b)) ==> (+ ?a ?b)
+[llm_only] raw: (+ ?a (* -1 ?b)) ==> (- ?a ?b)
+[llm_only] raw: (* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c))
+[llm_only] raw: (* (+ ?a ?b) ?c) ==> (+ (* ?a ?c) (* ?b ?c))
+[llm_only] raw: (* ?a (- ?b ?c)) ==> (- (* ?a ?b) (* ?a ?c))
+[llm_only] raw: (* (- ?a ?b) ?c) ==> (- (* ?a ?c) (* ?b ?c))
+[llm_only] raw: (/ ?a ?a) ==> 1 if (!= ?a 0)
+[llm_only] raw: (/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)
+[llm_only] raw: (/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)
+[llm_only] raw: (/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))
+[llm_only] raw: (/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))
+[llm_only] raw: (% ?a ?a) ==> 0 if (!= ?a 0)
+[llm_only] raw: (% ?a ?b) ==> ?a if (== ?b 0)
+[llm_only] raw: (% ?a ?b) ==> 0 if (== (% ?a ?b) 0)
+[llm_only] raw: (% (+ ?a ?b) ?c) ==> (% (+ (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)
+[llm_only] raw: (% (- ?a ?b) ?c) ==> (% (- (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)
+[llm_only] raw: (% (* ?a ?b) ?c) ==> 0 if (== (% (* ?a ?b) ?c) 0)
+[llm_only] raw: (min ?a ?b) ==> ?a if (<= ?a ?b)
+[llm_only] raw: (min ?a ?b) ==> ?b if (<= ?b ?a)
+[llm_only] raw: (max ?a ?b) ==> ?a if (>= ?a ?b)
+[llm_only] raw: (max ?a ?b) ==> ?b if (>= ?b ?a)
+[llm_only] raw: (min ?a (max ?a ?b)) ==> ?a
+[llm_only] raw: (max ?a (min ?a ?b)) ==> ?a
+[llm_only] raw: (min (max ?a ?b) ?b) ==> ?b
+[llm_only] raw: (max (min ?a ?b) ?b) ==> ?b
+[llm_only] raw: (min ?a (min ?b ?c)) ==> (min (min ?a ?b) ?c)
+[llm_only] raw: (max ?a (max ?b ?c)) ==> (max (max ?a ?b) ?c)
+[llm_only] raw: (min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)
+[llm_only] raw: (max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)
+[llm_only] raw: (abs ?a) ==> ?a if (>= ?a 0)
+[llm_only] raw: (abs ?a) ==> (* -1 ?a) if (< ?a 0)
+[llm_only] raw: (abs (* -1 ?a)) ==> (abs ?a)
+[llm_only] raw: (abs ?a) ==> 0 if (== ?a 0)
+[llm_only] raw: (abs ?a) ==> (max ?a (* -1 ?a))
+[llm_only] raw: (abs ?a) ==> (min (* -1 ?a) ?a) if (<= ?a 0)
+[llm_only] raw: (< ?a ?a) ==> 0
+[llm_only] raw: (<= ?a ?a) ==> 1
+[llm_only] raw: (> ?a ?a) ==> 0
+[llm_only] raw: (>= ?a ?a) ==> 1
+[llm_only] raw: (== ?a ?a) ==> 1
+[llm_only] raw: (!= ?a ?a) ==> 0
+[llm_only] raw: (< ?a ?b) ==> 1 if (< ?a ?b)
+[llm_only] raw: (< ?a ?b) ==> 0 if (>= ?a ?b)
+[llm_only] raw: (<= ?a ?b) ==> 1 if (<= ?a ?b)
+[llm_only] raw: (<= ?a ?b) ==> 0 if (> ?a ?b)
+[llm_only] raw: (> ?a ?b) ==> 1 if (> ?a ?b)
+[llm_only] raw: (> ?a ?b) ==> 0 if (<= ?a ?b)
+[llm_only] raw: (>= ?a ?b) ==> 1 if (>= ?a ?b)
+[llm_only] raw: (>= ?a ?b) ==> 0 if (< ?a ?b)
+[llm_only] raw: (== ?a ?b) ==> 1 if (== ?a ?b)
+[llm_only] raw: (== ?a ?b) ==> 0 if (!= ?a ?b)
+[llm_only] raw: (!= ?a ?b) ==> 1 if (!= ?a ?b)
+[llm_only] raw: (!= ?a ?b) ==> 0 if (== ?a ?b)
+[llm_only] raw: (< ?a ?b) ==> (> ?b ?a)
+[llm_only] raw: (<= ?a ?b) ==> (>= ?b ?a)
+[llm_only] raw: (> ?a ?b) ==> (< ?b ?a)
+[llm_only] raw: (>= ?a ?b) ==> (<= ?b ?a)
+[llm_only] raw: (== ?a ?b) ==> (== ?b ?a)
+[llm_only] raw: (!= ?a ?b) ==> (!= ?b ?a)
+[llm_only] raw: (< (+ ?a ?c) (+ ?b ?c)) ==> (< ?a ?b)
+[llm_only] raw: (<= (+ ?a ?c) (+ ?b ?c)) ==> (<= ?a ?b)
+[llm_only] raw: (> (+ ?a ?c) (+ ?b ?c)) ==> (> ?a ?b)
+[llm_only] raw: (>= (+ ?a ?c) (+ ?b ?c)) ==> (>= ?a ?b)
+[llm_only] raw: (== (+ ?a ?c) (+ ?b ?c)) ==> (== ?a ?b)
+[llm_only] raw: (!= (+ ?a ?c) (+ ?b ?c)) ==> (!= ?a ?b)
+[llm_only] raw: (< (- ?a ?c) (- ?b ?c)) ==> (< ?a ?b)
+[llm_only] raw: (<= (- ?a ?c) (- ?b ?c)) ==> (<= ?a ?b)
+[llm_only] raw: (> (- ?a ?c) (- ?b ?c)) ==> (> ?a ?b)
+[llm_only] raw: (>= (- ?a ?c) (- ?b ?c)) ==> (>= ?a ?b)
+[llm_only] raw: (== (- ?a ?c) (- ?b ?c)) ==> (== ?a ?b)
+[llm_only] raw: (!= (- ?a ?c) (- ?b ?c)) ==> (!= ?a ?b)
+[llm_only] raw: (< (min ?a ?b) ?a) ==> 0
+[llm_only] raw: (< (min ?a ?b) ?b) ==> 0
+[llm_only] raw: (> (max ?a ?b) ?a) ==> 0
+[llm_only] raw: (> (max ?a ?b) ?b) ==> 0
+[llm_only] raw: (<= (min ?a ?b) ?a) ==> 1
+[llm_only] raw: (<= (min ?a ?b) ?b) ==> 1
+[llm_only] raw: (>= (max ?a ?b) ?a) ==> 1
+[llm_only] raw: (>= (max ?a ?b) ?b) ==> 1
+[llm_only] raw: (min (+ ?a ?c) (+ ?b ?c)) ==> (+ (min ?a ?b) ?c)
+[llm_only] raw: (max (+ ?a ?c) (+ ?b ?c)) ==> (+ (max ?a ?b) ?c)
+[llm_only] raw: (min (- ?a ?c) (- ?b ?c)) ==> (- (min ?a ?b) ?c)
+[llm_only] raw: (max (- ?a ?c) (- ?b ?c)) ==> (- (max ?a ?b) ?c)
+[llm_only] PASS (valid): (+ ?a 0) ==> ?a
+[llm_only] PASS (valid): (+ 0 ?a) ==> ?a
+[llm_only] PASS (valid): (- ?a 0) ==> ?a
+[llm_only] PASS (valid): (- ?a ?a) ==> 0
+[llm_only] PASS (valid): (* ?a 1) ==> ?a
+[llm_only] PASS (valid): (* 1 ?a) ==> ?a
+[llm_only] PASS (valid): (* ?a 0) ==> 0
+[llm_only] PASS (valid): (* 0 ?a) ==> 0
+[llm_only] PASS (valid): (/ 0 ?a) ==> 0
+[llm_only] PASS (valid): (/ ?a 1) ==> ?a
+[llm_only] PASS (valid): ("%" 0 ?a) ==> 0
+[llm_only] PASS (valid): ("%" ?a 1) ==> 0
+[llm_only] PASS (valid): ("%" ?a -1) ==> 0
+[llm_only] PASS (valid): (min ?a ?a) ==> ?a
+[llm_only] PASS (valid): (max ?a ?a) ==> ?a
+[llm_only] PASS (valid): (abs 0) ==> 0
+[llm_only] PASS (valid): (abs (abs ?a)) ==> (abs ?a)
+[llm_only] PASS (valid): (! (! ?a)) ==> (|| ?a 0)
+[llm_only] PASS (valid): (|| ?a 0) ==> 1 if (!= ?a 0)
+[llm_only] PASS (valid): (|| 0 ?a) ==> 1 if (!= ?a 0)
+[llm_only] PASS (valid): (|| ?a ?a) ==> 1 if (!= ?a 0)
+[llm_only] PASS (valid): (&& ?a 0) ==> 0
+[llm_only] PASS (valid): (&& 0 ?a) ==> 0
+[llm_only] PASS (valid): (&& ?a ?a) ==> 1 if (!= ?a 0)
+[llm_only] PASS (valid): (! ?a) ==> 1 if (== ?a 0)
+[llm_only] PASS (valid): (! ?a) ==> 0 if (!= ?a 0)
+[llm_only] PASS (valid): (|| ?a ?b) ==> 1 if (!= ?a 0)
+[llm_only] PASS (valid): (|| ?a ?b) ==> 1 if (!= ?b 0)
+[llm_only] PASS (valid): (|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))
+[llm_only] PASS (valid): (&& ?a ?b) ==> 0 if (== ?a 0)
+[llm_only] PASS (valid): (&& ?a ?b) ==> 0 if (== ?b 0)
+[llm_only] PASS (valid): (&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))
+[llm_only] PASS (valid): (+ ?a ?b) ==> (+ ?b ?a)
+[llm_only] PASS (valid): (* ?a ?b) ==> (* ?b ?a)
+[llm_only] PASS (valid): (min ?a ?b) ==> (min ?b ?a)
+[llm_only] PASS (valid): (max ?a ?b) ==> (max ?b ?a)
+[llm_only] PASS (valid): (+ (+ ?a ?b) ?c) ==> (+ ?a (+ ?b ?c))
+[llm_only] PASS (valid): (* (* ?a ?b) ?c) ==> (* ?a (* ?b ?c))
+[llm_only] PASS (valid): (+ ?a (- ?b ?a)) ==> ?b
+[llm_only] PASS (valid): (+ (- ?a ?b) ?b) ==> ?a
+[llm_only] PASS (valid): (- (+ ?a ?b) ?b) ==> ?a
+[llm_only] PASS (valid): (- (+ ?a ?b) ?a) ==> ?b
+[llm_only] PASS (valid): (- ?a (- ?a ?b)) ==> ?b
+[llm_only] PASS (valid): (- ?a (- ?b ?a)) ==> (- (* 2 ?a) ?b)
+[llm_only] PASS (valid): (+ ?a ?a) ==> (* 2 ?a)
+[llm_only] PASS (valid): (- 0 ?a) ==> (* -1 ?a)
+[llm_only] PASS (valid): (- ?a (* -1 ?b)) ==> (+ ?a ?b)
+[llm_only] PASS (valid): (+ ?a (* -1 ?b)) ==> (- ?a ?b)
+[llm_only] PASS (valid): (* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c))
+[llm_only] PASS (valid): (* (+ ?a ?b) ?c) ==> (+ (* ?a ?c) (* ?b ?c))
+[llm_only] PASS (valid): (* ?a (- ?b ?c)) ==> (- (* ?a ?b) (* ?a ?c))
+[llm_only] PASS (valid): (* (- ?a ?b) ?c) ==> (- (* ?a ?c) (* ?b ?c))
+[llm_only] PASS (valid): (/ ?a ?a) ==> 1 if (!= ?a 0)
+[llm_only] PASS (valid): (/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)
+[llm_only] PASS (valid): (/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)
+[llm_only] PASS (valid): (/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))
+[llm_only] PASS (valid): (/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== (% ?a ?c) 0) (== (% ?b ?c) 0))
+[llm_only] PASS (valid): ("%" ?a ?a) ==> 0 if (!= ?a 0)
+[llm_only] FAIL (invalid): (% ?a ?b) ==> ?a if (== ?b 0)
+[llm_only] PASS (valid): ("%" ?a ?b) ==> 0 if (== (% ?a ?b) 0)
+[llm_only] FAIL (invalid): (% (+ ?a ?b) ?c) ==> (% (+ (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)
+[llm_only] FAIL (invalid): (% (- ?a ?b) ?c) ==> (% (- (% ?a ?c) (% ?b ?c)) ?c) if (!= ?c 0)
+[llm_only] PASS (valid): ("%" (* ?a ?b) ?c) ==> 0 if (== (% (* ?a ?b) ?c) 0)
+[llm_only] PASS (valid): (min ?a ?b) ==> ?a if (<= ?a ?b)
+[llm_only] PASS (valid): (min ?a ?b) ==> ?b if (<= ?b ?a)
+[llm_only] PASS (valid): (max ?a ?b) ==> ?a if (>= ?a ?b)
+[llm_only] PASS (valid): (max ?a ?b) ==> ?b if (>= ?b ?a)
+[llm_only] PASS (valid): (min ?a (max ?a ?b)) ==> ?a
+[llm_only] PASS (valid): (max ?a (min ?a ?b)) ==> ?a
+[llm_only] PASS (valid): (min (max ?a ?b) ?b) ==> ?b
+[llm_only] PASS (valid): (max (min ?a ?b) ?b) ==> ?b
+[llm_only] PASS (valid): (min ?a (min ?b ?c)) ==> (min (min ?a ?b) ?c)
+[llm_only] PASS (valid): (max ?a (max ?b ?c)) ==> (max (max ?a ?b) ?c)
+[llm_only] PASS (valid): (min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)
+[llm_only] PASS (valid): (max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)
+[llm_only] PASS (valid): (abs ?a) ==> ?a if (>= ?a 0)
+[llm_only] PASS (valid): (abs ?a) ==> (* -1 ?a) if (< ?a 0)
+[llm_only] PASS (valid): (abs (* -1 ?a)) ==> (abs ?a)
+[llm_only] PASS (valid): (abs ?a) ==> 0 if (== ?a 0)
+[llm_only] PASS (valid): (abs ?a) ==> (max ?a (* -1 ?a))
+[llm_only] FAIL (invalid): (abs ?a) ==> (min (* -1 ?a) ?a) if (<= ?a 0)
+[llm_only] PASS (valid): (< ?a ?a) ==> 0
+[llm_only] PASS (valid): (<= ?a ?a) ==> 1
+[llm_only] PASS (valid): (> ?a ?a) ==> 0
+[llm_only] PASS (valid): (>= ?a ?a) ==> 1
+[llm_only] PASS (valid): (== ?a ?a) ==> 1
+[llm_only] PASS (valid): (!= ?a ?a) ==> 0
+[llm_only] PASS (valid): (< ?a ?b) ==> 1 if (< ?a ?b)
+[llm_only] PASS (valid): (< ?a ?b) ==> 0 if (>= ?a ?b)
+[llm_only] PASS (valid): (<= ?a ?b) ==> 1 if (<= ?a ?b)
+[llm_only] PASS (valid): (<= ?a ?b) ==> 0 if (> ?a ?b)
+[llm_only] PASS (valid): (> ?a ?b) ==> 1 if (> ?a ?b)
+[llm_only] PASS (valid): (> ?a ?b) ==> 0 if (<= ?a ?b)
+[llm_only] PASS (valid): (>= ?a ?b) ==> 1 if (>= ?a ?b)
+[llm_only] PASS (valid): (>= ?a ?b) ==> 0 if (< ?a ?b)
+[llm_only] PASS (valid): (== ?a ?b) ==> 1 if (== ?a ?b)
+[llm_only] PASS (valid): (== ?a ?b) ==> 0 if (!= ?a ?b)
+[llm_only] PASS (valid): (!= ?a ?b) ==> 1 if (!= ?a ?b)
+[llm_only] PASS (valid): (!= ?a ?b) ==> 0 if (== ?a ?b)
+[llm_only] PASS (valid): (< ?a ?b) ==> (> ?b ?a)
+[llm_only] PASS (valid): (<= ?a ?b) ==> (>= ?b ?a)
+[llm_only] PASS (valid): (> ?a ?b) ==> (< ?b ?a)
+[llm_only] PASS (valid): (>= ?a ?b) ==> (<= ?b ?a)
+[llm_only] PASS (valid): (== ?a ?b) ==> (== ?b ?a)
+[llm_only] PASS (valid): (!= ?a ?b) ==> (!= ?b ?a)
+[llm_only] PASS (valid): (< (+ ?a ?c) (+ ?b ?c)) ==> (< ?a ?b)
+[llm_only] PASS (valid): (<= (+ ?a ?c) (+ ?b ?c)) ==> (<= ?a ?b)
+[llm_only] PASS (valid): (> (+ ?a ?c) (+ ?b ?c)) ==> (> ?a ?b)
+[llm_only] PASS (valid): (>= (+ ?a ?c) (+ ?b ?c)) ==> (>= ?a ?b)
+[llm_only] PASS (valid): (== (+ ?a ?c) (+ ?b ?c)) ==> (== ?a ?b)
+[llm_only] PASS (valid): (!= (+ ?a ?c) (+ ?b ?c)) ==> (!= ?a ?b)
+[llm_only] PASS (valid): (< (- ?a ?c) (- ?b ?c)) ==> (< ?a ?b)
+[llm_only] PASS (valid): (<= (- ?a ?c) (- ?b ?c)) ==> (<= ?a ?b)
+[llm_only] PASS (valid): (> (- ?a ?c) (- ?b ?c)) ==> (> ?a ?b)
+[llm_only] PASS (valid): (>= (- ?a ?c) (- ?b ?c)) ==> (>= ?a ?b)
+[llm_only] PASS (valid): (== (- ?a ?c) (- ?b ?c)) ==> (== ?a ?b)
+[llm_only] PASS (valid): (!= (- ?a ?c) (- ?b ?c)) ==> (!= ?a ?b)
+[llm_only] FAIL (invalid): (< (min ?a ?b) ?a) ==> 0
+[llm_only] FAIL (invalid): (< (min ?a ?b) ?b) ==> 0
+[llm_only] FAIL (invalid): (> (max ?a ?b) ?a) ==> 0
+[llm_only] FAIL (invalid): (> (max ?a ?b) ?b) ==> 0
+[llm_only] PASS (valid): (<= (min ?a ?b) ?a) ==> 1
+[llm_only] PASS (valid): (<= (min ?a ?b) ?b) ==> 1
+[llm_only] PASS (valid): (>= (max ?a ?b) ?a) ==> 1
+[llm_only] PASS (valid): (>= (max ?a ?b) ?b) ==> 1
+[llm_only] PASS (valid): (min (+ ?a ?c) (+ ?b ?c)) ==> (+ (min ?a ?b) ?c)
+[llm_only] PASS (valid): (max (+ ?a ?c) (+ ?b ?c)) ==> (+ (max ?a ?b) ?c)
+[llm_only] PASS (valid): (min (- ?a ?c) (- ?b ?c)) ==> (- (min ?a ?b) ?c)
+[llm_only] PASS (valid): (max (- ?a ?c) (- ?b ?c)) ==> (- (max ?a ?b) ?c)
+[llm_only] 121 rules passed syntactic + semantic filters
+finished recipe (seconds: 28.825441557)
+Wrote 121 rules to "eval-docker/2026_05_09_06_18/full/llm_only/full_llm_only.txt"
+Failed to validate rule: (< (/ (+ x c1) c0) (/ (+ x c2) c0)) ==> 0 if (> c0 (&& 0 (>= c1 c2)))
+Failed to validate rule: (< (/ (+ x c1) c0) (/ (+ x c2) c0)) ==> 1 if (> c0 (&& 0 (<= c1 (- c2 c0))))
+Failed to validate rule: (< (/ x c0) (/ (+ x c2) c0)) ==> 0 if (> c0 (&& 0 (>= 0 c2)))
+Failed to validate rule: (< (/ x c0) (/ (+ x c2) c0)) ==> 1 if (> c0 (&& 0 (<= 0 (- c2 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (/ x c0)) ==> 0 if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (+ x c1) c0) (/ x c0)) ==> 1 if (> c0 (&& 0 (<= c1 (- 0 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (+ (/ x c0) c2)) ==> 0 if (> c0 (&& 0 (>= c1 (* c2 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (+ (/ x c0) c2)) ==> 1 if (> c0 (&& 0 (<= c1 (- (* c2 c0) c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (+ (min (/ x c0) y) c2)) ==> 0 if (> c0 (&& 0 (>= c1 (* c2 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (+ (max (/ x c0) y) c2)) ==> 1 if (> c0 (&& 0 (<= c1 (- (* c2 c0) c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (min (/ (+ x c2) c0) y)) ==> 0 if (> c0 (&& 0 (>= c1 c2)))
+Failed to validate rule: (< (/ (+ x c1) c0) (max (/ (+ x c2) c0) y)) ==> 1 if (> c0 (&& 0 (<= c1 (- c2 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (min (/ x c0) y)) ==> 0 if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (+ x c1) c0) (max (/ x c0) y)) ==> 1 if (> c0 (&& 0 (<= c1 (- 0 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (+ (min y (/ x c0)) c2)) ==> 0 if (> c0 (&& 0 (>= c1 (* c2 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (+ (max y (/ x c0)) c2)) ==> 1 if (> c0 (&& 0 (<= c1 (- (* c2 c0) c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (min y (/ (+ x c2) c0))) ==> 0 if (> c0 (&& 0 (>= c1 c2)))
+Failed to validate rule: (< (/ (+ x c1) c0) (max y (/ (+ x c2) c0))) ==> 1 if (> c0 (&& 0 (<= c1 (- c2 c0))))
+Failed to validate rule: (< (/ (+ x c1) c0) (min y (/ x c0))) ==> 0 if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (+ x c1) c0) (max y (/ x c0))) ==> 1 if (> c0 (&& 0 (<= c1 (- 0 c0))))
+Failed to validate rule: (< (max (/ (+ x c2) c0) y) (/ (+ x c1) c0)) ==> 0 if (> c0 (&& 0 (>= c2 c1)))
+Failed to validate rule: (< (min (/ (+ x c2) c0) y) (/ (+ x c1) c0)) ==> 1 if (> c0 (&& 0 (<= c2 (- c1 c0))))
+Failed to validate rule: (< (max (/ x c0) y) (/ (+ x c1) c0)) ==> 0 if (> c0 (&& 0 (>= 0 c1)))
+Failed to validate rule: (< (min (/ x c0) y) (/ (+ x c1) c0)) ==> 1 if (> c0 (&& 0 (<= 0 (- c1 c0))))
+Failed to validate rule: (< (max y (/ (+ x c2) c0)) (/ (+ x c1) c0)) ==> 0 if (> c0 (&& 0 (>= c2 c1)))
+Failed to validate rule: (< (min y (/ (+ x c2) c0)) (/ (+ x c1) c0)) ==> 1 if (> c0 (&& 0 (<= c2 (- c1 c0))))
+Failed to validate rule: (< (max y (/ x c0)) (/ (+ x c1) c0)) ==> 0 if (> c0 (&& 0 (>= 0 c1)))
+Failed to validate rule: (< (min y (/ x c0)) (/ (+ x c1) c0)) ==> 1 if (> c0 (&& 0 (<= 0 (- c1 c0))))
+Failed to validate rule: (< (max (/ (+ x c2) c0) y) (+ (/ x c0) c1)) ==> 0 if (> c0 (&& 0 (>= c2 (* c1 c0))))
+Failed to validate rule: (< (min (/ (+ x c2) c0) y) (+ (/ x c0) c1)) ==> 1 if (> c0 (&& 0 (<= c2 (- (* c1 c0) c0))))
+Failed to validate rule: (< (max y (/ (+ x c2) c0)) (+ (/ x c0) c1)) ==> 0 if (> c0 (&& 0 (>= c2 (* c1 c0))))
+Failed to validate rule: (< (min y (/ (+ x c2) c0)) (+ (/ x c0) c1)) ==> 1 if (> c0 (&& 0 (<= c2 (- (* c1 c0) c0))))
+Failed to validate rule: (< (/ x c0) (min (/ (+ x c2) c0) y)) ==> 0 if (> c0 (&& 0 (< c2 0)))
+Failed to validate rule: (< (/ x c0) (max (/ (+ x c2) c0) y)) ==> 1 if (> c0 (&& 0 (<= c0 c2)))
+Failed to validate rule: (< (/ x c0) (min y (/ (+ x c2) c0))) ==> 0 if (> c0 (&& 0 (< c2 0)))
+Failed to validate rule: (< (/ x c0) (max y (/ (+ x c2) c0))) ==> 1 if (> c0 (&& 0 (<= c0 c2)))
+Failed to validate rule: (< (max (/ (+ x c2) c0) y) (/ x c0)) ==> 0 if (> c0 (&& 0 (>= c2 0)))
+Failed to validate rule: (< (min (/ (+ x c2) c0) y) (/ x c0)) ==> 1 if (> c0 (&& 0 (<= (+ c2 c0) 0)))
+Failed to validate rule: (< (max y (/ (+ x c2) c0)) (/ x c0)) ==> 0 if (> c0 (&& 0 (>= c2 0)))
+Failed to validate rule: (< (min y (/ (+ x c2) c0)) (/ x c0)) ==> 1 if (> c0 (&& 0 (<= (+ c2 c0) 0)))
+Failed to validate rule: (< (/ (+ (max x (+ (* y c0) c1)) c2) c0) y) ==> (< (/ (+ x c2) c0) y) if (> c0 (&& 0 (< (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (max x (+ (* y c0) c1)) c2) c0) y) ==> 0 if (> c0 (&& 0 (>= (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (max x (* y c0)) c1) c0) y) ==> (< (/ (+ x c1) c0) y) if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (+ (max x (* y c0)) c1) c0) y) ==> 0 if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (+ (max (+ (* x c0) c1) y) c2) c0) x) ==> (< (/ (+ y c2) c0) x) if (> c0 (&& 0 (< (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (max (+ (* x c0) c1) y) c2) c0) x) ==> 0 if (> c0 (&& 0 (>= (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (max (* x c0) y) c1) c0) x) ==> (< (/ (+ y c1) c0) x) if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (+ (max (* x c0) y) c1) c0) x) ==> 0 if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (max x (+ (* y c0) c1)) c0) y) ==> (< (/ x c0) y) if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (max x (+ (* y c0) c1)) c0) y) ==> 0 if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (max x (* y c0)) c20) y) ==> 0 if (> c0 0)
+Failed to validate rule: (< (/ (max (+ (* x c0) c1) y) c0) x) ==> (< (/ y c0) x) if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (max (+ (* x c0) c1) y) c0) x) ==> 0 if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (+ (min x (+ (* y c0) c1)) c2) c0) y) ==> 1 if (> c0 (&& 0 (< (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (min x (+ (* y c0) c1)) c2) c0) y) ==> (< (/ (+ x c2) c0) y) if (> c0 (&& 0 (>= (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (min x (* y c0)) c1) c0) y) ==> 1 if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (+ (min x (* y c0)) c1) c0) y) ==> (< (/ (+ x c1) c0) y) if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (+ (min (+ (* x c0) c1) y) c2) c0) x) ==> 1 if (> c0 (&& 0 (< (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (min (+ (* x c0) c1) y) c2) c0) x) ==> (< (/ (+ y c2) c0) x) if (> c0 (&& 0 (>= (+ c1 c2) 0)))
+Failed to validate rule: (< (/ (+ (min (* x c0) y) c1) c0) x) ==> 1 if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (+ (min (* x c0) y) c1) c0) x) ==> (< (/ (+ y c1) c0) x) if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (min x (+ (* y c0) c1)) c0) y) ==> 1 if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (min x (+ (* y c0) c1)) c0) y) ==> (< (/ x c0) y) if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (/ (min (+ (* x c0) c1) y) c0) x) ==> 1 if (> c0 (&& 0 (< c1 0)))
+Failed to validate rule: (< (/ (min (+ (* x c0) c1) y) c0) x) ==> (< (/ y c0) x) if (> c0 (&& 0 (>= c1 0)))
+Failed to validate rule: (< (min x c0) (+ (min x c1) c2)) ==> 0 if (>= c0 (&& (+ c1 c2) (<= c2 0)))
+Failed to validate rule: (< (max x c0) (+ (max x c1) c2)) ==> 0 if (>= c0 (&& (+ c1 c2) (<= c2 0)))
+Failed to parse rule: (max x c0) ==> b if (is_max_value c0)
+Failed to parse rule: (max x c0) ==> x if (is_min_value c0)
+Failed to validate rule: (max (* (/ x c0) c0) x) ==> b if (> c0 0)
+Failed to validate rule: (max x (* (/ x c0) c0)) ==> a if (> c0 0)
+Failed to validate rule: (max (min x c0) c1) ==> b if (>= c1 c0)
+Failed to validate rule: (max (+ (* (/ (+ x c0) c1) c1) c2) x) ==> a if (> c1 (&& 0 (>= (+ c0 c2) (- c1 1))))
+Failed to validate rule: (max x (+ (* (/ (+ x c0) c1) c1) c2)) ==> b if (> c1 (&& 0 (>= (+ c0 c2) (- c1 1))))
+Failed to validate rule: (max (+ (* (/ (+ x c0) c1) c1) c2) x) ==> b if (> c1 (&& 0 (<= (+ c0 c2) 0)))
+Failed to validate rule: (max x (+ (* (/ (+ x c0) c1) c1) c2)) ==> a if (> c1 (&& 0 (<= (+ c0 c2) 0)))
+Failed to validate rule: (max (* (/ x c0) c0) (+ (* (/ x c1) c1) c2)) ==> b if (>= c2 (&& c1 (> c1 (&& 0 (!= c0 0)))))
+Failed to validate rule: (max (+ (* (/ x c1) c1) c2) x) ==> a if (> c1 (&& 0 (>= c2 (- c1 1))))
+Failed to validate rule: (max x (+ (* (/ x c1) c1) c2)) ==> b if (> c1 (&& 0 (>= c2 (- c1 1))))
+Failed to validate rule: (max (* (/ (+ x c0) c1) c1) x) ==> a if (> c1 (&& 0 (>= c0 (- c1 1))))
+Failed to validate rule: (max x (* (/ (+ x c0) c1) c1)) ==> b if (> c1 (&& 0 (>= c0 (- c1 1))))
+Failed to validate rule: (max (+ (* (/ x c1) c1) c2) x) ==> b if (> c1 (&& 0 (<= c2 0)))
+Failed to validate rule: (max x (+ (* (/ x c1) c1) c2)) ==> a if (> c1 (&& 0 (<= c2 0)))
+Failed to validate rule: (max (* (/ (+ x c0) c1) c1) x) ==> b if (> c1 (&& 0 (<= c0 0)))
+Failed to validate rule: (max x (* (/ (+ x c0) c1) c1)) ==> a if (> c1 (&& 0 (<= c0 0)))
+Failed to validate rule: (max x (+ (min x y) c0)) ==> a if (<= c0 0)
+Failed to validate rule: (max x (+ (min y x) c0)) ==> a if (<= c0 0)
+Failed to validate rule: (max (+ (min x y) c0) x) ==> b if (<= c0 0)
+Failed to validate rule: (max (+ (min x y) c0) y) ==> b if (<= c0 0)
+Failed to validate rule: (max (min (- c0 x) x) c1) ==> b if (>= (* 2 c1) (- c0 1))
+Failed to validate rule: (max (min x (- c0 x)) c1) ==> b if (>= (* 2 c1) (- c0 1))
+Failed to validate rule: (max (* (+ (* x c0) y) c1) (+ (* x c2) z)) ==> (+ (max (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (max (* (+ y (* x c0)) c1) (+ (* x c2) z)) ==> (+ (max (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (max (* (+ (* x c0) y) c1) (+ z (* x c2))) ==> (+ (max (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (max (* (+ y (* x c0)) c1) (+ z (* x c2))) ==> (+ (max (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (max (* (/ (+ x c0) c1) c1) (+ x c2)) ==> (* (/ (+ x c0) c1) c1) if (> c1 (&& 0 (>= (+ c0 1) (+ c1 c2))))
+Failed to validate rule: (max (/ (+ x c0) c1) (* (/ (+ x c2) c3) c4)) ==> (/ (+ x c0) c1) if (<= c2 (&& c0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (max (/ (+ x c0) c1) (* (/ (+ x c2) c3) c4)) ==> (* (/ (+ x c2) c3) c4) if (<= (- (+ c0 c3) c1) (&& c2 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (max (/ x c1) (* (/ (+ x c2) c3) c4)) ==> (/ x c1) if (<= c2 (&& 0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (max (/ x c1) (* (/ (+ x c2) c3) c4)) ==> (* (/ (+ x c2) c3) c4) if (<= (- c3 c1) (&& c2 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (max (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (/ (+ x c0) c1) if (<= 0 (&& c0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (max (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (* (/ x c3) c4) if (<= (- (+ c0 c3) c1) (&& 0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (max (/ x c1) (* (/ x c3) c4)) ==> (/ x c1) if (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))
+Failed to validate rule: (/ (- (* x c1) y) c0) ==> (- (/ (- 0 y) c0) x) if (== (+ c0 c1) 0)
+Failed to validate rule: (/ (- (- (* x c1) y) z) c0) ==> (- (/ (- (- 0 y) z) c0) x) if (== (+ c0 c1) 0)
+Failed to validate rule: (!= x (&& c0 (== x c1))) ==> b if (!= c0 c1)
+Failed to validate rule: (== x (&& c0 (== x c1))) ==> 0 if (!= c0 c1)
+Failed to validate rule: (<= x (&& c1 (< c0 x))) ==> 0 if (<= c1 c0)
+Failed to validate rule: (<= c0 (&& x (< x c1))) ==> 0 if (<= c1 c0)
+Failed to validate rule: (<= c0 (&& x (<= x c1))) ==> 0 if (< c1 c0)
+Failed to validate rule: (<= x (&& c1 (<= c0 x))) ==> 0 if (< c1 c0)
+Failed to parse rule: (- (min x y) (min z w)) ==> (- y w) if (can_prove (== (- x y) (- z w)) this)
+Failed to parse rule: (- (min x y) (min w z)) ==> (- y w) if (can_prove (== (- x y) (- z w)) this)
+Failed to validate rule: (- (min (* x c0) c1) (* (min x c2) c0)) ==> (min (- c1 (* (min x c2) c0)) 0) if (> c0 (&& 0 (<= c1 (* c2 c0))))
+Failed to parse rule: (- (max x y) (max z w)) ==> (- y w) if (can_prove (== (- x y) (- z w)) this)
+Failed to parse rule: (- (max x y) (max w z)) ==> (- y w) if (can_prove (== (- x y) (- z w)) this)
+Failed to parse rule: (- (min x y) (min x w)) ==> (min (- y (min x w)) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (min x y) (min x w)) ==> (max (- (min x y) w) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (min (+ x c0) y) (min x w)) ==> (min (- y (min x w)) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to parse rule: (- (min (+ x c0) y) (min x w)) ==> (max (- (min (+ x c0) y) w) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (min y x) (min w x)) ==> (min (- y (min x w)) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (min y x) (min w x)) ==> (max (- (min x y) w) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (min y (+ x c0)) (min w x)) ==> (min (- y (min x w)) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to parse rule: (- (min y (+ x c0)) (min w x)) ==> (max (- (min (+ x c0) y) w) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (min x y) (min w x)) ==> (min (- y (min x w)) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (min x y) (min w x)) ==> (max (- (min x y) w) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (min (+ x c0) y) (min w x)) ==> (min (- y (min x w)) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to parse rule: (- (min (+ x c0) y) (min w x)) ==> (max (- (min (+ x c0) y) w) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (min y x) (min x w)) ==> (min (- y (min x w)) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (min y x) (min x w)) ==> (max (- (min x y) w) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (min y (+ x c0)) (min x w)) ==> (min (- y (min x w)) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to parse rule: (- (min y (+ x c0)) (min x w)) ==> (max (- (min (+ x c0) y) w) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (max x y) (max x w)) ==> (max (- y (max x w)) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (max x y) (max x w)) ==> (min (- (max x y) w) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (max (+ x c0) y) (max x w)) ==> (max (- y (max x w)) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (max (+ x c0) y) (max x w)) ==> (min (- (max (+ x c0) y) w) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to parse rule: (- (max y x) (max w x)) ==> (max (- y (max x w)) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (max y x) (max w x)) ==> (min (- (max x y) w) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (max y (+ x c0)) (max w x)) ==> (max (- y (max x w)) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (max y (+ x c0)) (max w x)) ==> (min (- (max (+ x c0) y) w) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to parse rule: (- (max x y) (max w x)) ==> (max (- y (max x w)) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (max x y) (max w x)) ==> (min (- (max x y) w) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (max (+ x c0) y) (max w x)) ==> (max (- y (max x w)) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (max (+ x c0) y) (max w x)) ==> (min (- (max (+ x c0) y) w) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to parse rule: (- (max y x) (max x w)) ==> (max (- y (max x w)) 0) if (can_prove (>= y w) this)
+Failed to parse rule: (- (max y x) (max x w)) ==> (min (- (max x y) w) 0) if (can_prove (<= y w) this)
+Failed to parse rule: (- (max y (+ x c0)) (max x w)) ==> (max (- y (max x w)) c0) if (can_prove (>= y (+ w c0)) this)
+Failed to parse rule: (- (max y (+ x c0)) (max x w)) ==> (min (- (max (+ x c0) y) w) c0) if (can_prove (<= y (+ w c0)) this)
+Failed to validate rule: (- (/ (min (+ (* x c0) y) z) c1) (* x c2)) ==> (/ (min y (- z (* x c0))) c1) if (== c0 (* c1 c2))
+Failed to validate rule: (- (/ (min z (+ (* x c0) y)) c1) (* x c2)) ==> (/ (min y (- z (* x c0))) c1) if (== c0 (* c1 c2))
+Failed to validate rule: (- (/ (+ (min (+ (* x c0) y) z) w) c1) (* x c2)) ==> (/ (+ (min y (- z (* x c0))) w) c1) if (== c0 (* c1 c2))
+Failed to validate rule: (- (/ (+ (min z (+ (* x c0) y)) w) c1) (* x c2)) ==> (/ (+ (min (- z (* x c0)) y) w) c1) if (== c0 (* c1 c2))
+Failed to validate rule: (!= x (|| c0 (== x c1))) ==> a if (!= c0 c1)
+Failed to validate rule: (<= x (|| c0 (< c1 x))) ==> 1 if (<= c1 c0)
+Failed to validate rule: (<= c1 (|| x (< x c0))) ==> 1 if (<= c1 c0)
+Failed to validate rule: (< x (|| c0 (< c1 x))) ==> 1 if (< c1 c0)
+Failed to validate rule: (< c1 (|| x (< x c0))) ==> 1 if (< c1 c0)
+Failed to parse rule: (min x c0) ==> b if (is_min_value c0)
+Failed to parse rule: (min x c0) ==> x if (is_max_value c0)
+Failed to validate rule: (min (* (/ x c0) c0) x) ==> a if (> c0 0)
+Failed to validate rule: (min x (* (/ x c0) c0)) ==> b if (> c0 0)
+Failed to validate rule: (min (max x c0) c1) ==> b if (<= c1 c0)
+Failed to validate rule: (min (+ (* (/ (+ x c0) c1) c1) c2) x) ==> b if (> c1 (&& 0 (>= (+ c0 c2) (- c1 1))))
+Failed to validate rule: (min x (+ (* (/ (+ x c0) c1) c1) c2)) ==> a if (> c1 (&& 0 (>= (+ c0 c2) (- c1 1))))
+Failed to validate rule: (min (+ (* (/ (+ x c0) c1) c1) c2) x) ==> a if (> c1 (&& 0 (<= (+ c0 c2) 0)))
+Failed to validate rule: (min x (+ (* (/ (+ x c0) c1) c1) c2)) ==> b if (> c1 (&& 0 (<= (+ c0 c2) 0)))
+Failed to validate rule: (min (* (/ x c0) c0) (+ (* (/ x c1) c1) c2)) ==> a if (>= c2 (&& c1 (> c1 (&& 0 (!= c0 0)))))
+Failed to validate rule: (min (+ (* (/ x c1) c1) c2) x) ==> b if (> c1 (&& 0 (>= c2 (- c1 1))))
+Failed to validate rule: (min x (+ (* (/ x c1) c1) c2)) ==> a if (> c1 (&& 0 (>= c2 (- c1 1))))
+Failed to validate rule: (min (* (/ (+ x c0) c1) c1) x) ==> b if (> c1 (&& 0 (>= c0 (- c1 1))))
+Failed to validate rule: (min x (* (/ (+ x c0) c1) c1)) ==> a if (> c1 (&& 0 (>= c0 (- c1 1))))
+Failed to validate rule: (min (+ (* (/ x c1) c1) c2) x) ==> a if (> c1 (&& 0 (<= c2 0)))
+Failed to validate rule: (min x (+ (* (/ x c1) c1) c2)) ==> b if (> c1 (&& 0 (<= c2 0)))
+Failed to validate rule: (min (* (/ (+ x c0) c1) c1) x) ==> a if (> c1 (&& 0 (<= c0 0)))
+Failed to validate rule: (min x (* (/ (+ x c0) c1) c1)) ==> b if (> c1 (&& 0 (<= c0 0)))
+Failed to validate rule: (min x (+ (max x y) c0)) ==> a if (<= 0 c0)
+Failed to validate rule: (min x (+ (max y x) c0)) ==> a if (<= 0 c0)
+Failed to validate rule: (min (+ (max x y) c0) x) ==> b if (<= 0 c0)
+Failed to validate rule: (min (+ (max x y) c0) y) ==> b if (<= 0 c0)
+Failed to validate rule: (min (max (- c0 x) x) c1) ==> b if (<= (* 2 c1) (+ c0 1))
+Failed to validate rule: (min (max x (- c0 x)) c1) ==> b if (<= (* 2 c1) (+ c0 1))
+Failed to validate rule: (min (* (+ (* x c0) y) c1) (+ (* x c2) z)) ==> (+ (min (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (min (* (+ y (* x c0)) c1) (+ (* x c2) z)) ==> (+ (min (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (min (* (+ (* x c0) y) c1) (+ z (* x c2))) ==> (+ (min (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (min (* (+ y (* x c0)) c1) (+ z (* x c2))) ==> (+ (min (* y c1) z) (* x c2)) if (== (* c0 c1) c2)
+Failed to validate rule: (min (* (/ (+ x c0) c1) c1) (+ x c2)) ==> (+ x c2) if (> c1 (&& 0 (>= (+ c0 1) (+ c1 c2))))
+Failed to validate rule: (min (* (min (/ (+ y c0) c1) x) c1) (+ y c2)) ==> (min (* x c1) (+ y c2)) if (> c1 (&& 0 (<= (+ c1 c2) (+ c0 1))))
+Failed to validate rule: (min (+ (* (min (/ (+ y c0) c1) x) c1) c2) y) ==> (min (+ (* x c1) c2) y) if (> c1 (&& 0 (<= c1 (+ (+ c0 c2) 1))))
+Failed to validate rule: (min (* (min (/ (+ y c0) c1) x) c1) y) ==> (min (* x c1) y) if (> c1 (&& 0 (<= c1 (+ c0 1))))
+Failed to validate rule: (min (/ (+ x c0) c1) (* (/ (+ x c2) c3) c4)) ==> (/ (+ x c0) c1) if (<= (- (+ c0 c3) c1) (&& c2 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (min (/ (+ x c0) c1) (* (/ (+ x c2) c3) c4)) ==> (* (/ (+ x c2) c3) c4) if (<= c2 (&& c0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (min (/ x c1) (* (/ (+ x c2) c3) c4)) ==> (/ x c1) if (<= (- c3 c1) (&& c2 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (min (/ x c1) (* (/ (+ x c2) c3) c4)) ==> (* (/ (+ x c2) c3) c4) if (<= c2 (&& 0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (min (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (/ (+ x c0) c1) if (<= (- (+ c0 c3) c1) (&& 0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (min (/ (+ x c0) c1) (* (/ x c3) c4)) ==> (* (/ x c3) c4) if (<= 0 (&& c0 (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))))
+Failed to validate rule: (min (/ x c1) (* (/ x c3) c4)) ==> (* (/ x c3) c4) if (> c1 (&& 0 (> c3 (&& 0 (== (* c1 c4) c3)))))
+attempting to derive: (< (* x c0) (* y c0)) ==> (< x y) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (* x c0) (* y c0)) ==> (< x y) if (> c0 0)` 🚀
+
+can I derive (< (* x c0) (* y c0)) ==> (< x y) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (* x c0) (* y c0)) ==> (< x y) if (> c0 0) in 0 ms.
+attempting to derive: (< (* x c0) (* y c0)) ==> (< y x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (* x c0) (* y c0)) ==> (< y x) if (< c0 0)` 🚀
+
+can I derive (< (* x c0) (* y c0)) ==> (< y x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (* x c0) (* y c0)) ==> (< y x) if (< c0 0) in 0 ms.
+attempting to derive: (< (/ x c0) c1) ==> (< x (* c1 c0)) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (/ x c0) c1) ==> (< x (* c1 c0)) if (> c0 0)` 🚀
+
+can I derive (< (/ x c0) c1) ==> (< x (* c1 c0)) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (/ x c0) c1) ==> (< x (* c1 c0)) if (> c0 0) in 0 ms.
+attempting to derive: (< (min z y) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min z y) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0)` 🚀
+
+can I derive (< (min z y) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min z y) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (min z y) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min z y) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0)` 🚀
+
+can I derive (< (min z y) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min z y) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)` 🚀
+
+can I derive (< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min z (+ y c0)) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (min z (+ y c0)) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min z (+ y c0)) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0)` 🚀
+
+can I derive (< (min z (+ y c0)) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min z (+ y c0)) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (min y z) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min y z) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0)` 🚀
+
+can I derive (< (min y z) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min y z) (min x (+ y c0))) ==> (< (min z y) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (min y z) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min y z) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0)` 🚀
+
+can I derive (< (min y z) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min y z) (min (+ y c0) x)) ==> (< (min z y) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (min (+ y c0) z) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min (+ y c0) z) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)` 🚀
+
+can I derive (< (min (+ y c0) z) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min (+ y c0) z) (min x y)) ==> (< (min z (+ y c0)) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (min (+ y c0) z) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min (+ y c0) z) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0)` 🚀
+
+can I derive (< (min (+ y c0) z) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min (+ y c0) z) (min y x)) ==> (< (min z (+ y c0)) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (max z y) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max z y) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0)` 🚀
+
+can I derive (< (max z y) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max z y) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (max z y) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max z y) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0)` 🚀
+
+can I derive (< (max z y) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max z y) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (max z (+ y c0)) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max z (+ y c0)) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0)` 🚀
+
+can I derive (< (max z (+ y c0)) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max z (+ y c0)) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (max z (+ y c0)) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max z (+ y c0)) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0)` 🚀
+
+can I derive (< (max z (+ y c0)) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max z (+ y c0)) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (max y z) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max y z) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0)` 🚀
+
+can I derive (< (max y z) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max y z) (max x (+ y c0))) ==> (< (max z y) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (max y z) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max y z) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0)` 🚀
+
+can I derive (< (max y z) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max y z) (max (+ y c0) x)) ==> (< (max z y) x) if (< c0 0) in 0 ms.
+attempting to derive: (< (max (+ y c0) z) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max (+ y c0) z) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0)` 🚀
+
+can I derive (< (max (+ y c0) z) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max (+ y c0) z) (max x y)) ==> (< (max z (+ y c0)) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (max (+ y c0) z) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max (+ y c0) z) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0)` 🚀
+
+can I derive (< (max (+ y c0) z) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max (+ y c0) z) (max y x)) ==> (< (max z (+ y c0)) x) if (> c0 0) in 0 ms.
+attempting to derive: (< x (* (/ x c1) c1)) ==> 0 if (> c1 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< x (* (/ x c1) c1)) ==> 0 if (> c1 0)` 🚀
+
+can I derive (< x (* (/ x c1) c1)) ==> 0 if (> c1 0)?: false
+LOG: Chomp! I finished can_derive_(< x (* (/ x c1) c1)) ==> 0 if (> c1 0) in 0 ms.
+attempting to derive: (< (/ (max (* x c0) y) c0) x) ==> 0 if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (/ (max (* x c0) y) c0) x) ==> 0 if (> c0 0)` 🚀
+
+can I derive (< (/ (max (* x c0) y) c0) x) ==> 0 if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (/ (max (* x c0) y) c0) x) ==> 0 if (> c0 0) in 0 ms.
+attempting to derive: (< (/ (min x (* y c0)) c0) y) ==> (< (/ x c0) y) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (/ (min x (* y c0)) c0) y) ==> (< (/ x c0) y) if (> c0 0)` 🚀
+
+can I derive (< (/ (min x (* y c0)) c0) y) ==> (< (/ x c0) y) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (/ (min x (* y c0)) c0) y) ==> (< (/ x c0) y) if (> c0 0) in 0 ms.
+attempting to derive: (< (/ (min (* x c0) y) c0) x) ==> (< (/ y c0) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (/ (min (* x c0) y) c0) x) ==> (< (/ y c0) x) if (> c0 0)` 🚀
+
+can I derive (< (/ (min (* x c0) y) c0) x) ==> (< (/ y c0) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (/ (min (* x c0) y) c0) x) ==> (< (/ y c0) x) if (> c0 0) in 0 ms.
+attempting to derive: (< (min x c0) (min x c1)) ==> 0 if (>= c0 c1)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min x c0) (min x c1)) ==> 0 if (>= c0 c1)` 🚀
+
+can I derive (< (min x c0) (min x c1)) ==> 0 if (>= c0 c1)?: false
+LOG: Chomp! I finished can_derive_(< (min x c0) (min x c1)) ==> 0 if (>= c0 c1) in 0 ms.
+attempting to derive: (< (max x c0) (max x c1)) ==> 0 if (>= c0 c1)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max x c0) (max x c1)) ==> 0 if (>= c0 c1)` 🚀
+
+can I derive (< (max x c0) (max x c1)) ==> 0 if (>= c0 c1)?: false
+LOG: Chomp! I finished can_derive_(< (max x c0) (max x c1)) ==> 0 if (>= c0 c1) in 0 ms.
+attempting to derive: (max (max (/ x c0) y) (/ z c0)) ==> (max (/ (max x z) c0) y) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (max (/ x c0) y) (/ z c0)) ==> (max (/ (max x z) c0) y) if (> c0 0)` 🚀
+
+can I derive (max (max (/ x c0) y) (/ z c0)) ==> (max (/ (max x z) c0) y) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (max (/ x c0) y) (/ z c0)) ==> (max (/ (max x z) c0) y) if (> c0 0) in 0 ms.
+attempting to derive: (max (+ (max x y) c0) x) ==> (max x (+ y c0)) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (+ (max x y) c0) x) ==> (max x (+ y c0)) if (< c0 0)` 🚀
+
+can I derive (max (+ (max x y) c0) x) ==> (max x (+ y c0)) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (+ (max x y) c0) x) ==> (max x (+ y c0)) if (< c0 0) in 0 ms.
+attempting to derive: (max (+ (max x y) c0) x) ==> (+ (max x y) c0) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (+ (max x y) c0) x) ==> (+ (max x y) c0) if (> c0 0)` 🚀
+
+can I derive (max (+ (max x y) c0) x) ==> (+ (max x y) c0) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (+ (max x y) c0) x) ==> (+ (max x y) c0) if (> c0 0) in 0 ms.
+attempting to derive: (max (+ (max y x) c0) x) ==> (max (+ y c0) x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (+ (max y x) c0) x) ==> (max (+ y c0) x) if (< c0 0)` 🚀
+
+can I derive (max (+ (max y x) c0) x) ==> (max (+ y c0) x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (+ (max y x) c0) x) ==> (max (+ y c0) x) if (< c0 0) in 0 ms.
+attempting to derive: (max (+ (max y x) c0) x) ==> (+ (max y x) c0) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (+ (max y x) c0) x) ==> (+ (max y x) c0) if (> c0 0)` 🚀
+
+can I derive (max (+ (max y x) c0) x) ==> (+ (max y x) c0) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (+ (max y x) c0) x) ==> (+ (max y x) c0) if (> c0 0) in 0 ms.
+attempting to derive: (max x (+ (max x y) c0)) ==> (max x (+ y c0)) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max x (+ (max x y) c0)) ==> (max x (+ y c0)) if (< c0 0)` 🚀
+
+can I derive (max x (+ (max x y) c0)) ==> (max x (+ y c0)) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(max x (+ (max x y) c0)) ==> (max x (+ y c0)) if (< c0 0) in 0 ms.
+attempting to derive: (max x (+ (max x y) c0)) ==> (+ (max x y) c0) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max x (+ (max x y) c0)) ==> (+ (max x y) c0) if (> c0 0)` 🚀
+
+can I derive (max x (+ (max x y) c0)) ==> (+ (max x y) c0) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max x (+ (max x y) c0)) ==> (+ (max x y) c0) if (> c0 0) in 0 ms.
+attempting to derive: (max x (+ (max y x) c0)) ==> (max x (+ y c0)) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max x (+ (max y x) c0)) ==> (max x (+ y c0)) if (< c0 0)` 🚀
+
+can I derive (max x (+ (max y x) c0)) ==> (max x (+ y c0)) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(max x (+ (max y x) c0)) ==> (max x (+ y c0)) if (< c0 0) in 0 ms.
+attempting to derive: (max x (+ (max y x) c0)) ==> (+ (max x y) c0) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max x (+ (max y x) c0)) ==> (+ (max x y) c0) if (> c0 0)` 🚀
+
+can I derive (max x (+ (max y x) c0)) ==> (+ (max x y) c0) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max x (+ (max y x) c0)) ==> (+ (max x y) c0) if (> c0 0) in 0 ms.
+attempting to derive: (max (max x y) (+ x c0)) ==> (max (+ x c0) y) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (max x y) (+ x c0)) ==> (max (+ x c0) y) if (> c0 0)` 🚀
+
+can I derive (max (max x y) (+ x c0)) ==> (max (+ x c0) y) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (max x y) (+ x c0)) ==> (max (+ x c0) y) if (> c0 0) in 0 ms.
+attempting to derive: (max (max x y) (+ x c0)) ==> (max x y) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (max x y) (+ x c0)) ==> (max x y) if (< c0 0)` 🚀
+
+can I derive (max (max x y) (+ x c0)) ==> (max x y) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (max x y) (+ x c0)) ==> (max x y) if (< c0 0) in 0 ms.
+attempting to derive: (max (max y x) (+ x c0)) ==> (max y (+ x c0)) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (max y x) (+ x c0)) ==> (max y (+ x c0)) if (> c0 0)` 🚀
+
+can I derive (max (max y x) (+ x c0)) ==> (max y (+ x c0)) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (max y x) (+ x c0)) ==> (max y (+ x c0)) if (> c0 0) in 0 ms.
+attempting to derive: (max (max y x) (+ x c0)) ==> (max y x) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (max y x) (+ x c0)) ==> (max y x) if (< c0 0)` 🚀
+
+can I derive (max (max y x) (+ x c0)) ==> (max y x) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (max y x) (+ x c0)) ==> (max y x) if (< c0 0) in 0 ms.
+attempting to derive: (max (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (> c0 0)` 🚀
+
+can I derive (max (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (> c0 0) in 0 ms.
+attempting to derive: (max (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (< c0 0)` 🚀
+
+can I derive (max (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(max (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (< c0 0) in 0 ms.
+attempting to derive: (== (+ (max x c0) c1) 0) ==> 0 if (> (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (+ (max x c0) c1) 0) ==> 0 if (> (+ c0 c1) 0)` 🚀
+
+can I derive (== (+ (max x c0) c1) 0) ==> 0 if (> (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(== (+ (max x c0) c1) 0) ==> 0 if (> (+ c0 c1) 0) in 0 ms.
+attempting to derive: (== (+ (min x c0) c1) 0) ==> 0 if (< (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (+ (min x c0) c1) 0) ==> 0 if (< (+ c0 c1) 0)` 🚀
+
+can I derive (== (+ (min x c0) c1) 0) ==> 0 if (< (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(== (+ (min x c0) c1) 0) ==> 0 if (< (+ c0 c1) 0) in 0 ms.
+attempting to derive: (== (+ (max x c0) c1) 0) ==> (<= x c0) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (+ (max x c0) c1) 0) ==> (<= x c0) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (== (+ (max x c0) c1) 0) ==> (<= x c0) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(== (+ (max x c0) c1) 0) ==> (<= x c0) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (== (+ (min x c0) c1) 0) ==> (<= c0 x) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (+ (min x c0) c1) 0) ==> (<= c0 x) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (== (+ (min x c0) c1) 0) ==> (<= c0 x) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(== (+ (min x c0) c1) 0) ==> (<= c0 x) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (== (max x c0) 0) ==> (== x 0) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (max x c0) 0) ==> (== x 0) if (< c0 0)` 🚀
+
+can I derive (== (max x c0) 0) ==> (== x 0) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(== (max x c0) 0) ==> (== x 0) if (< c0 0) in 0 ms.
+attempting to derive: (== (min x c0) 0) ==> (== x 0) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (min x c0) 0) ==> (== x 0) if (> c0 0)` 🚀
+
+can I derive (== (min x c0) 0) ==> (== x 0) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(== (min x c0) 0) ==> (== x 0) if (> c0 0) in 0 ms.
+attempting to derive: (== (max x c0) 0) ==> 0 if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (max x c0) 0) ==> 0 if (> c0 0)` 🚀
+
+can I derive (== (max x c0) 0) ==> 0 if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(== (max x c0) 0) ==> 0 if (> c0 0) in 0 ms.
+attempting to derive: (== (min x c0) 0) ==> 0 if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (min x c0) 0) ==> 0 if (< c0 0)` 🚀
+
+can I derive (== (min x c0) 0) ==> 0 if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(== (min x c0) 0) ==> 0 if (< c0 0) in 0 ms.
+attempting to derive: (- (/ (+ (+ x y) z) c0) (/ (+ (+ y x) w) c0)) ==> (- (/ (+ (+ x y) z) c0) (/ (+ (+ x y) w) c0)) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(- (/ (+ (+ x y) z) c0) (/ (+ (+ y x) w) c0)) ==> (- (/ (+ (+ x y) z) c0) (/ (+ (+ x y) w) c0)) if (> c0 0)` 🚀
+
+can I derive (- (/ (+ (+ x y) z) c0) (/ (+ (+ y x) w) c0)) ==> (- (/ (+ (+ x y) z) c0) (/ (+ (+ x y) w) c0)) if (> c0 0)?: true
+LOG: Chomp! I finished can_derive_(- (/ (+ (+ x y) z) c0) (/ (+ (+ y x) w) c0)) ==> (- (/ (+ (+ x y) z) c0) (/ (+ (+ x y) w) c0)) if (> c0 0) in 0 ms.
+attempting to derive: (- (/ (+ x y) c0) (/ (+ y x) c0)) ==> 0 if (!= c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(- (/ (+ x y) c0) (/ (+ y x) c0)) ==> 0 if (!= c0 0)` 🚀
+
+can I derive (- (/ (+ x y) c0) (/ (+ y x) c0)) ==> 0 if (!= c0 0)?: true
+LOG: Chomp! I finished can_derive_(- (/ (+ x y) c0) (/ (+ y x) c0)) ==> 0 if (!= c0 0) in 0 ms.
+attempting to derive: (+ (min x (+ y c0)) c1) ==> (min (+ x c1) y) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min x (+ y c0)) c1) ==> (min (+ x c1) y) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min x (+ y c0)) c1) ==> (min (+ x c1) y) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min x (+ y c0)) c1) ==> (min (+ x c1) y) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (min (+ y c0) x) c1) ==> (min y (+ x c1)) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min (+ y c0) x) c1) ==> (min y (+ x c1)) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min (+ y c0) x) c1) ==> (min y (+ x c1)) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min (+ y c0) x) c1) ==> (min y (+ x c1)) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max x (+ y c0)) c1) ==> (max (+ x c1) y) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max x (+ y c0)) c1) ==> (max (+ x c1) y) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max x (+ y c0)) c1) ==> (max (+ x c1) y) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max x (+ y c0)) c1) ==> (max (+ x c1) y) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max (+ y c0) x) c1) ==> (max y (+ x c1)) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max (+ y c0) x) c1) ==> (max y (+ x c1)) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max (+ y c0) x) c1) ==> (max y (+ x c1)) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max (+ y c0) x) c1) ==> (max y (+ x c1)) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (min x (+ y (* z c0))) (* z c1)) ==> (min (+ x (* z c1)) y) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min x (+ y (* z c0))) (* z c1)) ==> (min (+ x (* z c1)) y) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min x (+ y (* z c0))) (* z c1)) ==> (min (+ x (* z c1)) y) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min x (+ y (* z c0))) (* z c1)) ==> (min (+ x (* z c1)) y) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (min x (+ (* y c0) z)) (* y c1)) ==> (min (+ x (* y c1)) z) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min x (+ (* y c0) z)) (* y c1)) ==> (min (+ x (* y c1)) z) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min x (+ (* y c0) z)) (* y c1)) ==> (min (+ x (* y c1)) z) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min x (+ (* y c0) z)) (* y c1)) ==> (min (+ x (* y c1)) z) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (min x (* y c0)) (* y c1)) ==> (min (+ x (* y c1)) 0) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min x (* y c0)) (* y c1)) ==> (min (+ x (* y c1)) 0) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min x (* y c0)) (* y c1)) ==> (min (+ x (* y c1)) 0) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min x (* y c0)) (* y c1)) ==> (min (+ x (* y c1)) 0) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (min (+ x (* y c0)) z) (* y c1)) ==> (min (+ (* y c1) z) x) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min (+ x (* y c0)) z) (* y c1)) ==> (min (+ (* y c1) z) x) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min (+ x (* y c0)) z) (* y c1)) ==> (min (+ (* y c1) z) x) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min (+ x (* y c0)) z) (* y c1)) ==> (min (+ (* y c1) z) x) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (min (+ (* x c0) y) z) (* x c1)) ==> (min y (+ (* x c1) z)) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min (+ (* x c0) y) z) (* x c1)) ==> (min y (+ (* x c1) z)) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min (+ (* x c0) y) z) (* x c1)) ==> (min y (+ (* x c1) z)) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min (+ (* x c0) y) z) (* x c1)) ==> (min y (+ (* x c1) z)) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (min (* x c0) y) (* x c1)) ==> (min (+ (* x c1) y) 0) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (min (* x c0) y) (* x c1)) ==> (min (+ (* x c1) y) 0) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (min (* x c0) y) (* x c1)) ==> (min (+ (* x c1) y) 0) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (min (* x c0) y) (* x c1)) ==> (min (+ (* x c1) y) 0) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max x (+ y (* z c0))) (* z c1)) ==> (max (+ x (* z c1)) y) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max x (+ y (* z c0))) (* z c1)) ==> (max (+ x (* z c1)) y) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max x (+ y (* z c0))) (* z c1)) ==> (max (+ x (* z c1)) y) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max x (+ y (* z c0))) (* z c1)) ==> (max (+ x (* z c1)) y) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max x (+ (* y c0) z)) (* y c1)) ==> (max (+ x (* y c1)) z) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max x (+ (* y c0) z)) (* y c1)) ==> (max (+ x (* y c1)) z) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max x (+ (* y c0) z)) (* y c1)) ==> (max (+ x (* y c1)) z) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max x (+ (* y c0) z)) (* y c1)) ==> (max (+ x (* y c1)) z) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max x (* y c0)) (* y c1)) ==> (max (+ x (* y c1)) 0) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max x (* y c0)) (* y c1)) ==> (max (+ x (* y c1)) 0) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max x (* y c0)) (* y c1)) ==> (max (+ x (* y c1)) 0) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max x (* y c0)) (* y c1)) ==> (max (+ x (* y c1)) 0) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max (+ x (* y c0)) z) (* y c1)) ==> (max x (+ (* y c1) z)) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max (+ x (* y c0)) z) (* y c1)) ==> (max x (+ (* y c1) z)) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max (+ x (* y c0)) z) (* y c1)) ==> (max x (+ (* y c1) z)) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max (+ x (* y c0)) z) (* y c1)) ==> (max x (+ (* y c1) z)) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max (+ (* x c0) y) z) (* x c1)) ==> (max (+ (* x c1) z) y) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max (+ (* x c0) y) z) (* x c1)) ==> (max (+ (* x c1) z) y) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max (+ (* x c0) y) z) (* x c1)) ==> (max (+ (* x c1) z) y) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max (+ (* x c0) y) z) (* x c1)) ==> (max (+ (* x c1) z) y) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (+ (max (* x c0) y) (* x c1)) ==> (max (+ (* x c1) y) 0) if (== (+ c0 c1) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (max (* x c0) y) (* x c1)) ==> (max (+ (* x c1) y) 0) if (== (+ c0 c1) 0)` 🚀
+
+can I derive (+ (max (* x c0) y) (* x c1)) ==> (max (+ (* x c1) y) 0) if (== (+ c0 c1) 0)?: false
+LOG: Chomp! I finished can_derive_(+ (max (* x c0) y) (* x c1)) ==> (max (+ (* x c1) y) 0) if (== (+ c0 c1) 0) in 0 ms.
+attempting to derive: (min (max x (+ y c0)) y) ==> y if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (max x (+ y c0)) y) ==> y if (> c0 0)` 🚀
+
+can I derive (min (max x (+ y c0)) y) ==> y if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (max x (+ y c0)) y) ==> y if (> c0 0) in 0 ms.
+attempting to derive: (min (min (/ x c0) y) (/ z c0)) ==> (min (/ (min x z) c0) y) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (min (/ x c0) y) (/ z c0)) ==> (min (/ (min x z) c0) y) if (> c0 0)` 🚀
+
+can I derive (min (min (/ x c0) y) (/ z c0)) ==> (min (/ (min x z) c0) y) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (min (/ x c0) y) (/ z c0)) ==> (min (/ (min x z) c0) y) if (> c0 0) in 0 ms.
+attempting to derive: (min (max x c0) c1) ==> (max (min x c1) c0) if (<= c0 c1)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (max x c0) c1) ==> (max (min x c1) c0) if (<= c0 c1)` 🚀
+
+can I derive (min (max x c0) c1) ==> (max (min x c1) c0) if (<= c0 c1)?: false
+LOG: Chomp! I finished can_derive_(min (max x c0) c1) ==> (max (min x c1) c0) if (<= c0 c1) in 0 ms.
+attempting to derive: (min (+ (min x y) c0) x) ==> (min x (+ y c0)) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (+ (min x y) c0) x) ==> (min x (+ y c0)) if (> c0 0)` 🚀
+
+can I derive (min (+ (min x y) c0) x) ==> (min x (+ y c0)) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (+ (min x y) c0) x) ==> (min x (+ y c0)) if (> c0 0) in 0 ms.
+attempting to derive: (min (+ (min x y) c0) x) ==> (+ (min x y) c0) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (+ (min x y) c0) x) ==> (+ (min x y) c0) if (< c0 0)` 🚀
+
+can I derive (min (+ (min x y) c0) x) ==> (+ (min x y) c0) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (+ (min x y) c0) x) ==> (+ (min x y) c0) if (< c0 0) in 0 ms.
+attempting to derive: (min (+ (min y x) c0) x) ==> (min (+ y c0) x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (+ (min y x) c0) x) ==> (min (+ y c0) x) if (> c0 0)` 🚀
+
+can I derive (min (+ (min y x) c0) x) ==> (min (+ y c0) x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (+ (min y x) c0) x) ==> (min (+ y c0) x) if (> c0 0) in 0 ms.
+attempting to derive: (min (+ (min y x) c0) x) ==> (+ (min y x) c0) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (+ (min y x) c0) x) ==> (+ (min y x) c0) if (< c0 0)` 🚀
+
+can I derive (min (+ (min y x) c0) x) ==> (+ (min y x) c0) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (+ (min y x) c0) x) ==> (+ (min y x) c0) if (< c0 0) in 0 ms.
+attempting to derive: (min x (+ (min x y) c0)) ==> (min x (+ y c0)) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min x (+ (min x y) c0)) ==> (min x (+ y c0)) if (> c0 0)` 🚀
+
+can I derive (min x (+ (min x y) c0)) ==> (min x (+ y c0)) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min x (+ (min x y) c0)) ==> (min x (+ y c0)) if (> c0 0) in 0 ms.
+attempting to derive: (min x (+ (min x y) c0)) ==> (+ (min x y) c0) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min x (+ (min x y) c0)) ==> (+ (min x y) c0) if (< c0 0)` 🚀
+
+can I derive (min x (+ (min x y) c0)) ==> (+ (min x y) c0) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(min x (+ (min x y) c0)) ==> (+ (min x y) c0) if (< c0 0) in 0 ms.
+attempting to derive: (min x (+ (min y x) c0)) ==> (min x (+ y c0)) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min x (+ (min y x) c0)) ==> (min x (+ y c0)) if (> c0 0)` 🚀
+
+can I derive (min x (+ (min y x) c0)) ==> (min x (+ y c0)) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min x (+ (min y x) c0)) ==> (min x (+ y c0)) if (> c0 0) in 0 ms.
+attempting to derive: (min x (+ (min y x) c0)) ==> (+ (min x y) c0) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min x (+ (min y x) c0)) ==> (+ (min x y) c0) if (< c0 0)` 🚀
+
+can I derive (min x (+ (min y x) c0)) ==> (+ (min x y) c0) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(min x (+ (min y x) c0)) ==> (+ (min x y) c0) if (< c0 0) in 0 ms.
+attempting to derive: (min (min x y) (+ x c0)) ==> (min x y) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (min x y) (+ x c0)) ==> (min x y) if (> c0 0)` 🚀
+
+can I derive (min (min x y) (+ x c0)) ==> (min x y) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (min x y) (+ x c0)) ==> (min x y) if (> c0 0) in 0 ms.
+attempting to derive: (min (min x y) (+ x c0)) ==> (min (+ x c0) y) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (min x y) (+ x c0)) ==> (min (+ x c0) y) if (< c0 0)` 🚀
+
+can I derive (min (min x y) (+ x c0)) ==> (min (+ x c0) y) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (min x y) (+ x c0)) ==> (min (+ x c0) y) if (< c0 0) in 0 ms.
+attempting to derive: (min (min y x) (+ x c0)) ==> (min y x) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (min y x) (+ x c0)) ==> (min y x) if (> c0 0)` 🚀
+
+can I derive (min (min y x) (+ x c0)) ==> (min y x) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (min y x) (+ x c0)) ==> (min y x) if (> c0 0) in 0 ms.
+attempting to derive: (min (min y x) (+ x c0)) ==> (min y (+ x c0)) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (min y x) (+ x c0)) ==> (min y (+ x c0)) if (< c0 0)` 🚀
+
+can I derive (min (min y x) (+ x c0)) ==> (min y (+ x c0)) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (min y x) (+ x c0)) ==> (min y (+ x c0)) if (< c0 0) in 0 ms.
+attempting to derive: (min (max (+ x c0) y) x) ==> x if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (max (+ x c0) y) x) ==> x if (> c0 0)` 🚀
+
+can I derive (min (max (+ x c0) y) x) ==> x if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (max (+ x c0) y) x) ==> x if (> c0 0) in 0 ms.
+attempting to derive: (min (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (> c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (> c0 0)` 🚀
+
+can I derive (min (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (> c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (/ x c0) (/ y c0)) ==> (/ (min x y) c0) if (> c0 0) in 0 ms.
+attempting to derive: (min (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (< c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (< c0 0)` 🚀
+
+can I derive (min (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (< c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (/ x c0) (/ y c0)) ==> (/ (max x y) c0) if (< c0 0) in 0 ms.
+attempting to derive: (|| ?a 0) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a 0) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| ?a 0) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a 0) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| 0 ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| 0 ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| 0 ?a) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| 0 ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| ?a ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| ?a ?a) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (&& ?a ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (&& ?a ?a) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (! ?a) ==> 1 if (== ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(! ?a) ==> 1 if (== ?a 0)` 🚀
+
+can I derive (! ?a) ==> 1 if (== ?a 0)?: false
+LOG: Chomp! I finished can_derive_(! ?a) ==> 1 if (== ?a 0) in 0 ms.
+attempting to derive: (! ?a) ==> 0 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(! ?a) ==> 0 if (!= ?a 0)` 🚀
+
+can I derive (! ?a) ==> 0 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(! ?a) ==> 0 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| ?a ?b) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?b) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| ?a ?b) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a ?b) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| ?a ?b) ==> 1 if (!= ?b 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?b) ==> 1 if (!= ?b 0)` 🚀
+
+can I derive (|| ?a ?b) ==> 1 if (!= ?b 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a ?b) ==> 1 if (!= ?b 0) in 0 ms.
+attempting to derive: (|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))` 🚀
+
+can I derive (|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))?: false
+LOG: Chomp! I finished can_derive_(|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0)) in 0 ms.
+attempting to derive: (&& ?a ?b) ==> 0 if (== ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?b) ==> 0 if (== ?a 0)` 🚀
+
+can I derive (&& ?a ?b) ==> 0 if (== ?a 0)?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?b) ==> 0 if (== ?a 0) in 0 ms.
+attempting to derive: (&& ?a ?b) ==> 0 if (== ?b 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?b) ==> 0 if (== ?b 0)` 🚀
+
+can I derive (&& ?a ?b) ==> 0 if (== ?b 0)?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?b) ==> 0 if (== ?b 0) in 0 ms.
+attempting to derive: (&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))` 🚀
+
+can I derive (&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0)) in 0 ms.
+attempting to derive: (/ ?a ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ ?a ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (/ ?a ?a) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(/ ?a ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)` 🚀
+
+can I derive (/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)?: false
+LOG: Chomp! I finished can_derive_(/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0) in 0 ms.
+attempting to derive: (/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)` 🚀
+
+can I derive (/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0) in 0 ms.
+attempting to derive: (/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))` 🚀
+
+can I derive (/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0)) in 0 ms.
+attempting to derive: (/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))` 🚀
+
+can I derive (/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0)) in 0 ms.
+attempting to derive: ("%" ?a ?a) ==> 0 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_("%" ?a ?a) ==> 0 if (!= ?a 0)` 🚀
+
+can I derive ("%" ?a ?a) ==> 0 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_("%" ?a ?a) ==> 0 if (!= ?a 0) in 0 ms.
+attempting to derive: ("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0)` 🚀
+
+can I derive ("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0)?: true
+LOG: Chomp! I finished can_derive_("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0) in 0 ms.
+attempting to derive: ("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0)` 🚀
+
+can I derive ("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0)?: true
+LOG: Chomp! I finished can_derive_("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0) in 0 ms.
+attempting to derive: (min ?a ?b) ==> ?a if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?a ?b) ==> ?a if (<= ?a ?b)` 🚀
+
+can I derive (min ?a ?b) ==> ?a if (<= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(min ?a ?b) ==> ?a if (<= ?a ?b) in 0 ms.
+attempting to derive: (min ?a ?b) ==> ?b if (<= ?b ?a)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?a ?b) ==> ?b if (<= ?b ?a)` 🚀
+
+can I derive (min ?a ?b) ==> ?b if (<= ?b ?a)?: false
+LOG: Chomp! I finished can_derive_(min ?a ?b) ==> ?b if (<= ?b ?a) in 0 ms.
+attempting to derive: (max ?a ?b) ==> ?a if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max ?a ?b) ==> ?a if (>= ?a ?b)` 🚀
+
+can I derive (max ?a ?b) ==> ?a if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(max ?a ?b) ==> ?a if (>= ?a ?b) in 0 ms.
+attempting to derive: (max ?a ?b) ==> ?b if (>= ?b ?a)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max ?a ?b) ==> ?b if (>= ?b ?a)` 🚀
+
+can I derive (max ?a ?b) ==> ?b if (>= ?b ?a)?: false
+LOG: Chomp! I finished can_derive_(max ?a ?b) ==> ?b if (>= ?b ?a) in 0 ms.
+attempting to derive: (min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)` 🚀
+
+can I derive (min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b) in 0 ms.
+attempting to derive: (max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)` 🚀
+
+can I derive (max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b) in 0 ms.
+attempting to derive: (abs ?a) ==> ?a if (>= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(abs ?a) ==> ?a if (>= ?a 0)` 🚀
+
+can I derive (abs ?a) ==> ?a if (>= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(abs ?a) ==> ?a if (>= ?a 0) in 0 ms.
+attempting to derive: (abs ?a) ==> (* -1 ?a) if (< ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(abs ?a) ==> (* -1 ?a) if (< ?a 0)` 🚀
+
+can I derive (abs ?a) ==> (* -1 ?a) if (< ?a 0)?: false
+LOG: Chomp! I finished can_derive_(abs ?a) ==> (* -1 ?a) if (< ?a 0) in 0 ms.
+attempting to derive: (abs ?a) ==> 0 if (== ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(abs ?a) ==> 0 if (== ?a 0)` 🚀
+
+can I derive (abs ?a) ==> 0 if (== ?a 0)?: false
+LOG: Chomp! I finished can_derive_(abs ?a) ==> 0 if (== ?a 0) in 0 ms.
+attempting to derive: (< ?a ?b) ==> 1 if (< ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< ?a ?b) ==> 1 if (< ?a ?b)` 🚀
+
+can I derive (< ?a ?b) ==> 1 if (< ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(< ?a ?b) ==> 1 if (< ?a ?b) in 0 ms.
+attempting to derive: (< ?a ?b) ==> 0 if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< ?a ?b) ==> 0 if (>= ?a ?b)` 🚀
+
+can I derive (< ?a ?b) ==> 0 if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(< ?a ?b) ==> 0 if (>= ?a ?b) in 0 ms.
+attempting to derive: (<= ?a ?b) ==> 1 if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(<= ?a ?b) ==> 1 if (<= ?a ?b)` 🚀
+
+can I derive (<= ?a ?b) ==> 1 if (<= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(<= ?a ?b) ==> 1 if (<= ?a ?b) in 0 ms.
+attempting to derive: (<= ?a ?b) ==> 0 if (> ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(<= ?a ?b) ==> 0 if (> ?a ?b)` 🚀
+
+can I derive (<= ?a ?b) ==> 0 if (> ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(<= ?a ?b) ==> 0 if (> ?a ?b) in 0 ms.
+attempting to derive: (> ?a ?b) ==> 1 if (> ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(> ?a ?b) ==> 1 if (> ?a ?b)` 🚀
+
+can I derive (> ?a ?b) ==> 1 if (> ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(> ?a ?b) ==> 1 if (> ?a ?b) in 0 ms.
+attempting to derive: (> ?a ?b) ==> 0 if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(> ?a ?b) ==> 0 if (<= ?a ?b)` 🚀
+
+can I derive (> ?a ?b) ==> 0 if (<= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(> ?a ?b) ==> 0 if (<= ?a ?b) in 0 ms.
+attempting to derive: (>= ?a ?b) ==> 1 if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(>= ?a ?b) ==> 1 if (>= ?a ?b)` 🚀
+
+can I derive (>= ?a ?b) ==> 1 if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(>= ?a ?b) ==> 1 if (>= ?a ?b) in 0 ms.
+attempting to derive: (>= ?a ?b) ==> 0 if (< ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(>= ?a ?b) ==> 0 if (< ?a ?b)` 🚀
+
+can I derive (>= ?a ?b) ==> 0 if (< ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(>= ?a ?b) ==> 0 if (< ?a ?b) in 0 ms.
+attempting to derive: (== ?a ?b) ==> 1 if (== ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== ?a ?b) ==> 1 if (== ?a ?b)` 🚀
+
+can I derive (== ?a ?b) ==> 1 if (== ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(== ?a ?b) ==> 1 if (== ?a ?b) in 0 ms.
+attempting to derive: (== ?a ?b) ==> 0 if (!= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== ?a ?b) ==> 0 if (!= ?a ?b)` 🚀
+
+can I derive (== ?a ?b) ==> 0 if (!= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(== ?a ?b) ==> 0 if (!= ?a ?b) in 0 ms.
+attempting to derive: (!= ?a ?b) ==> 1 if (!= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(!= ?a ?b) ==> 1 if (!= ?a ?b)` 🚀
+
+can I derive (!= ?a ?b) ==> 1 if (!= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(!= ?a ?b) ==> 1 if (!= ?a ?b) in 0 ms.
+attempting to derive: (!= ?a ?b) ==> 0 if (== ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(!= ?a ?b) ==> 0 if (== ?a ?b)` 🚀
+
+can I derive (!= ?a ?b) ==> 0 if (== ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(!= ?a ?b) ==> 0 if (== ?a ?b) in 0 ms.
+wrote derivability results to eval-docker/2026_05_09_06_18/full/llm_only/full_llm_only_against_halide.json
+Failed to validate rule: (== (* ?a ?x) ?b) ==> 0 if (&& (!= ?a 0) (!= (% ?b ?a) 0))
+Failed to validate rule: (+ (/ ?a ?b) ?c) ==> (/ (+ ?a (* ?b ?c)) ?b)
+Failed to validate rule: (/ (+ ?a (* ?b ?c)) ?b) ==> (+ (/ ?a ?b) ?c)
+Failed to validate rule: (/ (* -1 ?a) ?b) ==> (/ ?a (* -1 ?b))
+Failed to validate rule: (/ ?a (* -1 ?b)) ==> (/ (* -1 ?a) ?b)
+Failed to validate rule: (* -1 (/ ?a ?b)) ==> (/ (* -1 ?a) ?b)
+Failed to validate rule: (/ (* -1 ?a) ?b) ==> (* -1 (/ ?a ?b))
+Failed to validate rule: (&& 1 ?x) ==> ?x
+Failed to validate rule: (&& ?x ?x) ==> ?x
+Failed to validate rule: (|| ?x (&& ?x ?y)) ==> ?x
+Failed to validate rule: (* (/ ?a ?b) ?b) ==> (- ?a (% ?a ?b))
+Failed to validate rule: (/ (* ?y ?x) ?x) ==> ?y
+Failed to validate rule: (! (! ?x)) ==> ?x
+Failed to validate rule: (< ?a (% ?x ?b)) ==> 1 if (<= ?a (- 0 (abs ?b)))
+Failed to validate rule: (min (% ?x ?c0) ?c1) ==> (% ?x ?c0) if (>= ?c1 (- (abs ?c0) 1))
+Failed to validate rule: (% ?x ?c1) ==> (% (+ ?x ?c1) ?c1) if (<= ?c1 (abs ?x))
+Failed to validate rule: (% ?x ?c1) ==> (% (- ?x ?c1) ?c1) if (<= ?c1 (abs ?x))
+Failed to validate rule: (% (* ?x -1) ?c) ==> (* -1 (% ?x ?c))
+Failed to validate rule: (* -1 (% ?x ?c)) ==> (% (* ?x -1) ?c)
+Failed to validate rule: ( % ( + ( * ?x ?c0 ) ?y ) ?c1 ) ==> ( % ?y ?c1 ) if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
+Failed to validate rule: (% (* ?c0 ?x) ?c1) ==> 0 if (&& (!= ?c1 0) (== (% ?c0 ?c1) 0))
+attempting to derive: (== (max ?x ?c) 0) ==> 0 if (> ?c 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (max ?x ?c) 0) ==> 0 if (> ?c 0)` 🚀
+
+can I derive (== (max ?x ?c) 0) ==> 0 if (> ?c 0)?: false
+LOG: Chomp! I finished can_derive_(== (max ?x ?c) 0) ==> 0 if (> ?c 0) in 0 ms.
+attempting to derive: (== (max ?x ?c) 0) ==> (== ?x 0) if (< ?c 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (max ?x ?c) 0) ==> (== ?x 0) if (< ?c 0)` 🚀
+
+can I derive (== (max ?x ?c) 0) ==> (== ?x 0) if (< ?c 0)?: false
+LOG: Chomp! I finished can_derive_(== (max ?x ?c) 0) ==> (== ?x 0) if (< ?c 0) in 0 ms.
+attempting to derive: (== (min ?x ?c) 0) ==> 0 if (< ?c 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (min ?x ?c) 0) ==> 0 if (< ?c 0)` 🚀
+
+can I derive (== (min ?x ?c) 0) ==> 0 if (< ?c 0)?: false
+LOG: Chomp! I finished can_derive_(== (min ?x ?c) 0) ==> 0 if (< ?c 0) in 0 ms.
+attempting to derive: (== (min ?x ?c) 0) ==> (== ?x 0) if (> ?c 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== (min ?x ?c) 0) ==> (== ?x 0) if (> ?c 0)` 🚀
+
+can I derive (== (min ?x ?c) 0) ==> (== ?x 0) if (> ?c 0)?: false
+LOG: Chomp! I finished can_derive_(== (min ?x ?c) 0) ==> (== ?x 0) if (> ?c 0) in 0 ms.
+attempting to derive: (+ (* ?x ?a) (* ?y ?b)) ==> (* (+ (* ?x (/ ?a ?b)) ?y) ?b) if (&& (!= ?b 0) (== ("%" ?a ?b) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(+ (* ?x ?a) (* ?y ?b)) ==> (* (+ (* ?x (/ ?a ?b)) ?y) ?b) if (&& (!= ?b 0) (== ("%" ?a ?b) 0))` 🚀
+
+can I derive (+ (* ?x ?a) (* ?y ?b)) ==> (* (+ (* ?x (/ ?a ?b)) ?y) ?b) if (&& (!= ?b 0) (== ("%" ?a ?b) 0))?: false
+LOG: Chomp! I finished can_derive_(+ (* ?x ?a) (* ?y ?b)) ==> (* (+ (* ?x (/ ?a ?b)) ?y) ?b) if (&& (!= ?b 0) (== ("%" ?a ?b) 0)) in 0 ms.
+attempting to derive: (/ ?a ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ ?a ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (/ ?a ?a) ==> 1 if (!= ?a 0)?: true
+LOG: Chomp! I finished can_derive_(/ ?a ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== ("%" ?b ?a) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== ("%" ?b ?a) 0))` 🚀
+
+can I derive (/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== ("%" ?b ?a) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (* ?x ?a) ?b) ==> (/ ?x (/ ?b ?a)) if (&& (> ?a 0) (== ("%" ?b ?a) 0)) in 1 ms.
+attempting to derive: (/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))` 🚀
+
+can I derive (/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (* ?x ?a) ?b) ==> (* ?x (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0)) in 1 ms.
+attempting to derive: (/ (+ (* ?x ?a) ?y) ?b) ==> (+ (* ?x (/ ?a ?b)) (/ ?y ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (+ (* ?x ?a) ?y) ?b) ==> (+ (* ?x (/ ?a ?b)) (/ ?y ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))` 🚀
+
+can I derive (/ (+ (* ?x ?a) ?y) ?b) ==> (+ (* ?x (/ ?a ?b)) (/ ?y ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (+ (* ?x ?a) ?y) ?b) ==> (+ (* ?x (/ ?a ?b)) (/ ?y ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0)) in 1 ms.
+attempting to derive: (/ (+ ?x ?a) ?b) ==> (+ (/ ?x ?b) (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (+ ?x ?a) ?b) ==> (+ (/ ?x ?b) (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))` 🚀
+
+can I derive (/ (+ ?x ?a) ?b) ==> (+ (/ ?x ?b) (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (+ ?x ?a) ?b) ==> (+ (/ ?x ?b) (/ ?a ?b)) if (&& (> ?b 0) (== ("%" ?a ?b) 0)) in 1 ms.
+attempting to derive: (&& (== ?x ?c0) (== ?x ?c1)) ==> 0 if (!= ?c1 ?c0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& (== ?x ?c0) (== ?x ?c1)) ==> 0 if (!= ?c1 ?c0)` 🚀
+
+can I derive (&& (== ?x ?c0) (== ?x ?c1)) ==> 0 if (!= ?c1 ?c0)?: false
+LOG: Chomp! I finished can_derive_(&& (== ?x ?c0) (== ?x ?c1)) ==> 0 if (!= ?c1 ?c0) in 0 ms.
+attempting to derive: (&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)` 🚀
+
+can I derive (&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0)?: false
+LOG: Chomp! I finished can_derive_(&& (!= ?x ?c0) (== ?x ?c1)) ==> (== ?x ?c1) if (!= ?c1 ?c0) in 0 ms.
+attempting to derive: (&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))` 🚀
+
+can I derive (&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1))?: false
+LOG: Chomp! I finished can_derive_(&& (< ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 (+ ?c0 1)) in 0 ms.
+attempting to derive: (&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)` 🚀
+
+can I derive (&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0)?: false
+LOG: Chomp! I finished can_derive_(&& (<= ?c0 ?x) (<= ?x ?c1)) ==> 0 if (< ?c1 ?c0) in 0 ms.
+attempting to derive: (&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)` 🚀
+
+can I derive (&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0)?: false
+LOG: Chomp! I finished can_derive_(&& (<= ?c0 ?x) (< ?x ?c1)) ==> 0 if (<= ?c1 ?c0) in 0 ms.
+attempting to derive: (< (- ?a ?y) ?a) ==> 1 if (> ?y 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (- ?a ?y) ?a) ==> 1 if (> ?y 0)` 🚀
+
+can I derive (< (- ?a ?y) ?a) ==> 1 if (> ?y 0)?: false
+LOG: Chomp! I finished can_derive_(< (- ?a ?y) ?a) ==> 1 if (> ?y 0) in 0 ms.
+attempting to derive: (< 0 ?y) ==> 1 if (> ?y 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< 0 ?y) ==> 1 if (> ?y 0)` 🚀
+
+can I derive (< 0 ?y) ==> 1 if (> ?y 0)?: true
+LOG: Chomp! I finished can_derive_(< 0 ?y) ==> 1 if (> ?y 0) in 0 ms.
+attempting to derive: (< ?y 0) ==> 1 if (< ?y 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< ?y 0) ==> 1 if (< ?y 0)` 🚀
+
+can I derive (< ?y 0) ==> 1 if (< ?y 0)?: true
+LOG: Chomp! I finished can_derive_(< ?y 0) ==> 1 if (< ?y 0) in 0 ms.
+attempting to derive: (< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0)` 🚀
+
+can I derive (< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min ?z ?y) (min ?x (+ ?y ?c0))) ==> (< (min ?z ?y) ?x) if (> ?c0 0) in 0 ms.
+attempting to derive: (< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)` 🚀
+
+can I derive (< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max ?z (+ ?y ?c0)) (max ?x ?y)) ==> (< (max ?z (+ ?y ?c0)) ?x) if (> ?c0 0) in 0 ms.
+attempting to derive: (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)` 🚀
+
+can I derive (< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min ?z (+ ?y ?c0)) (min ?x ?y)) ==> (< (min ?z (+ ?y ?c0)) ?x) if (< ?c0 0) in 0 ms.
+attempting to derive: (< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0)` 🚀
+
+can I derive (< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (max ?z ?y) (max ?x (+ ?y ?c0))) ==> (< (max ?z ?y) ?x) if (< ?c0 0) in 0 ms.
+attempting to derive: (< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0)` 🚀
+
+can I derive (< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0)?: false
+LOG: Chomp! I finished can_derive_(< (min ?x ?y) (+ ?x ?c0)) ==> 1 if (> ?c0 0) in 0 ms.
+attempting to derive: (< (* ?x ?y) ?z) ==> (< ?x (/ (- (+ ?z ?y) 1) ?y)) if (> ?y 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< (* ?x ?y) ?z) ==> (< ?x (/ (- (+ ?z ?y) 1) ?y)) if (> ?y 0)` 🚀
+
+can I derive (< (* ?x ?y) ?z) ==> (< ?x (/ (- (+ ?z ?y) 1) ?y)) if (> ?y 0)?: false
+LOG: Chomp! I finished can_derive_(< (* ?x ?y) ?z) ==> (< ?x (/ (- (+ ?z ?y) 1) ?y)) if (> ?y 0) in 0 ms.
+attempting to derive: (< ?y (/ ?x ?z)) ==> (< (- (* (+ ?y 1) ?z) 1) ?x) if (> ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< ?y (/ ?x ?z)) ==> (< (- (* (+ ?y 1) ?z) 1) ?x) if (> ?z 0)` 🚀
+
+can I derive (< ?y (/ ?x ?z)) ==> (< (- (* (+ ?y 1) ?z) 1) ?x) if (> ?z 0)?: false
+LOG: Chomp! I finished can_derive_(< ?y (/ ?x ?z)) ==> (< (- (* (+ ?y 1) ?z) 1) ?x) if (> ?z 0) in 0 ms.
+attempting to derive: (< ?a ("%" ?x ?b)) ==> 0 if (>= ?a (abs ?b))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< ?a ("%" ?x ?b)) ==> 0 if (>= ?a (abs ?b))` 🚀
+
+can I derive (< ?a ("%" ?x ?b)) ==> 0 if (>= ?a (abs ?b))?: false
+LOG: Chomp! I finished can_derive_(< ?a ("%" ?x ?b)) ==> 0 if (>= ?a (abs ?b)) in 0 ms.
+attempting to derive: (min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)` 🚀
+
+can I derive (min ?x (+ ?x ?a)) ==> ?x if (> ?a 0)?: false
+LOG: Chomp! I finished can_derive_(min ?x (+ ?x ?a)) ==> ?x if (> ?a 0) in 0 ms.
+attempting to derive: (min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0)` 🚀
+
+can I derive (min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0)?: false
+LOG: Chomp! I finished can_derive_(min ?x (+ ?x ?a)) ==> (+ ?x ?a) if (< ?a 0) in 0 ms.
+attempting to derive: (* (min ?x ?y) ?z) ==> (min (* ?x ?z) (* ?y ?z)) if (> ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(* (min ?x ?y) ?z) ==> (min (* ?x ?z) (* ?y ?z)) if (> ?z 0)` 🚀
+
+can I derive (* (min ?x ?y) ?z) ==> (min (* ?x ?z) (* ?y ?z)) if (> ?z 0)?: false
+LOG: Chomp! I finished can_derive_(* (min ?x ?y) ?z) ==> (min (* ?x ?z) (* ?y ?z)) if (> ?z 0) in 0 ms.
+attempting to derive: (min (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (> ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (> ?z 0)` 🚀
+
+can I derive (min (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (> ?z 0)?: false
+LOG: Chomp! I finished can_derive_(min (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (> ?z 0) in 0 ms.
+attempting to derive: (* (min ?x ?y) ?z) ==> (max (* ?x ?z) (* ?y ?z)) if (< ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(* (min ?x ?y) ?z) ==> (max (* ?x ?z) (* ?y ?z)) if (< ?z 0)` 🚀
+
+can I derive (* (min ?x ?y) ?z) ==> (max (* ?x ?z) (* ?y ?z)) if (< ?z 0)?: false
+LOG: Chomp! I finished can_derive_(* (min ?x ?y) ?z) ==> (max (* ?x ?z) (* ?y ?z)) if (< ?z 0) in 0 ms.
+attempting to derive: (max (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (< ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (< ?z 0)` 🚀
+
+can I derive (max (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (< ?z 0)?: false
+LOG: Chomp! I finished can_derive_(max (* ?x ?z) (* ?y ?z)) ==> (* (min ?x ?y) ?z) if (< ?z 0) in 0 ms.
+attempting to derive: (/ (min ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (> ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (min ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (> ?z 0)` 🚀
+
+can I derive (/ (min ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (> ?z 0)?: false
+LOG: Chomp! I finished can_derive_(/ (min ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (> ?z 0) in 0 ms.
+attempting to derive: (min (/ ?x ?z) (/ ?y ?z)) ==> (/ (min ?x ?y) ?z) if (> ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (min ?x ?y) ?z) if (> ?z 0)` 🚀
+
+can I derive (min (/ ?x ?z) (/ ?y ?z)) ==> (/ (min ?x ?y) ?z) if (> ?z 0)?: false
+LOG: Chomp! I finished can_derive_(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (min ?x ?y) ?z) if (> ?z 0) in 0 ms.
+attempting to derive: (/ (max ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (< ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (max ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (< ?z 0)` 🚀
+
+can I derive (/ (max ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (< ?z 0)?: false
+LOG: Chomp! I finished can_derive_(/ (max ?x ?y) ?z) ==> (min (/ ?x ?z) (/ ?y ?z)) if (< ?z 0) in 0 ms.
+attempting to derive: (min (/ ?x ?z) (/ ?y ?z)) ==> (/ (max ?x ?y) ?z) if (< ?z 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (max ?x ?y) ?z) if (< ?z 0)` 🚀
+
+can I derive (min (/ ?x ?z) (/ ?y ?z)) ==> (/ (max ?x ?y) ?z) if (< ?z 0)?: false
+LOG: Chomp! I finished can_derive_(min (/ ?x ?z) (/ ?y ?z)) ==> (/ (max ?x ?y) ?z) if (< ?z 0) in 0 ms.
+attempting to derive: (min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)` 🚀
+
+can I derive (min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0)?: true
+LOG: Chomp! I finished can_derive_(min (max ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 ?c0) in 0 ms.
+attempting to derive: (min (* (/ ?x ?c0) ?c0) ?x) ==> (* (/ ?x ?c0) ?c0) if (> ?c0 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (* (/ ?x ?c0) ?c0) ?x) ==> (* (/ ?x ?c0) ?c0) if (> ?c0 0)` 🚀
+
+can I derive (min (* (/ ?x ?c0) ?c0) ?x) ==> (* (/ ?x ?c0) ?c0) if (> ?c0 0)?: false
+LOG: Chomp! I finished can_derive_(min (* (/ ?x ?c0) ?c0) ?x) ==> (* (/ ?x ?c0) ?c0) if (> ?c0 0) in 0 ms.
+attempting to derive: (min ("%" ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 (- 0 (abs (+ ?c0 1))))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ("%" ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 (- 0 (abs (+ ?c0 1))))` 🚀
+
+can I derive (min ("%" ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 (- 0 (abs (+ ?c0 1))))?: false
+LOG: Chomp! I finished can_derive_(min ("%" ?x ?c0) ?c1) ==> ?c1 if (<= ?c1 (- 0 (abs (+ ?c0 1)))) in 0 ms.
+attempting to derive: (min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)` 🚀
+
+can I derive (min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1)?: false
+LOG: Chomp! I finished can_derive_(min (max ?x ?c0) ?c1) ==> (max (min ?x ?c1) ?c0) if (<= ?c0 ?c1) in 0 ms.
+attempting to derive: (max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)` 🚀
+
+can I derive (max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1)?: false
+LOG: Chomp! I finished can_derive_(max (min ?x ?c1) ?c0) ==> (min (max ?x ?c0) ?c1) if (<= ?c0 ?c1) in 0 ms.
+attempting to derive: (min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0))` 🚀
+
+can I derive (min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0))?: false
+LOG: Chomp! I finished can_derive_(min (* ?x ?a) ?b) ==> (* (min ?x (/ ?b ?a)) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0)) in 1 ms.
+attempting to derive: (min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0))` 🚀
+
+can I derive (min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0))?: false
+LOG: Chomp! I finished can_derive_(min (* ?x ?a) (* ?y ?b)) ==> (* (min ?x (* ?y (/ ?b ?a))) ?a) if (&& (> ?a 0) (== ("%" ?b ?a) 0)) in 1 ms.
+attempting to derive: (min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0))` 🚀
+
+can I derive (min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0))?: false
+LOG: Chomp! I finished can_derive_(min (* ?x ?a) ?b) ==> (* (max ?x (/ ?b ?a)) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0)) in 1 ms.
+attempting to derive: (min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0))` 🚀
+
+can I derive (min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0))?: false
+LOG: Chomp! I finished can_derive_(min (* ?x ?a) (* ?y ?b)) ==> (* (max ?x (* ?y (/ ?b ?a))) ?a) if (&& (< ?a 0) (== ("%" ?b ?a) 0)) in 1 ms.
+attempting to derive: (|| ?a 0) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a 0) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| ?a 0) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a 0) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| 0 ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| 0 ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| 0 ?a) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| 0 ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| ?a ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| ?a ?a) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (&& ?a ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (&& ?a ?a) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (! ?a) ==> 1 if (== ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(! ?a) ==> 1 if (== ?a 0)` 🚀
+
+can I derive (! ?a) ==> 1 if (== ?a 0)?: true
+LOG: Chomp! I finished can_derive_(! ?a) ==> 1 if (== ?a 0) in 0 ms.
+attempting to derive: (! ?a) ==> 0 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(! ?a) ==> 0 if (!= ?a 0)` 🚀
+
+can I derive (! ?a) ==> 0 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(! ?a) ==> 0 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| ?a ?b) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?b) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (|| ?a ?b) ==> 1 if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a ?b) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (|| ?a ?b) ==> 1 if (!= ?b 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?b) ==> 1 if (!= ?b 0)` 🚀
+
+can I derive (|| ?a ?b) ==> 1 if (!= ?b 0)?: false
+LOG: Chomp! I finished can_derive_(|| ?a ?b) ==> 1 if (!= ?b 0) in 0 ms.
+attempting to derive: (|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))` 🚀
+
+can I derive (|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0))?: true
+LOG: Chomp! I finished can_derive_(|| ?a ?b) ==> 0 if (&& (== ?a 0) (== ?b 0)) in 6 ms.
+attempting to derive: (&& ?a ?b) ==> 0 if (== ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?b) ==> 0 if (== ?a 0)` 🚀
+
+can I derive (&& ?a ?b) ==> 0 if (== ?a 0)?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?b) ==> 0 if (== ?a 0) in 9 ms.
+attempting to derive: (&& ?a ?b) ==> 0 if (== ?b 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?b) ==> 0 if (== ?b 0)` 🚀
+
+can I derive (&& ?a ?b) ==> 0 if (== ?b 0)?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?b) ==> 0 if (== ?b 0) in 9 ms.
+attempting to derive: (&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))` 🚀
+
+can I derive (&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0))?: false
+LOG: Chomp! I finished can_derive_(&& ?a ?b) ==> 1 if (&& (!= ?a 0) (!= ?b 0)) in 0 ms.
+attempting to derive: (/ ?a ?a) ==> 1 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ ?a ?a) ==> 1 if (!= ?a 0)` 🚀
+
+can I derive (/ ?a ?a) ==> 1 if (!= ?a 0)?: true
+LOG: Chomp! I finished can_derive_(/ ?a ?a) ==> 1 if (!= ?a 0) in 0 ms.
+attempting to derive: (/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)` 🚀
+
+can I derive (/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0)?: false
+LOG: Chomp! I finished can_derive_(/ (* ?a ?b) ?b) ==> ?a if (!= ?b 0) in 0 ms.
+attempting to derive: (/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)` 🚀
+
+can I derive (/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(/ (* ?a ?b) ?a) ==> ?b if (!= ?a 0) in 0 ms.
+attempting to derive: (/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))` 🚀
+
+can I derive (/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (+ ?a ?b) ?c) ==> (+ (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0)) in 17 ms.
+attempting to derive: (/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))` 🚀
+
+can I derive (/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0))?: false
+LOG: Chomp! I finished can_derive_(/ (- ?a ?b) ?c) ==> (- (/ ?a ?c) (/ ?b ?c)) if (&& (== ("%" ?a ?c) 0) (== ("%" ?b ?c) 0)) in 17 ms.
+attempting to derive: ("%" ?a ?a) ==> 0 if (!= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_("%" ?a ?a) ==> 0 if (!= ?a 0)` 🚀
+
+can I derive ("%" ?a ?a) ==> 0 if (!= ?a 0)?: true
+LOG: Chomp! I finished can_derive_("%" ?a ?a) ==> 0 if (!= ?a 0) in 0 ms.
+attempting to derive: ("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0)` 🚀
+
+can I derive ("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0)?: true
+LOG: Chomp! I finished can_derive_("%" ?a ?b) ==> 0 if (== ("%" ?a ?b) 0) in 0 ms.
+attempting to derive: ("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0)` 🚀
+
+can I derive ("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0)?: true
+LOG: Chomp! I finished can_derive_("%" (* ?a ?b) ?c) ==> 0 if (== ("%" (* ?a ?b) ?c) 0) in 0 ms.
+attempting to derive: (min ?a ?b) ==> ?a if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?a ?b) ==> ?a if (<= ?a ?b)` 🚀
+
+can I derive (min ?a ?b) ==> ?a if (<= ?a ?b)?: true
+LOG: Chomp! I finished can_derive_(min ?a ?b) ==> ?a if (<= ?a ?b) in 0 ms.
+attempting to derive: (min ?a ?b) ==> ?b if (<= ?b ?a)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?a ?b) ==> ?b if (<= ?b ?a)` 🚀
+
+can I derive (min ?a ?b) ==> ?b if (<= ?b ?a)?: true
+LOG: Chomp! I finished can_derive_(min ?a ?b) ==> ?b if (<= ?b ?a) in 0 ms.
+attempting to derive: (max ?a ?b) ==> ?a if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max ?a ?b) ==> ?a if (>= ?a ?b)` 🚀
+
+can I derive (max ?a ?b) ==> ?a if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(max ?a ?b) ==> ?a if (>= ?a ?b) in 6 ms.
+attempting to derive: (max ?a ?b) ==> ?b if (>= ?b ?a)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max ?a ?b) ==> ?b if (>= ?b ?a)` 🚀
+
+can I derive (max ?a ?b) ==> ?b if (>= ?b ?a)?: false
+LOG: Chomp! I finished can_derive_(max ?a ?b) ==> ?b if (>= ?b ?a) in 6 ms.
+attempting to derive: (min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)` 🚀
+
+can I derive (min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b)?: true
+LOG: Chomp! I finished can_derive_(min ?a (max ?b ?c)) ==> ?a if (<= ?a ?b) in 3 ms.
+attempting to derive: (max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)` 🚀
+
+can I derive (max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(max ?a (min ?b ?c)) ==> ?a if (>= ?a ?b) in 6 ms.
+attempting to derive: (abs ?a) ==> ?a if (>= ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(abs ?a) ==> ?a if (>= ?a 0)` 🚀
+
+can I derive (abs ?a) ==> ?a if (>= ?a 0)?: false
+LOG: Chomp! I finished can_derive_(abs ?a) ==> ?a if (>= ?a 0) in 10 ms.
+attempting to derive: (abs ?a) ==> (* -1 ?a) if (< ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(abs ?a) ==> (* -1 ?a) if (< ?a 0)` 🚀
+
+can I derive (abs ?a) ==> (* -1 ?a) if (< ?a 0)?: false
+LOG: Chomp! I finished can_derive_(abs ?a) ==> (* -1 ?a) if (< ?a 0) in 21 ms.
+attempting to derive: (abs ?a) ==> 0 if (== ?a 0)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(abs ?a) ==> 0 if (== ?a 0)` 🚀
+
+can I derive (abs ?a) ==> 0 if (== ?a 0)?: false
+LOG: Chomp! I finished can_derive_(abs ?a) ==> 0 if (== ?a 0) in 9 ms.
+attempting to derive: (< ?a ?b) ==> 1 if (< ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< ?a ?b) ==> 1 if (< ?a ?b)` 🚀
+
+can I derive (< ?a ?b) ==> 1 if (< ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(< ?a ?b) ==> 1 if (< ?a ?b) in 27 ms.
+attempting to derive: (< ?a ?b) ==> 0 if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(< ?a ?b) ==> 0 if (>= ?a ?b)` 🚀
+
+can I derive (< ?a ?b) ==> 0 if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(< ?a ?b) ==> 0 if (>= ?a ?b) in 6 ms.
+attempting to derive: (<= ?a ?b) ==> 1 if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(<= ?a ?b) ==> 1 if (<= ?a ?b)` 🚀
+
+can I derive (<= ?a ?b) ==> 1 if (<= ?a ?b)?: true
+LOG: Chomp! I finished can_derive_(<= ?a ?b) ==> 1 if (<= ?a ?b) in 0 ms.
+attempting to derive: (<= ?a ?b) ==> 0 if (> ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(<= ?a ?b) ==> 0 if (> ?a ?b)` 🚀
+
+can I derive (<= ?a ?b) ==> 0 if (> ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(<= ?a ?b) ==> 0 if (> ?a ?b) in 17 ms.
+attempting to derive: (> ?a ?b) ==> 1 if (> ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(> ?a ?b) ==> 1 if (> ?a ?b)` 🚀
+
+can I derive (> ?a ?b) ==> 1 if (> ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(> ?a ?b) ==> 1 if (> ?a ?b) in 16 ms.
+attempting to derive: (> ?a ?b) ==> 0 if (<= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(> ?a ?b) ==> 0 if (<= ?a ?b)` 🚀
+
+can I derive (> ?a ?b) ==> 0 if (<= ?a ?b)?: true
+LOG: Chomp! I finished can_derive_(> ?a ?b) ==> 0 if (<= ?a ?b) in 1 ms.
+attempting to derive: (>= ?a ?b) ==> 1 if (>= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(>= ?a ?b) ==> 1 if (>= ?a ?b)` 🚀
+
+can I derive (>= ?a ?b) ==> 1 if (>= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(>= ?a ?b) ==> 1 if (>= ?a ?b) in 6 ms.
+attempting to derive: (>= ?a ?b) ==> 0 if (< ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(>= ?a ?b) ==> 0 if (< ?a ?b)` 🚀
+
+can I derive (>= ?a ?b) ==> 0 if (< ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(>= ?a ?b) ==> 0 if (< ?a ?b) in 27 ms.
+attempting to derive: (== ?a ?b) ==> 1 if (== ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== ?a ?b) ==> 1 if (== ?a ?b)` 🚀
+
+can I derive (== ?a ?b) ==> 1 if (== ?a ?b)?: true
+LOG: Chomp! I finished can_derive_(== ?a ?b) ==> 1 if (== ?a ?b) in 0 ms.
+attempting to derive: (== ?a ?b) ==> 0 if (!= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(== ?a ?b) ==> 0 if (!= ?a ?b)` 🚀
+
+can I derive (== ?a ?b) ==> 0 if (!= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(== ?a ?b) ==> 0 if (!= ?a ?b) in 0 ms.
+attempting to derive: (!= ?a ?b) ==> 1 if (!= ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(!= ?a ?b) ==> 1 if (!= ?a ?b)` 🚀
+
+can I derive (!= ?a ?b) ==> 1 if (!= ?a ?b)?: false
+LOG: Chomp! I finished can_derive_(!= ?a ?b) ==> 1 if (!= ?a ?b) in 0 ms.
+attempting to derive: (!= ?a ?b) ==> 0 if (== ?a ?b)
+
+🐊 nom nom nom... CHOMPY is starting `can_derive_(!= ?a ?b) ==> 0 if (== ?a ?b)` 🚀
+
+can I derive (!= ?a ?b) ==> 0 if (== ?a ?b)?: true
+LOG: Chomp! I finished can_derive_(!= ?a ?b) ==> 0 if (== ?a ?b) in 11 ms.
+wrote derivability results to eval-docker/2026_05_09_06_18/full/llm_only/full_llm_only_against_caviar.json

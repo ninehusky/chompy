@@ -61,3 +61,5 @@ llm_cached/
 !eval-docker/**/*.log
 !eval-archive/**/*.txt
 !eval-archive/**/*.log
+!eval-paper/**/*.txt
+!eval-paper/**/*.log
