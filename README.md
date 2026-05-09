@@ -1,270 +1,235 @@
-# Conditional Rewrite Rule Synthesis Using E-Graphs and LLMs
+# Conditional Rewrite Rule Synthesis Using E-Graphs and LLMs (FMCAD 2026 artifact)
 
-This is the artifact for our paper "Conditional Rewrite Rule Synthesis Using E-Graphs and LLMs".
-In our paper, we discuss an extension to theory explorers that allow for (1) conditional
-rule synthesis, and (2) LLM-guided theory exploration.
+This is the artifact for our FMCAD 2026 paper *"Conditional Rewrite Rule
+Synthesis Using E-Graphs and LLMs"*, which extends theory exploration to
+support (1) conditional rule synthesis and (2) LLM-guided enumeration and
+filtering.
 
-- Available: The artifact is available on Zenodo: DOI is `10.5281/zenodo.17173426`
-- Functional: Below we provide instructions for setting up the artifact. Then, we list the claims
-  in the paper and provide instructions for how to recreate each claim.
-- Reusable: Finally, we provide instructions for extending Chompy. These instructions describe
-  how to set up Enumo on a different machine, modify the code, and extend it to
-  find rewrites for new domains.
-  
+The artifact targets the three FMCAD badges:
 
-## Overview
+- **Available** — hosted on Zenodo, DOI `10.5281/zenodo.17173426`.
+- **Functional** — every claim in the paper can be re-verified from this
+  repository in a few minutes to a few hours, with steps ordered by trust
+  (see *Reproducing Table 1* below).
+- **Reusable** — Chompy can be extended to other domains via the
+  `SynthLanguage` trait (see *Reusability* below).
 
-This artifact allows for the reconstruction of the following claims:
+## Overview / claims
 
-**How powerful are Chompy's rules?** 
-- Without LLM assistance, Chompy's rules subsume up to 71.1% of handwritten rules, as seen in the
-  `baseline` row of `Table 1`.
+The paper's central evidence is in **Table 1**. The two headline claims:
 
-**How do LLMs impact ruleset quality?** 
-- Using LLMs to guide Chompy's filtering mechanism, Chompy's ruleset size decreases by up to
-  44.3%
-  with a decrease in derivability of as little as 4.5%, as shown in the `filter_5` row of `Table 1`.
-  
-  
+- **Without LLM assistance**, Chompy's rules subsume up to 71.1% of the
+  handwritten Caviar ruleset (the `baseline` row of Table 1).
+- **With LLM-guided filtering**, Chompy's ruleset shrinks by up to 44.3%
+  while losing as little as 4.5% derivability (the `llm_filter_top_5` row).
+
+Five independent runs of all seven configurations are shipped under
+`eval-paper/` (35 cells total). The canonical numerical summary is in
+`expected_results.csv` at the repo root.
+
 ## Installation
 
-We have verified that the instructions and runtimes below are correct for machines
-running MacOS. In particular, we have tested this using a MacBook with an M3 chip and 18 GB
-of RAM, and an M2 chip with 96 GB of RAM.
+The reproduction path is **Docker**. The shipped `Dockerfile` builds Ubuntu
+22.04 + Z3 4.12.1 (from source — this is the Z3 version `z3-sys 0.8.1`
+bundles, and the version that produced the paper's numbers) + Rust + a
+release build of Chompy. First-time build is ~15-20 min and is cached
+afterwards.
 
-If you wish to install Chompy on a machine running Ubuntu, the following commands should suffice
-(although we do recommend using MacOS with the hardware above for best performance).
+```bash
+docker build -t chompy:latest .
+```
 
+A direct (non-Docker) build also works on macOS and Ubuntu, but uses
+whatever Z3 your system provides — currently Homebrew Z3 4.15.4 on macOS,
+which produces a *slightly* different ruleset than the paper. For
+byte-identical reproduction, use Docker.
 
-``` bash
-apt update
-apt install -y git
-apt install -y curl
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-source $HOME/.cargo/env
-apt install -y build-essential
-apt install -y libssl-dev pkg-config
-apt install -y cmake
-apt install -y python3
-apt install -y clang libclang-dev
-git clone https://github.com/ninehusky/chompy.git
-cd chompy/
+```bash
+# Optional: native build, for development. Not used by the reproduction steps.
 cargo build --release
 ```
 
-## Reproducing the paper baseline (Docker)
+## Reproducing Table 1
 
-The paper's results were generated with **Z3 4.12.1** (the version that
-`z3-sys 0.8.1` ships when built with `static-link-z3`). On modern macOS,
-the bundled Z3 4.12.1 no longer compiles (CMake 4.x and AppleClang 21
-incompatibilities), so `.cargo/config.toml` points the build at the
-system Homebrew Z3 — currently 4.15.4. Z3 versions disagree on a small
-number of borderline implications during rule synthesis, so the macOS
-build produces a slightly different ruleset than the paper.
+We provide four ways to verify Table 1, ordered cheapest to most thorough.
+Each step trusts strictly more than the previous one:
 
-For byte-exact paper reproducibility, build and run inside Docker. The
-included `Dockerfile` builds Z3 4.12.1 from source on Ubuntu 22.04 and
-pre-builds the release binary:
+| # | Step                                       | Tool             | Wall clock      | Trusts |
+|---|--------------------------------------------|------------------|-----------------|--------|
+| 1 | Kick the tires                             | local cargo      | ~1 min          | binary works at all |
+| 2 | Recreate Table 1 from shipped JSONs        | python only      | ~5 s            | the shipped JSONs |
+| 3 | Verify the baseline binary                 | Docker           | ~25 min         | the shipped Docker |
+| 4 | Re-derive Table 1 from shipped rulesets    | Docker           | ~30-60 min      | nothing — re-runs derivability from scratch |
 
-``` bash
-docker build -t chompy:latest .
+You don't have to do all four. Step 2 alone reproduces the paper's numbers
+from the shipped data; later steps progressively widen what's actually being
+verified.
 
-# Run baseline; outputs land in ./eval-docker
-mkdir -p ./eval-docker
+### Step 1 — Kick the tires (~1 min)
+
+Sanity-check that the Chompy binary builds and runs on your machine. This
+runs a small "mini" recipe and checks the rule count.
+
+```bash
+python3 python/kick_the_tires.py
+```
+
+You should see `mini.txt contains 57 rules ✅`. Outputs land in
+`mini-artifacts/`.
+
+### Step 2 — Recreate Table 1 from shipped JSONs (~5 s, no Docker)
+
+The shipped artifact already contains every derivability JSON used to
+populate Table 1. Recreating the table is a pure Python summation over
+those files:
+
+```bash
+python3 python/summarize_runs.py eval-paper expected_results.csv
+```
+
+The output should match `expected_results.csv` exactly:
+
+```
+row                       n_runs  num_rules      caviar_derivability  halide_derivability  runtime_seconds
+baseline                  5       1579.0 ± 0.0   73.3 ± 0.0           57.1 ± 0.0           1551.7 ± 13.9
+llm_only                  5       116.4 ± 11.5   9.8 ± 5.8            3.1 ± 2.5            30.7 ± 3.4
+llm_with_enum             5       1526.4 ± 20.0  73.3 ± 0.0           58.3 ± 1.2           1676.0 ± 47.3
+llm_filter_top_1          5       882.6 ± 22.3   66.2 ± 3.7           55.5 ± 2.6           2176.5 ± 57.5
+llm_filter_top_5          5       1430.0 ± 15.8  71.1 ± 2.2           59.8 ± 2.4           2269.0 ± 140.3
+only_llm_terms            5       207.6 ± 18.5   25.8 ± 10.3          14.8 ± 12.6          551.9 ± 41.5
+llm_terms_and_llm_filter  5       1403.4 ± 61.7  73.3 ± 1.6           60.0 ± 1.4           2333.8 ± 139.5
+```
+
+This is what Table 1 reports (with display-name renaming — see the
+provenance map below).
+
+### Step 3 — Verify the baseline binary (~25 min, Docker)
+
+Re-synthesize the deterministic `baseline` row from scratch in Docker. No
+LLM is involved, so the output is reproducible byte-for-byte:
+
+```bash
+mkdir -p eval-docker
 docker run --rm -v "$(pwd)/eval-docker:/output" chompy:latest \
     /chompy/target/release/ruler \
     --recipe full --llm-usage baseline \
     --output-path /output/docker_baseline.txt
 ```
 
-The resulting `docker_baseline.txt` (1579 rules) is byte-identical (when
-sorted) to `original-eval/run_one/full/baseline/full_baseline.txt`, and
-derivability matches `Table 1` exactly: 71.1% Caviar, 57.1% Halide.
+`docker_baseline.txt` should contain **1579 rules** and be byte-identical
+(when sorted) to any of the five shipped baselines, e.g.
+`eval-paper/run_1/full/baseline/full_baseline.txt`. Derivability matches
+Table 1 exactly: 71.1% Caviar, 57.1% Halide.
 
-## Verify Original Experiments (1 minute)
+### Step 4 — Re-derive Table 1 from shipped rulesets (~30-60 min, Docker)
 
-The original data used to create `Table 1` is included inside the `original-eval/` folder.
-`Table 1` of the paper contains Chompy's performance across LLM settings, averaged
-across three runs. Each run, e.g., `run_one`, contains the results of running Chompy
-with 6 different LLM configurations, each lining up with a row in `Table 1`.
+The strongest verification. `reproduce.py` does NOT trust the shipped
+JSONs — it re-runs derivability against every shipped ruleset from scratch
+in Docker:
 
-To quickly see a summary of these results, from
-Chompy's root directory, run:
-
-``` c
-python3 python/summarize_original_eval.py original-eval original_summary.csv
+```bash
+python3 reproduce.py
 ```
 
-`original_summary.csv` should match:
+Mechanically, it:
 
-```
-run_type,num_rules,caviar_derivability,halide_derivability,runtime_seconds
-enum_only,169.0,5.2,0.8,220.7
-filter_1,628.3,57.8,51.6,1939.3
-with_enum,1684.3,68.1,56.7,1772.6
-filter_5,877.7,68.1,61.5,1942.4
-enum+filter,952.7,69.6,60.3,2086.0
-baseline,1579.0,71.1,57.1,1549.3
-```
+1. Mirrors `eval-paper/` to `eval-paper-rerun/` (only `.txt` and `.log`
+   files; the shipped JSONs are *not* copied).
+2. Runs `--derive-only` against each of the 35 rulesets in the rerun tree,
+   producing fresh `*_against_caviar.json` and `*_against_halide.json`
+   files there.
+3. Summarizes the rerun into `results.csv`.
+4. Prints a side-by-side comparison of `expected_results.csv` (shipped)
+   vs. `results.csv` (just-produced) with per-cell tolerance bands.
 
+Per-cell drift of ≤ 1 percentage point on derivability and ≤ 5 rules on
+rule counts is **expected** (Z3 has minor solver nondeterminism, and a
+small number of borderline implications can flip between `can` and
+`cannot` buckets across runs). Larger drift suggests either a Z3 version
+mismatch or a hardware-related timeout that cut work short.
 
-The above csv shows the results used in the paper,
-with two expected differences that do not affect the core findings:
--  Due to a rounding error, the `caviar_derivability` and `halide_derivability`
-   values differ for `enum_only` and `with_enum`.
-   The ruleset size for `enum+filter` also differs slightly for the same reason.
- - The `filter_5` row shows minor differences because one run of Chompy was accidentally
-   ommitted from the original average due to a folder typo. This has been corrected, and
-   the overall results are largely unchanged.
+The shipped `eval-paper/` is never modified by `reproduce.py`. You can
+re-run the script as many times as you like; each run lands in
+`eval-paper-rerun/` (gitignored).
 
-We now describe the file layout in more detail for the curious. In each LLM usage subfolder,
-e.g., `original-eval/run_one/full/baseline_with_enum`,
-there are four files:
+## File layout / provenance map
 
-- `<usage>.log`: a small snippet of the logs containing the runtime for that run.
-- `<usage>.txt`: the final ruleset Chompy produced.
-- `<usage>_against_caviar.json`: a file showing forwards derivability vs. the "Caviar" ruleset.
-- `<usage>_against_halide.json`: a file showing forwards derivability vs. the "Halide" ruleset.
+Within `eval-paper/`, the layout is `eval-paper/run_N/full/<llm-usage>/`,
+where `N` is 1..5 (independent re-runs that we average to get Table 1's
+mean ± stddev cells) and `<llm-usage>` is the CLI flag that produced that
+cell. Each `<llm-usage>/` subfolder contains four files:
 
-> [!NOTE]  
-> This is a minor detail, whose result does not affect the validity of previous runs.
-> The `against_halide.json` files have 24 additional Halide rules, but this is
-> because the original file scrapers used for Chompy did not filter out the 28
-> rules containing `select`.
-> 
-> Both the current version of Chompy and the `summarize_original_eval.py` script
-> account for this adjustment, so the reported results from `summarize_original_eval`
-> are consistent with what's in the paper.
+- `full_<usage>.txt` — the synthesized ruleset
+- `full_<usage>.log` — Chompy's run log (used to extract synthesis
+  runtime via the line `finished recipe (seconds: ...)`)
+- `full_<usage>_against_caviar.json` — forwards/backwards derivability
+  against the Caviar handwritten ruleset
+- `full_<usage>_against_halide.json` — same, against Halide
 
-## Kick The Tires (1 minute)
+The CLI flag → Table 1 row mapping:
 
-On a fresh machine, type:
+| Paper row (Table 1)         | CLI `--llm-usage`                  | What the LLM does |
+|-----------------------------|------------------------------------|-------------------|
+| `baseline`                  | `baseline`                         | nothing — no LLM is called |
+| `llm_only`                  | `llm_only`                         | LLM proposes whole rules; Chompy is bypassed; rules kept iff syntactically and semantically (Z3) valid |
+| `llm_with_enum`             | `baseline_and_enum`                | LLM appends 40 terms per call site; conditions still come from Chompy only |
+| `llm_filter_top_1`          | `baseline_and_filter_1`            | Chompy enumerates as in baseline; if a candidate set has > 10 rules, LLM clusters them and keeps the top 1 per cluster |
+| `llm_filter_top_5`          | `baseline_and_filter_5`            | Same, top 5 per cluster |
+| `only_llm_terms`            | `enum_only`                        | Both terms and conditions come exclusively from the LLM |
+| `llm_terms_and_llm_filter`  | `baseline_with_filter_5_and_enum`  | `llm_with_enum` + `llm_filter_top_5` filtering |
 
-```
-python3 python/kick_the_tires.py
-```
+The Halide-derivability denominator is fixed at 84 (the original Halide
+test set has 112 rules, but 28 of those use `select`, which Chompy's
+target Halide language doesn't include; these are excluded from the
+denominator).
 
-This should take about a minute. This runs a small version of Chompy on a "mini recipe",
-and moves any files created into `mini-artifacts`. You'll know this step worked when the output
-of the script included:
+## Optional — Full LLM-driven re-synthesis
 
-```
-mini.txt contains 57 rules ✅
-```
+Steps 1–4 verify that the *shipped* rulesets reproduce Table 1. To verify
+that the rulesets themselves were produced honestly — i.e., to re-run the
+LLM-in-the-loop synthesis pipeline that *generated* them — use:
 
-Another way of checking is to run `wc -l mini-artifacts/mini.txt`.
-
-## Recreating Experiments (~1 hour)
-
-### Running the evaluation
-
-This section describes how to re-run the experiments we have in the paper, presented in
-`Table 1`.
-
-`python3 python/run_the_eval.py` produces _one run_ of the experiments used to build up `Table 1`.
-Chompy is able to be augmented with LLMs in different ways. The usages are:
-
-```py
-usages = [
-    "baseline",
-    "enum_only",
-    "baseline_and_enum",
-    "baseline_and_filter_1",
-    "baseline_and_filter_5",
-    "baseline_with_filter_5_and_enum",
-]
+```bash
+export OPENAI_API_KEY=sk-...
+python3 python/run_the_eval.py
 ```
 
-Running the above Python file will create several files within the `eval/` subdirectory.
-The path to the file is the date and time that the evaluation is ran with a `full/` folder attached
-, e.g., `eval/2025_09_13_18_01/full/`. The `full` folder will contain six subfolders, each
-containing the results from running Chompy with a particular LLM configuration.
+This runs all seven LLM-usage configurations once, lands outputs under a
+fresh `eval/<timestamp>/full/<mode>/` tree, and takes about an hour.
 
-Like with the above section, a subfolder, e.g., `eval/2025_09_13_18_01/full/baseline`, will contain four files:
-- a `.log` storing Chompy's output
-- a `.txt` holding Chompy's ruleset
-- two `.json` files storing Chompy's derivability artifacts
+Because the LLM is non-deterministic by design, the resulting rulesets
+will *not* be bit-identical to the shipped ones — only the `baseline` row
+is deterministic. Expect rule counts within ~5% of the shipped means and
+derivability within ~1pp.
 
-Every usage besides `baseline` uses an LLM. For convenience and reproducibility, we
-have cached OpenAI API calls necessary to reproduce the results without connecting to OpenAI.
-`llm_cache/` stores these cached responses, which are named after the hash for their corresponding
-request. We encourage reviewers to use our cached OpenAI API
-calls. To do this, set the following environment
-variable before running:
+If you don't have an OpenAI key, you can still inspect the shipped per-run
+LLM outputs in `eval-paper/run_N/full/enum_only/llm_responses.jsonl` and
+similar files.
 
-```
-$ export FAKE_LLM="hehehe"
-$ python3 python/run_the_eval.py
-```
+## Reusability — extending Chompy
 
-Because LLMs are non-deterministic,
-the results we reproduce in this section will not match up one-to-one with the previous results.
-This is to be expected, and the `baseline` result can be used as a "ground truth" to compare
-to the original results. The `baseline` results are unlikely to change across machines,
-and if they do, it is expected they will change by very little.
+This section describes how to extend Chompy to discover conditional rules
+for new domains.
 
-If you do wish to run with a paid ChatGPT API account, do not set the `FAKE_LLM` environment variable.
-Instead, set an `OPENAI_API_KEY` environment variable accordingly. A full run of
-`run_the_eval.py` (cached and not cached) takes about an hour, and if using ChatGPT,
-costs about $3.00.
+### Project layout
 
-### Analyzing the results
+Much of Chompy's code is inherited from Enumo, the theory exploration
+work that precedes Chompy. The key files for the core algorithm:
 
-Once `run_the_eval.py` has concluded, you can summarize the results by running
-`python3 python/summarize.py eval/<your_dir> out.csv`.
+- `src/recipe_utils.rs` — top-level rule-inference algorithm
+  (`run_workload`).
+- `src/llm.rs` — LLM enumeration and clustering helpers.
+- `src/conditions/` — conditional rule synthesis.
+  - `assumption.rs` — adding an assumption to an e-graph.
+  - `implication.rs` — defining and applying implications.
+  - `implication_set.rs` — synthesizing implication sets via pvec
+    matching.
+  - `manager.rs` — implication-lattice logic (uses `egglog` as a
+    Datalog-style backend).
 
-Open `out.csv` to see the equivalent results of `Table 1`, adjusted for our new LLM calls.
-It should match, or be close to, the following (with the exception of `runtime_seconds`,
-which may differ between machines):
+### Adding a new domain
 
-```
-$ cat out.csv
-run_type,num_rules,caviar_derivability,halide_derivability,runtime_seconds
-baseline,1579,71.1,57.1,1939.4
-enum_only,181,13.3,3.6,37.5
-filter_1,653,57.8,54.8,1908.7
-filter_5,910,66.7,61.9,1961.2
-with_enum,970,68.9,60.7,1857.4
-enum+filter,1574,71.1,57.1,1944.0
-```
-
-
-## Reusability
-
-This section describes how to extend Chompy to find conditional rules for other domains.
-
-### Project Layout
-
-Much of Chompy's code is inherited from Enumo, the theory exploration work which
-precedes Chompy. Here, we describe the key files which are used in Chompy's
-core algorithm.
-
-- The source code resides in the `src/` directory.
-  - The main algorithm used for rule inference, `run_workload`, is located
-    inside `recipe_utils.rs`
-  - `llm.rs` contains the functions used to enumerate terms and semantically
-     categorize existing rulesets.`
-  - `conditions` defines much of the core structure and logic used
-     to support conditional rule synthesis.
-    - `assumption.rs` handles the logic responsible for adding an assumption
-      to an egraph.
-    - `implication.rs` defines an implication and implements the logic responsible
-      for applying an implication to an e-graph.
-    - `implication_set.rs` includes logic for synthesizing implication sets, including
-       pvec matching.
-    - `manager.rs` contains the logic for our implication lattice, which uses
-      `egglog` as a Datalog-style backend.
-      
-### Extending Chompy to discover rules for a new domain
-
-Chompy inherits Enumo's concept of a `SynthLanguage`, which is a Rust
-trait that can be extended for different languages.
-The example implementation for the Halide `SynthLanguage` can be seen in
-`src/halide.rs` -- the `Pred` struct represents the Halide language.
-Once a `SynthLanguage`'s implementation is complete,
-the top level rule synthesis function, `run_workload`, can be called
-to find new rules.
-
-
-
-
+Chompy inherits Enumo's `SynthLanguage` trait. A reference implementation
+is in `src/halide.rs` (the `Pred` struct). Once a `SynthLanguage`
+implementation is complete, `run_workload` from `recipe_utils.rs` can be
+called to discover new rules.

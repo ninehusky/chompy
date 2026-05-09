@@ -53,6 +53,10 @@ python/pyvenv.cfg
 # rulesets). Excluded everywhere.
 llm_cached/
 
+# reproduce.py per-reviewer outputs — regenerated on every run.
+eval-paper-rerun/
+results.csv
+
 # FMCAD-2026 artifact exceptions: rulesets (.txt) and synthesis logs (.log)
 # under eval-docker/ and eval-archive/ ARE the artifact and must be tracked.
 # Placed at end so these exceptions override the broad *.txt and *.log rules
