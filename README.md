@@ -61,8 +61,12 @@ the `chompy:latest` image (built in *Installation* above) on a small
 python3 python/kick_the_tires.py
 ```
 
-You should see `mini.txt contains 57 rules ✅`. Outputs land in
-`mini-artifacts/`.
+You should see:
+```bash
+[kick_the_tires] Running mini recipe in chompy:latest...
+mini.txt contains 57 rules ✅
+  artifacts in your/path/to/chompy/mini-artifacts/
+```
 
 If you skipped the `docker build` step, this script will build the image
 itself on first run (~15-20 min one-time).
