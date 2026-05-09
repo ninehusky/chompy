@@ -1,13 +1,12 @@
-# Conditional Rewrite Rule Synthesis Using E-Graphs and LLMs (FMCAD 2026 artifact)
+# Conditional Rewrite Rule Synthesis Using E-Graphs (FMCAD 2026 artifact)
 
 This is the artifact for our FMCAD 2026 paper *"Conditional Rewrite Rule
-Synthesis Using E-Graphs and LLMs"*, which extends theory exploration to
-support (1) conditional rule synthesis and (2) LLM-guided enumeration and
-filtering.
+Synthesis Using E-Graphs"*, which extends theory exploration to
+support conditional rule synthesis.
 
 The artifact targets the three FMCAD badges:
 
-- **Available** — hosted on Zenodo, DOI `10.5281/zenodo.17173426`.
+- **Available**
 - **Functional** — every claim in the paper can be re-verified from this
   repository in a few minutes to a few hours, with steps ordered by trust
   (see *Reproducing Table 1* below).
@@ -16,12 +15,9 @@ The artifact targets the three FMCAD badges:
 
 ## Overview / claims
 
-The paper's central evidence is in **Table 1**. The two headline claims:
-
-- **Without LLM assistance**, Chompy's rules subsume up to 71.1% of the
-  handwritten Caviar ruleset (the `baseline` row of Table 1).
-- **With LLM-guided filtering**, Chompy's ruleset shrinks by up to 44.3%
-  while losing as little as 4.5% derivability (the `llm_filter_top_5` row).
+The paper's central evidence is in **Table 1**. The headline
+claim in the abstract: Chompy's rules subsume up to 71.1% of the
+handwritten Caviar ruleset (the `baseline` row of Table 1).
 
 Five independent runs of all seven configurations are shipped under
 `eval-paper/` (35 cells total). The canonical numerical summary is in
@@ -37,16 +33,6 @@ afterwards.
 
 ```bash
 docker build -t chompy:latest .
-```
-
-A direct (non-Docker) build also works on macOS and Ubuntu, but uses
-whatever Z3 your system provides — currently Homebrew Z3 4.15.4 on macOS,
-which produces a *slightly* different ruleset than the paper. For
-byte-identical reproduction, use Docker.
-
-```bash
-# Optional: native build, for development. Not used by the reproduction steps.
-cargo build --release
 ```
 
 ## Reproducing Table 1
@@ -99,9 +85,9 @@ llm_filter_top_5          5       1430.0 ± 15.8  71.1 ± 2.2           59.8 ± 
 only_llm_terms            5       207.6 ± 18.5   25.8 ± 10.3          14.8 ± 12.6          551.9 ± 41.5
 llm_terms_and_llm_filter  5       1403.4 ± 61.7  73.3 ± 1.6           60.0 ± 1.4           2333.8 ± 139.5
 ```
-
-This is what Table 1 reports (with display-name renaming — see the
-provenance map below).
+This is what Table 1 reports with display-name renaming — see the
+provenance map below (note that in the paper, `only_llm_terms` is
+represented as `only_llm_terms_conds`).
 
 ### Step 3 — Verify the baseline binary (~25 min, Docker)
 
@@ -146,7 +132,8 @@ Per-cell drift of ≤ 1 percentage point on derivability and ≤ 5 rules on
 rule counts is **expected** (Z3 has minor solver nondeterminism, and a
 small number of borderline implications can flip between `can` and
 `cannot` buckets across runs). Larger drift suggests either a Z3 version
-mismatch or a hardware-related timeout that cut work short.
+mismatch or a hardware difference which impacts wall-clock
+based timeouts.
 
 The shipped `eval-paper/` is never modified by `reproduce.py`. You can
 re-run the script as many times as you like; each run lands in
@@ -183,29 +170,6 @@ test set has 112 rules, but 28 of those use `select`, which Chompy's
 target Halide language doesn't include; these are excluded from the
 denominator).
 
-## Optional — Full LLM-driven re-synthesis
-
-Steps 1–4 verify that the *shipped* rulesets reproduce Table 1. To verify
-that the rulesets themselves were produced honestly — i.e., to re-run the
-LLM-in-the-loop synthesis pipeline that *generated* them — use:
-
-```bash
-export OPENAI_API_KEY=sk-...
-python3 python/run_the_eval.py
-```
-
-This runs all seven LLM-usage configurations once, lands outputs under a
-fresh `eval/<timestamp>/full/<mode>/` tree, and takes about an hour.
-
-Because the LLM is non-deterministic by design, the resulting rulesets
-will *not* be bit-identical to the shipped ones — only the `baseline` row
-is deterministic. Expect rule counts within ~5% of the shipped means and
-derivability within ~1pp.
-
-If you don't have an OpenAI key, you can still inspect the shipped per-run
-LLM outputs in `eval-paper/run_N/full/enum_only/llm_responses.jsonl` and
-similar files.
-
 ## Reusability — extending Chompy
 
 This section describes how to extend Chompy to discover conditional rules
@@ -218,7 +182,7 @@ work that precedes Chompy. The key files for the core algorithm:
 
 - `src/recipe_utils.rs` — top-level rule-inference algorithm
   (`run_workload`).
-- `src/llm.rs` — LLM enumeration and clustering helpers.
+- `src/llm.rs` — LLM enumeration and clustering helpers. The prompts in the appendix are present here.
 - `src/conditions/` — conditional rule synthesis.
   - `assumption.rs` — adding an assumption to an e-graph.
   - `implication.rs` — defining and applying implications.
