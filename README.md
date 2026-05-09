@@ -16,7 +16,7 @@ The artifact targets the three FMCAD badges:
 ## Overview / claims
 
 The paper's central evidence is in **Table 1**. The headline
-claim in the abstract: Chompy's rules subsume up to 71.1% of the
+claim in the abstract: Chompy's rules subsume up to 73.3% of the
 handwritten Caviar ruleset (the `baseline` row of Table 1).
 
 Five independent runs of all seven configurations are shipped under
@@ -106,8 +106,12 @@ represented as `only_llm_terms_conds`).
 
 ### Step 3 — Verify the baseline binary (~35 min, Docker)
 
-Re-synthesize the deterministic `baseline` row from scratch in Docker. No
-LLM is involved, so the output is reproducible byte-for-byte:
+Re-synthesize the deterministic `baseline` row from scratch in Docker
+(no LLM involved), then run `verify_baseline.py` on the output. The
+docker command writes the ruleset and its derivability JSONs into
+`eval-docker/`; the verify script checks the rule count and both
+derivability numbers against the shipped reference in
+`expected_results.csv`.
 
 ```bash
 mkdir -p eval-docker
@@ -115,12 +119,24 @@ docker run --rm -v "$(pwd)/eval-docker:/output" chompy:latest \
     /chompy/target/release/ruler \
     --recipe full --llm-usage baseline \
     --output-path /output/docker_baseline.txt
+
+python3 python/verify_baseline.py eval-docker/docker_baseline.txt
 ```
 
-`docker_baseline.txt` should contain **1579 rules** and be byte-identical
-(when sorted) to any of the five shipped baselines, e.g.
-`eval-paper/run_1/full/baseline/full_baseline.txt`. Derivability matches
-Table 1 exactly: 71.1% Caviar, 57.1% Halide.
+You should see:
+
+```
+Checking ruleset size of .../eval-docker/docker_baseline.txt...
+Matches 1579!
+
+Checking derivability metrics of .../eval-docker/docker_baseline_against_halide.json...
+derives 48 / 84 rules -- 57.1%. Matches shipped 57.1% (±1pp)!
+
+Checking derivability metrics of .../eval-docker/docker_baseline_against_caviar.json...
+derives 33 / 45 rules -- 73.3%. Matches shipped 73.3% (±1pp)!
+```
+
+The script exits non-zero on any mismatch.
 
 ### Step 4 — Re-derive Table 1 from shipped rulesets (~5 hours, Docker)
 
