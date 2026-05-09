@@ -21,7 +21,7 @@ BINARY = "/chompy/target/release/ruler"
 def build_image(repo_root: Path):
     print("[reproduce] Building Docker image (no-op if unchanged)...")
     subprocess.run(
-        ["docker", "build", "-t", DOCKER_IMAGE, "-f", "Dockerfile.update", "."],
+        ["docker", "build", "-t", DOCKER_IMAGE, "."],
         cwd=repo_root,
         check=True,
     )
