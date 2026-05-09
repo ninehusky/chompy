@@ -1040,6 +1040,9 @@ impl<L: SynthLanguage> Ruleset<L> {
         .run(&egraph, self);
         let runner: Runner<L, SynthAnalysis> = Runner::new(SynthAnalysis::default())
             .with_egraph(egraph.clone())
+            .with_iter_limit(limits.iter)
+            .with_node_limit(limits.node)
+            .with_time_limit(std::time::Duration::from_secs(30))
             .run(condition_propagation_rules);
 
         let mut egraph = runner.egraph;

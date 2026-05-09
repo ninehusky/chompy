@@ -1,0 +1,8 @@
+target/
+eval/
+eval-docker/
+llm_cached/
+mini-artifacts/
+.cargo/
+.git/
+*.log

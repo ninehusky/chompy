@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use std::fmt::Display;
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 
 use crate::enumo::{Rule, Ruleset, Sexp};
 use crate::halide::{get_type, HalideType};
@@ -20,13 +21,77 @@ use crate::{ConditionRecipe, HashMap, HashSet, IndexMap, Recipe};
 
 pub type CategorizedRuleset<L> = IndexMap<String, Ruleset<L>>;
 
-const CACHE_DIR: &str = "llm_cached";
+const DEFAULT_CACHE_DIR: &str = "llm_cached";
+
+/// Resolve the LLM response cache directory. Defaults to `llm_cached/` (the
+/// canonical project-root location). Override with `CHOMPY_LLM_CACHE_DIR` to
+/// scope the cache per (run, recipe, mode), which the eval wrapper does so
+/// that each run's API responses can be replayed independently via
+/// `FAKE_LLM=1` without being clobbered by a later run on the same prompt
+/// hash. Without that override, all runs share `llm_cached/` and last-writer
+/// wins on hash collision — fine for dev, wrong for paper variance runs.
+fn cache_dir() -> String {
+    std::env::var("CHOMPY_LLM_CACHE_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_CACHE_DIR.to_string())
+}
 
 #[derive(Serialize, Deserialize)]
 struct CacheEntry {
     prompt: String,
     model: String,
     response: String,
+}
+
+// Per-run, per-mode audit log of every API call. The canonical
+// `llm_cached/<hash>.json` is shared across runs (last writer wins on hash
+// collision), so it cannot answer "what did the LLM say in this specific
+// run?" — that's what this log is for. Set `CHOMPY_LLM_LOG_DIR` to a writable
+// directory (the python wrapper points it at the per-mode eval output dir),
+// and every API response is appended as a JSON line to
+// `$CHOMPY_LLM_LOG_DIR/llm_responses.jsonl`. Unset → no-op.
+fn log_llm_response(prompt: &str, model: &str, response: &str, endpoint: &str) {
+    let log_dir = match std::env::var("CHOMPY_LLM_LOG_DIR") {
+        Ok(d) if !d.is_empty() => d,
+        _ => return,
+    };
+    if let Err(e) = fs::create_dir_all(&log_dir) {
+        eprintln!("[llm-log] could not create {log_dir}: {e}");
+        return;
+    }
+    let entry = json!({
+        "timestamp_ms": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+        "endpoint": endpoint,
+        "model": model,
+        "hash": hash_request(prompt, model),
+        "prompt": prompt,
+        "response": response,
+    });
+    let line = match serde_json::to_string(&entry) {
+        Ok(s) => s + "\n",
+        Err(e) => {
+            eprintln!("[llm-log] serialize failed: {e}");
+            return;
+        }
+    };
+    use std::io::Write as _;
+    let path = format!("{log_dir}/llm_responses.jsonl");
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(line.as_bytes()) {
+                eprintln!("[llm-log] write to {path} failed: {e}");
+            }
+        }
+        Err(e) => eprintln!("[llm-log] open {path} failed: {e}"),
+    }
 }
 
 fn hash_request(prompt: &str, model: &str) -> String {
@@ -236,6 +301,7 @@ Output requirements:
 - Do not include any commentary, numbering, or explanations.
 - Do not introduce any new variables outside the set given.
 - Do not include any markdown backticks.
+- Do not use the token `assume` anywhere in your output — it is a reserved internal keyword and any term containing it will be discarded.
 
 Example Input Terms:
 x
@@ -282,6 +348,7 @@ Output requirements:
 - Do not repeat the input terms.
 - Do not include commentary, numbering, or explanations.
 - Do not include any markdown backticks.
+- Do not use the token `assume` anywhere in your output — it is a reserved internal keyword and any condition containing it will be discarded.
 
 Example Input Terms:
 a
@@ -300,6 +367,170 @@ Example Output Conditions:
 Input Terms:
 {input_text}
 "#;
+
+const GENERATE_RULES_PROMPT: &str = r#"
+You are an expert in program optimization and algebraic reasoning.
+
+Generate a diverse set of critical conditional rewrite rules
+for an equality saturation rewrite system.
+
+Operators (all integer-valued unless noted):
+- (+  a b)   addition
+- (-  a b)   subtraction
+- (*  a b)   multiplication
+- (/  a b)   integer division (truncates toward zero)
+- (%  a b)   remainder
+- (min a b)  minimum
+- (max a b)  maximum
+- (abs a)    absolute value
+- (|| a b)   boolean OR
+- (&& a b)   boolean AND
+- (!  a)     boolean NOT
+
+
+Boolean-valued operators (conditions are limited to just these; expressions can contain them):
+- (<  a b)   strictly less than
+- (<= a b)   less than or equal
+- (== a b)   equal
+- (!= a b)   not equal
+- (>  a b)   strictly greater than
+- (>= a b)   greater than or equal
+- (&& a b)   logical and
+- (|| a b)   logical or
+- (!  a)     logical not
+
+Variables: ?a  ?b  ?c  ?d
+Constants: any integer literal (e.g. 0, 1, -1, 2)
+
+Rule format — exactly one of:
+  LHS ==> RHS
+  LHS ==> RHS if COND
+
+All terms are s-expressions. Variables must be prefixed with `?`.
+Do NOT output bidirectional rules (<=>), explanations, or any other text.
+Do NOT use the token `assume` anywhere in your output — it is a reserved internal keyword and any rule containing it will be discarded.
+
+Example rules:
+(+ ?a 0) ==> ?a
+(* ?a 1) ==> ?a
+(- ?a ?a) ==> 0
+(/ ?a ?a) ==> 1 if (!= ?a 0)
+(min ?a ?b) ==> ?a if (<= ?a ?b)
+(max ?a ?b) ==> ?b if (<= ?a ?b)
+(* ?a (+ ?b ?c)) ==> (+ (* ?a ?b) (* ?a ?c))
+(% ?a ?b) ==> 0 if (== (% ?a ?b) 0)
+(abs ?a) ==> ?a if (>= ?a 0)
+(abs ?a) ==> (* -1 ?a) if (< ?a 0)
+
+It's okay for the condiitons to be large,
+as long as they are valid and potentially useful for optimization.
+Output only the rules, one per line.
+
+See the attached appendix for a concrete interpreter
+which enocdes the semantics of the operators above.
+
+========== APPENDIX ============
+
+fn eval<'a, F>(&'a self, cvec_len: usize, mut get_cvec: F) -> CVec<Self>
+    where
+        F: FnMut(&'a Id) -> &'a CVec<Self>,
+    {
+        let one = 1.to_i64().unwrap();
+        let zero = 0.to_i64().unwrap();
+        match self {
+            Pred::Lit(c) => vec![Some(*c); cvec_len],
+            Pred::Abs(x) => map!(get_cvec, x => Some(x.abs())),
+            Pred::Lt([x, y]) => {
+                map!(get_cvec, x, y => if x < y {Some(one)} else {Some(zero)})
+            }
+            Pred::Leq([x, y]) => {
+                map!(get_cvec, x, y => if x <= y {Some(one)} else {Some(zero)})
+            }
+            Pred::Gt([x, y]) => {
+                map!(get_cvec, x, y => if x > y {Some(one)} else {Some(zero)})
+            }
+            Pred::Geq([x, y]) => {
+                map!(get_cvec, x, y => if x >= y {Some(one)} else {Some(zero)})
+            }
+            Pred::Eq([x, y]) => {
+                map!(get_cvec, x, y => if x == y {Some(one)} else {Some(zero)})
+            }
+            Pred::Neq([x, y]) => {
+                map!(get_cvec, x, y => if x != y {Some(one)} else {Some(zero)})
+            }
+            Pred::Implies([x, y]) => {
+                map!(get_cvec, x, y => {
+                  let xbool = *x != zero;
+                  let ybool = *y != zero;
+                  if !xbool || ybool {Some(one)} else {Some(zero)}
+                })
+            }
+            Pred::Not(x) => {
+                map!(get_cvec, x => if *x == zero { Some(one)} else {Some(zero)})
+            }
+            Pred::Neg(x) => map!(get_cvec, x => Some(-x)),
+            Pred::And([x, y]) => {
+                map!(get_cvec, x, y => {
+                    let xbool = *x != zero;
+                    let ybool = *y != zero;
+                    if xbool && ybool { Some(one) } else { Some(zero) }
+                })
+            }
+            Pred::Or([x, y]) => {
+                map!(get_cvec, x, y => {
+                    let xbool = *x != zero;
+                    let ybool = *y != zero;
+                    if xbool || ybool { Some(one) } else { Some(zero) }
+                })
+            }
+            Pred::Xor([x, y]) => {
+                map!(get_cvec, x, y => {
+                    let xbool = *x != zero;
+                    let ybool = *y != zero;
+                    if xbool ^ ybool { Some(one) } else { Some(zero) }
+                })
+            }
+            Pred::Add([x, y]) => map!(get_cvec, x, y => x.checked_add(*y)),
+            Pred::Sub([x, y]) => map!(get_cvec, x, y => x.checked_sub(*y)),
+            Pred::Mul([x, y]) => map!(get_cvec, x, y => x.checked_mul(*y)),
+            Pred::Div([x, y]) => map!(get_cvec, x, y => {
+                if *y == 0 {
+                    Some(0)
+                } else if *x == i64::MIN && *y == -1 {
+                    // Wraparound case
+                    Some(i64::MIN)
+                } else {
+                    Some(x.div_euclid(*y))
+                }
+            }),
+            Pred::Mod([x, y]) => map!(get_cvec, x, y => {
+                if *y == zero {
+                    Some(zero)
+                } else {
+                    Some(x.rem_euclid(*y))
+                }
+            }),
+            Pred::Min([x, y]) => map!(get_cvec, x, y => Some(*x.min(y))),
+            Pred::Max([x, y]) => map!(get_cvec, x, y => Some(*x.max(y))),
+            Pred::Select([x, y, z]) => map!(get_cvec, x, y, z => {
+              let xbool = *x != zero;
+              if xbool {Some(*y)} else {Some(*z)}
+            }),
+        }
+    }
+}
+"#;
+
+/// Returns true if `s` contains `L::assumption_label()` as a token
+/// (delimited by whitespace or parens). LLMs sometimes emit the reserved
+/// `assume` keyword into the term/condition space, which collides with
+/// the internal assumption wrapper; such lines must be dropped before
+/// they reach the workload.
+pub fn mentions_assumption_label<L: SynthLanguage>(s: &str) -> bool {
+    let label = L::assumption_label();
+    s.split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+        .any(|tok| tok == label)
+}
 
 fn term_size(sexp: &Sexp) -> usize {
     match sexp {
@@ -353,9 +584,10 @@ fn sample_terms(wkld: &Workload) -> Vec<String> {
 
 pub async fn send_openai_request(client: &Client, prompt: String) -> Result<String, String> {
     // Build the request payload
-    let model = "gpt-4o";
+    let model = "gpt-5.4";
     let h = hash_request(&prompt, model);
-    let cache_file = format!("{}/{}.json", CACHE_DIR, h);
+    let cache_dir = cache_dir();
+    let cache_file = format!("{}/{}.json", cache_dir, h);
 
     // Replay mode
     if std::env::var("FAKE_LLM").is_ok() {
@@ -377,28 +609,14 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
         }
     }
 
-
-    let request_body = json!({
-        "model": model,
-        "messages": [
-            { "role": "system", "content": prompt }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 1500
-    });
-
     // Send the request
     let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
-            ),
-        )
-        .header("Content-Type", "application/json")
-        .json(&request_body)
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"))
+        .json(&json!({
+            "model": model,
+            "input": prompt
+        }))
         .send()
         .await
         .map_err(|e| format!("Failed: {e}"))?;
@@ -408,17 +626,26 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
         .await
         .map_err(|e| format!("Failed to parse response: {e}"))?;
 
+    println!("[llm] raw response JSON: {}", response_json);
+
+    // Surface API errors instead of silently returning empty string
+    if let Some(err) = response_json.get("error") {
+        if !err.is_null() {
+            return Err(format!("OpenAI API error: {}", err));
+        }
+    }
+
     // Return raw text content
-    let text_output = response_json["choices"][0]["message"]["content"]
+    let text_output = response_json["output"][0]["content"][0]["text"]
         .as_str()
-        .unwrap_or("")
+        .ok_or_else(|| format!("Unexpected response shape: {}", response_json))?
         .to_string()
         .replace("`", ""); // Strip markdown backticks if any
 
     println!("OUTPUT:\n{}", text_output);
 
     // Save to cache
-    fs::create_dir_all(CACHE_DIR).ok();
+    fs::create_dir_all(&cache_dir).ok();
     let entry = CacheEntry {
         prompt,
         model: model.to_string(),
@@ -426,6 +653,13 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
     };
     fs::write(&cache_file, serde_json::to_string_pretty(&entry).unwrap())
         .map_err(|e| format!("Failed to write cache: {e}"))?;
+
+    log_llm_response(
+        &entry.prompt,
+        &entry.model,
+        &entry.response,
+        "openai_request",
+    );
 
     Ok(text_output)
 }
@@ -451,16 +685,29 @@ pub async fn get_llm_terms<L: SynthLanguage>(
     // 2. Parse the response into a list of strings.
     println!("LLM TERMS RESPONSE:\n{}", response);
 
+    // Hard-cap to `limit` items: the prompt asks for "about {term_limit}"
+    // terms but the LLM frequently returns more, and the unbounded variant
+    // feeds the explosion that turned baseline_and_enum into a 3+ hour
+    // minimize() (verified 2026-05-03: 105 lines × ~12 calls → 324K
+    // candidates into top-level minimize). Boolean predicates like
+    // `(== ?a ?b)` ARE valid first-class terms in this language (the
+    // language's Pred/term distinction is loose), so we don't filter by
+    // type here — only by the count cap.
     let mut final_wkld = Workload::empty();
+    let mut kept = 0usize;
     for line in response.lines() {
-        // Attempt to parse it as a RecExpr<Pred>.
+        if kept >= limit {
+            break;
+        }
         let recexpr: Result<RecExpr<L>, _> = line.parse();
         if let Ok(re) = recexpr {
             final_wkld = final_wkld.append(Workload::new(&[re.to_string()]));
+            kept += 1;
         } else {
             println!("failed to parse term: {}", line);
         }
     }
+    println!("[get_llm_terms] kept {kept}/{limit} terms");
 
     final_wkld
 }
@@ -475,7 +722,11 @@ pub async fn get_llm_conditions<L: SynthLanguage>(
     // 1. Send the request to the LLM.
     let input_text = representative_terms.join("\n");
 
-    let prompt_text = ENUMERATE_TERMS_PROMPT
+    // BUG fix 2026-05-03: previously this used ENUMERATE_TERMS_PROMPT, so the
+    // LLM was asked to generate "terms" (and the {cond_limit} substitution
+    // was a no-op because the terms prompt has {term_limit}). Use the right
+    // prompt and substitute the right placeholder.
+    let prompt_text = ENUMERATE_CONDITIONS_PROMPT
         .replace("{input_text}", &input_text)
         .replace("{cond_limit}", &limit.to_string())
         .replace(
@@ -489,30 +740,40 @@ pub async fn get_llm_conditions<L: SynthLanguage>(
 
     println!("LLM CONDITIONS RESPONSE:\n{}", response);
 
-    let mut working_wkld = Workload::empty();
+    // Hard-cap to `limit` and filter to Bool-typed expressions. The LLM
+    // routinely returns more lines than asked for, and the bool filter still
+    // applies — but the cap prevents a 200-line response from inflating the
+    // condition workload by 4x.
+    let mut final_wkld = Workload::empty();
+    let mut kept = 0usize;
     for line in response.lines() {
-        // Attempt to parse it as a RecExpr<Pred>.
+        if kept >= limit {
+            break;
+        }
         let recexpr: Result<RecExpr<L>, _> = line.parse();
         if let Ok(re) = recexpr {
-            working_wkld = working_wkld.append(Workload::new(&[re.to_string()]));
+            let s = re.to_string();
+            let sexp = match Sexp::from_str(&s) {
+                Ok(sx) => sx,
+                Err(_) => {
+                    println!("failed to parse condition as sexp: {}", s);
+                    continue;
+                }
+            };
+            match get_type(&sexp, None) {
+                Some(HalideType::BoolType) => {
+                    final_wkld = final_wkld.append(Workload::new(&[s]));
+                    kept += 1;
+                }
+                _ => {
+                    println!("skipping non-bool condition: {}", s);
+                }
+            }
         } else {
-            println!("failed to parse term: {}", line);
+            println!("failed to parse condition: {}", line);
         }
     }
-
-    let mut final_wkld = Workload::empty();
-
-    for sexp in working_wkld.force() {
-        let calculated_type = get_type(&sexp, None);
-        match calculated_type {
-            Some(HalideType::BoolType) => {
-                final_wkld = final_wkld.append(Workload::new(&[sexp.to_string()]));
-            }
-            _ => {
-                println!("skipping non-bool condition: {}", sexp);
-            }
-        };
-    }
+    println!("[get_llm_conditions] kept {kept}/{limit} conditions");
 
     final_wkld
 }
@@ -600,13 +861,27 @@ pub async fn sort_rule_candidates<L: SynthLanguage>(
         candidates.remove_all(batch_ruleset.clone());
 
         // 2. Send the batch to the LLM for categorization.
-        let current_categorized = send_group_rules_request(client, &batch_ruleset)
-            .await
-            .map_err(|e| {
-                eprintln!("Error sending request: {e}");
-                e
-            })
-            .unwrap();
+        // Retry on transient HTTP errors (e.g. "connection closed before message
+        // completed"), which we saw take down a multi-hour eval run.
+        let current_categorized = {
+            let mut attempt = 0u32;
+            loop {
+                match send_group_rules_request(client, &batch_ruleset).await {
+                    Ok(resp) => break resp,
+                    Err(e) => {
+                        attempt += 1;
+                        if attempt >= 5 {
+                            panic!("send_group_rules_request failed after {attempt} attempts: {e}");
+                        }
+                        let backoff_secs = 2u64.pow(attempt);
+                        eprintln!(
+                            "send_group_rules_request error (attempt {attempt}): {e} — retrying in {backoff_secs}s"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
+                    }
+                }
+            }
+        };
 
         // 3. Parse the response into a CategorizedRuleset.
         let categorized = parse_categorization_response(current_categorized);
@@ -685,38 +960,21 @@ pub async fn condition_soup(
         .replace("{vars}", format!("{vars:?}").as_str())
         .replace("{ops}", format!("{:?}", r.ops).as_str());
 
-    // Define request payload for the Responses API
-    let request_body = json!({
-        "model": "gpt-4o",  // Correct model
-        "messages": [
-            {
-                "role": "system",
-                "content": content,
-            },
-        ],
-        "seed": 0xbeef,
-        "temperature": 0.0,
-    });
-
     let response = client
-        .post("https://api.openai.com/v1/chat/completions") // <-- Using Responses API
-        .header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
-            ),
-        )
-        .header("Content-Type", "application/json")
-        .json(&request_body)
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"))
+        .json(&json!({
+            "model": "gpt-5.4",
+            "input": content
+        }))
         .send()
         .await?;
 
     let response_json: serde_json::Value = response.json().await?;
 
-    let result = response_json["choices"][0]["message"]["content"]
+    let result = response_json["output"][0]["content"][0]["text"]
         .as_str()
-        .unwrap()
+        .unwrap_or("")
         .lines()
         .map(|s| s.to_string())
         .collect();
@@ -726,48 +984,30 @@ pub async fn condition_soup(
 
 // asks GPT to generate a list of terms which implement some bigass recipe.
 pub async fn alphabet_soup(client: &Client, r: &Recipe) -> Result<Vec<String>, reqwest::Error> {
-    let url = "https://api.openai.com/v1/chat/completions";
     let content = ENUMERATE_TERMS_PROMPT
         .replace("{max_size}", &r.max_size.to_string())
         .replace("{vals}", format!("{:?}", r.vals).as_str())
         .replace("{vars}", format!("{:?}", r.vars).as_str())
         .replace("{ops}", format!("{:?}", r.ops).as_str());
 
-    // Define request payload for the Responses API
-    let request_body = json!({
-        "model": "gpt-4o",  // Correct model
-        "messages": [
-            {
-                "role": "system",
-                "content": content,
-            },
-        ],
-        "seed": 0xbeef,
-        "temperature": 0.0,
-    });
-
-    println!("SENDING REQUEST TO: {url}");
+    println!("SENDING REQUEST TO: https://api.openai.com/v1/responses");
 
     let response = client
-        .post("https://api.openai.com/v1/chat/completions") // <-- Using Responses API
-        .header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
-            ),
-        )
-        .header("Content-Type", "application/json")
-        .json(&request_body)
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"))
+        .json(&json!({
+            "model": "gpt-5.4",
+            "input": content
+        }))
         .send()
         .await?;
 
     println!("response status: {}", response.status());
     let response_json: serde_json::Value = response.json().await?;
 
-    let result = response_json["choices"][0]["message"]["content"]
+    let result = response_json["output"][0]["content"][0]["text"]
         .as_str()
-        .unwrap()
+        .unwrap_or("")
         .lines()
         .map(|s| s.to_string())
         .collect();
@@ -789,6 +1029,10 @@ pub fn soup_to_workload<L: SynthLanguage>(
         // if it has no parentheses, and it is not a variable/value, then skip it.
         println!("checking expression: {r}");
         let r = r.trim();
+        if mentions_assumption_label::<L>(r) {
+            println!("skipping expression (uses reserved `assume` token): {r}");
+            continue;
+        }
         println!("starts with )? {}", r.starts_with(')'));
         println!("ends with (? {}", r.ends_with(')'));
         println!("is a variable? {}", vars.contains(&r.to_string()));
@@ -836,9 +1080,10 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
     let candidates_text = candidate_rules.to_str_vec().join("\n");
     let prompt = GROUP_RULES_PROMPT.replace("candidates_text", &candidates_text);
 
-    let model = "gpt-4o";
+    let model = "gpt-5.4";
     let hash = hash_request(&prompt, model);
-    let cache_path = format!("{}/{}.json", CACHE_DIR, hash);
+    let cache_dir = cache_dir();
+    let cache_path = format!("{}/{}.json", cache_dir, hash);
 
     // Replay mode
     if std::env::var("FAKE_LLM").is_ok() {
@@ -861,26 +1106,13 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
     }
 
     // Real request
-    let request_body = json!({
-        "model": model,
-        "messages": [
-            { "role": "system", "content": prompt }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 1500
-    });
-
     let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
-            ),
-        )
-        .header("Content-Type", "application/json")
-        .json(&request_body)
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"))
+        .json(&json!({
+            "model": model,
+            "input": prompt
+        }))
         .send()
         .await
         .map_err(|e| format!("Failed: {e}"))?;
@@ -890,7 +1122,7 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         .await
         .map_err(|e| format!("Failed to parse response: {e}"))?;
 
-    let text_output = response_json["choices"][0]["message"]["content"]
+    let text_output = response_json["output"][0]["content"][0]["text"]
         .as_str()
         .unwrap_or("")
         .to_string();
@@ -901,8 +1133,14 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         "model": model,
         "response": text_output,
     });
-    fs::write(&cache_path, serde_json::to_string_pretty(&cached_obj).unwrap())
-        .map_err(|e| format!("Failed to write cache: {e}"))?;
+    fs::create_dir_all(&cache_dir).ok();
+    fs::write(
+        &cache_path,
+        serde_json::to_string_pretty(&cached_obj).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write cache: {e}"))?;
+
+    log_llm_response(&prompt, model, &text_output, "group_rules");
 
     Ok(text_output)
 }
@@ -920,28 +1158,14 @@ pub async fn send_score_rules_request<L: SynthLanguage>(
         .replace("prior_text", &prior_text)
         .replace("candidates_text", &candidates_text);
 
-    // Build the request payload
-    let request_body = json!({
-        "model": "gpt-4o",
-        "messages": [
-            { "role": "system", "content": prompt }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 1500
-    });
-
     // Send the request
     let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
-            ),
-        )
-        .header("Content-Type", "application/json")
-        .json(&request_body)
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"))
+        .json(&json!({
+            "model": "gpt-5.4",
+            "input": prompt
+        }))
         .send()
         .await
         .map_err(|e| format!("Failed: {e}"))?;
@@ -952,10 +1176,12 @@ pub async fn send_score_rules_request<L: SynthLanguage>(
         .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
-    let text_output = response_json["choices"][0]["message"]["content"]
+    let text_output = response_json["output"][0]["content"][0]["text"]
         .as_str()
         .unwrap_or("")
         .to_string();
+
+    log_llm_response(&prompt, "gpt-5.4", &text_output, "score_rules");
 
     Ok(text_output)
 }
@@ -981,28 +1207,14 @@ pub async fn send_filter_rules_request<L: SynthLanguage>(
 
     println!("Prompt: {prompt}");
 
-    // Build the request payload
-    let request_body = json!({
-        "model": "gpt-4o",
-        "messages": [
-            { "role": "system", "content": prompt }
-        ],
-        "temperature": 0.0,
-        "max_tokens": 1500
-    });
-
     // Send the request
     let response = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set")
-            ),
-        )
-        .header("Content-Type", "application/json")
-        .json(&request_body)
+        .post("https://api.openai.com/v1/responses")
+        .bearer_auth(std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set"))
+        .json(&json!({
+            "model": "gpt-5.4",
+            "input": prompt
+        }))
         .send()
         .await
         .map_err(|e| format!("Failed: {e}"))?;
@@ -1013,10 +1225,12 @@ pub async fn send_filter_rules_request<L: SynthLanguage>(
         .map_err(|e| format!("Failed to parse response: {e}"))?;
 
     // Return raw text content
-    let text_output = response_json["choices"][0]["message"]["content"]
+    let text_output = response_json["output"][0]["content"][0]["text"]
         .as_str()
         .unwrap_or("")
         .to_string();
+
+    log_llm_response(&prompt, "gpt-5.4", &text_output, "filter_rules");
 
     Ok(text_output)
 }
@@ -1076,6 +1290,20 @@ pub fn parse_scored_rules<L: SynthLanguage>(text: &str) -> Vec<ScoredRule<L>> {
     }
 
     results
+}
+
+pub async fn get_llm_rules(client: &Client) -> Vec<String> {
+    match send_openai_request(client, GENERATE_RULES_PROMPT.to_string()).await {
+        Err(e) => {
+            println!("[llm_only] API error: {}", e);
+            vec![]
+        }
+        Ok(response) => response
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+    }
 }
 
 pub async fn filter_rules_llm<L: SynthLanguage>(

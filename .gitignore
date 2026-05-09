@@ -47,3 +47,23 @@ python/bin
 python/include
 python/lib
 python/pyvenv.cfg
+
+# LLM response caches — large, not part of the artifact contract (reviewers
+# don't replay synthesis from cache; they verify derivability against shipped
+# rulesets). Excluded everywhere.
+llm_cached/
+
+# reproduce.py per-reviewer outputs — regenerated on every run.
+eval-paper-rerun/
+results.csv
+
+# FMCAD-2026 artifact exceptions: rulesets (.txt) and synthesis logs (.log)
+# under eval-docker/ and eval-archive/ ARE the artifact and must be tracked.
+# Placed at end so these exceptions override the broad *.txt and *.log rules
+# above (later rules win in gitignore).
+!eval-docker/**/*.txt
+!eval-docker/**/*.log
+!eval-archive/**/*.txt
+!eval-archive/**/*.log
+!eval-paper/**/*.txt
+!eval-paper/**/*.log

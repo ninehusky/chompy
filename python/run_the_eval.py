@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,11 +13,14 @@ usages = [
     "baseline_and_filter_1",
     "baseline_and_filter_5",
     "baseline_with_filter_5_and_enum",
+    "llm_only",
 ]
 
-# make the out_dir today's date and time.
-out_dir = Path("eval") / Path(__import__("datetime").datetime.now().strftime("%Y_%m_%d_%H_%M"))
-max_workers = 2  # run 2 at a time
+# Output root is overridable so the docker wrapper can land runs in a separate
+# tree (e.g. eval-docker/) without colliding with native runs.
+eval_root = os.environ.get("CHOMPY_EVAL_ROOT", "eval")
+out_dir = Path(eval_root) / Path(__import__("datetime").datetime.now().strftime("%Y_%m_%d_%H_%M"))
+max_workers = 1  # serial: one ruler at a time, full container RAM (avoid OOM)
 
 def run_recipe(recipe: str, usage: str):
     # Directory for this recipe/usage
@@ -29,6 +33,22 @@ def run_recipe(recipe: str, usage: str):
     output_log = recipe_dir / f"{safe_label}.log"
 
     print(f"🚀 Running {recipe}/{usage}")
+
+    # Per-mode audit log of every LLM API response (Rust side appends to
+    # $CHOMPY_LLM_LOG_DIR/llm_responses.jsonl). Lets us see what the model
+    # said in *this specific run*.
+    #
+    # Per-(run, recipe, mode) cache dir (Rust reads CHOMPY_LLM_CACHE_DIR and
+    # falls back to llm_cached/). Without this override, all runs share
+    # llm_cached/ and last-writer-wins on hash collision — fatal for paper
+    # variance runs because n=5 invocations on the same prompt would all
+    # collapse to whatever response the last run got. With it, each run dir
+    # is self-contained and FAKE_LLM=1-replayable independently.
+    env = {
+        **os.environ,
+        "CHOMPY_LLM_LOG_DIR": str(recipe_dir),
+        "CHOMPY_LLM_CACHE_DIR": str(recipe_dir / "llm_cached"),
+    }
 
     # Invoke cargo run
     with open(output_log, "w") as log_file:
@@ -43,6 +63,7 @@ def run_recipe(recipe: str, usage: str):
             stdout=log_file,
             stderr=subprocess.STDOUT,
             check=True,  # crash if command fails
+            env=env,
         )
 
     print(f"✅ Finished {recipe}/{usage}")

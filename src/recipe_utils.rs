@@ -41,6 +41,7 @@ pub enum LLMUsage {
     EnumerationOnly(LLMEnumerationConfig),
     Filter(LLMFilterConfig),
     Combined(Vec<LLMUsage>),
+    LLMOnly,
 }
 
 #[derive(Clone, Debug)]
@@ -529,6 +530,56 @@ fn get_enum_cfg(llm_usage: LLMUsage) -> Option<LLMUsage> {
     }
 }
 
+/// Single LLM prompt (`GENERATE_RULES_PROMPT`) → parse → keep iff syntactically
+/// and semantically valid (z3 via `Rule::is_valid`). No chompy enumeration,
+/// minimization, or recipe — this is the `--llm-usage llm_only` row, and it
+/// must remain a single prompt for the row to mean what the paper claims.
+pub async fn run_llm_only_recipe<L: SynthLanguage>() -> Ruleset<L> {
+    use crate::llm::{get_llm_rules, mentions_assumption_label};
+    use reqwest::Client;
+
+    let start_time = std::time::Instant::now();
+    let client = Client::new();
+    let raw_rules = get_llm_rules(&client).await;
+
+    println!("[llm_only] LLM returned {} candidate lines", raw_rules.len());
+    for s in &raw_rules {
+        println!("[llm_only] raw: {}", s);
+    }
+
+    let mut ruleset = Ruleset::default();
+    for s in raw_rules {
+        if mentions_assumption_label::<L>(&s) {
+            println!("[llm_only] FAIL (uses reserved `assume` token): {}", s);
+            continue;
+        }
+        match crate::enumo::Rule::from_string(&s) {
+            Ok((fwd, bkwd)) => {
+                if fwd.is_valid() {
+                    println!("[llm_only] PASS (valid): {}", fwd);
+                    ruleset.add(fwd);
+                } else {
+                    println!("[llm_only] FAIL (invalid): {}", s);
+                }
+                if let Some(bk) = bkwd {
+                    if bk.is_valid() {
+                        println!("[llm_only] PASS (valid): {}", bk);
+                        ruleset.add(bk);
+                    } else {
+                        println!("[llm_only] FAIL (invalid): {}", s);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[llm_only] FAIL (parse error): {:?} — {}", s, e);
+            }
+        }
+    }
+    println!("[llm_only] {} rules passed syntactic + semantic filters", ruleset.len());
+    println!("finished recipe (seconds: {})", start_time.elapsed().as_secs_f64());
+    ruleset
+}
+
 /// Runs rule inference:
 ///     1. convert workload to e-graph
 ///     2. If there are prior rules, compress the e-graph using them
@@ -541,6 +592,11 @@ pub async fn run_workload<L: SynthLanguage>(
     prior_impls: ImplicationSet<L>,
     llm_usage: LLMUsage,
 ) -> Ruleset<L> {
+    assert!(
+        !matches!(llm_usage, LLMUsage::LLMOnly),
+        "LLMOnly must be handled at the top level (main.rs) — it is a single-prompt mode and must not enter the recipe machinery"
+    );
+
     let mut prior_impls = prior_impls.clone();
     println!("[run_workload] Running workload");
     let start = Instant::now();
