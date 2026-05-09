@@ -42,7 +42,7 @@ Each step trusts strictly more than the previous one:
 
 | # | Step                                       | Tool             | Wall clock      | Trusts |
 |---|--------------------------------------------|------------------|-----------------|--------|
-| 1 | Kick the tires                             | local cargo      | ~1 min          | binary works at all |
+| 1 | Kick the tires                             | Docker           | ~1 min          | binary works at all |
 | 2 | Recreate Table 1 from shipped JSONs        | python only      | ~5 s            | the shipped JSONs |
 | 3 | Verify the baseline binary                 | Docker           | ~35 min         | the shipped Docker |
 | 4 | Re-derive Table 1 from shipped rulesets    | Docker           | ~5 hours        | nothing — re-runs derivability from scratch |
@@ -51,10 +51,11 @@ You don't have to do all four. Step 2 alone reproduces the paper's numbers
 from the shipped data; later steps progressively widen what's actually being
 verified.
 
-### Step 1 — Kick the tires (~1 min)
+### Step 1 — Kick the tires (~1 min, Docker)
 
-Sanity-check that the Chompy binary builds and runs on your machine. This
-runs a small "mini" recipe and checks the rule count.
+Sanity-check that the Chompy binary runs on your machine. This invokes
+the `chompy:latest` image (built in *Installation* above) on a small
+"mini" recipe and checks the rule count.
 
 ```bash
 python3 python/kick_the_tires.py
@@ -62,6 +63,9 @@ python3 python/kick_the_tires.py
 
 You should see `mini.txt contains 57 rules ✅`. Outputs land in
 `mini-artifacts/`.
+
+If you skipped the `docker build` step, this script will build the image
+itself on first run (~15-20 min one-time).
 
 ### Step 2 — Recreate Table 1 from shipped JSONs (~5 s, no Docker)
 

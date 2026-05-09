@@ -1,47 +1,82 @@
-import subprocess
-import shutil
+#!/usr/bin/env python3
+"""
+Kick the tires: synthesize a small Chompy ruleset (the "mini" recipe)
+inside Docker and verify the binary produces the expected rule count.
+
+Outputs land in ./mini-artifacts/. The Docker image (chompy:latest) is
+built from the canonical Dockerfile if it does not already exist; the
+first build is ~15-20 min, subsequent invocations take seconds.
+"""
 import os
+import subprocess
 import sys
+from pathlib import Path
 
-# Step 1: run the cargo command and redirect output to mini.log
-log_file = "mini.log"
-print(f"Running cargo command, logging to {log_file}...")
-with open(log_file, "w") as log:
-    cmd = [
-        "cargo", "run", "--release", "--bin", "ruler",
-        "--", "--recipe", "mini", "--llm-usage", "baseline", "--output-path", "mini.txt"
+DOCKER_IMAGE = "chompy:latest"
+EXPECTED_RULES = 57
+TARGET_DIR = Path("mini-artifacts")
+
+
+def image_exists(tag: str) -> bool:
+    return subprocess.run(
+        ["docker", "image", "inspect", tag],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def build_image(repo_root: Path):
+    print(f"[kick_the_tires] Building {DOCKER_IMAGE} (first build is ~15-20 min)...")
+    subprocess.run(
+        ["docker", "build", "-t", DOCKER_IMAGE, "."],
+        cwd=repo_root, check=True,
+    )
+
+
+def main():
+    repo_root = Path(__file__).resolve().parent.parent
+    target = (repo_root / TARGET_DIR).resolve()
+    target.mkdir(parents=True, exist_ok=True)
+
+    if not image_exists(DOCKER_IMAGE):
+        build_image(repo_root)
+
+    print(f"[kick_the_tires] Running mini recipe in {DOCKER_IMAGE}...")
+    log_path = target / "mini.log"
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "-v", f"{target}:/output",
+        DOCKER_IMAGE,
+        "/chompy/target/release/ruler",
+        "--recipe", "mini",
+        "--llm-usage", "baseline",
+        "--output-path", "/output/mini.txt",
     ]
-    subprocess.run(cmd, check=True, stdout=log, stderr=subprocess.STDOUT)
-print("Cargo run finished.")
+    # On Linux/WSL, set --user so files created in the bind mount land owned
+    # by the host user, not root. Docker Desktop on macOS does this mapping
+    # automatically; this is harmless there too.
+    if hasattr(os, "getuid"):
+        docker_cmd.insert(3, "--user")
+        docker_cmd.insert(4, f"{os.getuid()}:{os.getgid()}")
 
-# Step 2: check that mini.txt has 57 rules
-mini_txt = "mini.txt"
-expected_rules = 57
+    with open(log_path, "w") as log:
+        subprocess.run(docker_cmd, check=True, stdout=log, stderr=subprocess.STDOUT)
 
-if not os.path.exists(mini_txt):
-    print(f"Error: {mini_txt} not found!")
-    sys.exit(1)
+    ruleset = target / "mini.txt"
+    if not ruleset.exists():
+        print(f"ERROR: {ruleset} not found.", file=sys.stderr)
+        sys.exit(1)
+    with open(ruleset) as f:
+        num_rules = sum(1 for _ in f)
+    if num_rules != EXPECTED_RULES:
+        print(
+            f"ERROR: {ruleset} has {num_rules} rules, expected {EXPECTED_RULES}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-with open(mini_txt) as f:
-    num_rules = sum(1 for _ in f)
+    print(f"{ruleset.name} contains {num_rules} rules ✅")
+    print(f"  artifacts in {target}/")
 
-if num_rules != expected_rules:
-    print(f"Error: {mini.txt} has {num_rules} rules, expected {expected_rules}. Aborting move.")
-    sys.exit(1)
 
-print(f"{mini_txt} contains {num_rules} rules ✅")
-
-# Step 3: make sure the target directory exists
-target_dir = "mini-artifacts"
-os.makedirs(target_dir, exist_ok=True)
-
-# Step 4: move files
-files_to_move = ["mini.txt", "mini_against_caviar.json", "mini_against_halide.json", log_file]
-for f in files_to_move:
-    if os.path.exists(f):
-        shutil.move(f, os.path.join(target_dir, f))
-        print(f"Moved {f} -> {target_dir}")
-    else:
-        print(f"Warning: {f} not found!")
-
-print("All files moved successfully.")
+if __name__ == "__main__":
+    main()
