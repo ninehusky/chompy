@@ -45,6 +45,7 @@
       "(min (+ (min x y) c0) x) ==> (+ (min x y) c0) if (< c0 0)",
       "(min (+ (min y x) c0) x) ==> (+ (min y x) c0) if (< c0 0)",
       "(min x (+ (min x y) c0)) ==> (+ (min x y) c0) if (< c0 0)",
+      "(min x (+ (min y x) c0)) ==> (+ (min x y) c0) if (< c0 0)",
       "(min (min x y) (+ x c0)) ==> (min x y) if (> c0 0)",
       "(min (min x y) (+ x c0)) ==> (min (+ x c0) y) if (< c0 0)",
       "(min (min y x) (+ x c0)) ==> (min y x) if (> c0 0)",
@@ -85,8 +86,7 @@
       "(min (+ (min x y) c0) x) ==> (min x (+ y c0)) if (> c0 0)",
       "(min (+ (min y x) c0) x) ==> (min (+ y c0) x) if (> c0 0)",
       "(min x (+ (min x y) c0)) ==> (min x (+ y c0)) if (> c0 0)",
-      "(min x (+ (min y x) c0)) ==> (min x (+ y c0)) if (> c0 0)",
-      "(min x (+ (min y x) c0)) ==> (+ (min x y) c0) if (< c0 0)"
+      "(min x (+ (min y x) c0)) ==> (min x (+ y c0)) if (> c0 0)"
     ]
   },
   "backwards": {

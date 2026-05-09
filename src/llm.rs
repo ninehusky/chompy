@@ -654,7 +654,12 @@ pub async fn send_openai_request(client: &Client, prompt: String) -> Result<Stri
     fs::write(&cache_file, serde_json::to_string_pretty(&entry).unwrap())
         .map_err(|e| format!("Failed to write cache: {e}"))?;
 
-    log_llm_response(&entry.prompt, &entry.model, &entry.response, "openai_request");
+    log_llm_response(
+        &entry.prompt,
+        &entry.model,
+        &entry.response,
+        "openai_request",
+    );
 
     Ok(text_output)
 }
@@ -1129,8 +1134,11 @@ pub async fn send_group_rules_request<L: SynthLanguage>(
         "response": text_output,
     });
     fs::create_dir_all(&cache_dir).ok();
-    fs::write(&cache_path, serde_json::to_string_pretty(&cached_obj).unwrap())
-        .map_err(|e| format!("Failed to write cache: {e}"))?;
+    fs::write(
+        &cache_path,
+        serde_json::to_string_pretty(&cached_obj).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write cache: {e}"))?;
 
     log_llm_response(&prompt, model, &text_output, "group_rules");
 
