@@ -538,6 +538,7 @@ pub async fn run_llm_only_recipe<L: SynthLanguage>() -> Ruleset<L> {
     use crate::llm::{get_llm_rules, mentions_assumption_label};
     use reqwest::Client;
 
+    let start_time = std::time::Instant::now();
     let client = Client::new();
     let raw_rules = get_llm_rules(&client).await;
 
@@ -575,6 +576,7 @@ pub async fn run_llm_only_recipe<L: SynthLanguage>() -> Ruleset<L> {
         }
     }
     println!("[llm_only] {} rules passed syntactic + semantic filters", ruleset.len());
+    println!("finished recipe (seconds: {})", start_time.elapsed().as_secs_f64());
     ruleset
 }
 
