@@ -71,13 +71,18 @@ itself on first run (~15-20 min one-time).
 
 The shipped artifact already contains every derivability JSON used to
 populate Table 1. Recreating the table is a pure Python summation over
-those files:
+those files. Write the result to a scratch CSV, then diff it against the
+canonical `expected_results.csv` (the shipped reference, which Step 4
+compares against later — don't overwrite it):
 
 ```bash
-python3 python/summarize_runs.py eval-paper expected_results.csv
+python3 python/summarize_runs.py eval-paper /tmp/step2.csv
+diff expected_results.csv /tmp/step2.csv
 ```
 
-The output should match `expected_results.csv` exactly:
+`diff` should produce no output (the two files are byte-identical). The
+script also prints a human-readable table to stdout; after the
+"Found 5 runs..." preamble, the table portion should look like this:
 
 ```
 row                       n_runs  num_rules      caviar_derivability  halide_derivability  runtime_seconds
@@ -89,6 +94,7 @@ llm_filter_top_5          5       1430.0 ± 15.8  71.1 ± 2.2           59.8 ± 
 only_llm_terms            5       207.6 ± 18.5   25.8 ± 10.3          14.8 ± 12.6          551.9 ± 41.5
 llm_terms_and_llm_filter  5       1403.4 ± 61.7  73.3 ± 1.6           60.0 ± 1.4           2333.8 ± 139.5
 ```
+
 This is what Table 1 reports with display-name renaming — see the
 provenance map below (note that in the paper, `only_llm_terms` is
 represented as `only_llm_terms_conds`).
