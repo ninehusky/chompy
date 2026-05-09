@@ -7,13 +7,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Configurations
 recipes = ["full"]
 usages = [
-    # 2026-05-04 (later): single-mode test of the new llm_only single-prompt
-    # path (recipe machinery bypassed in main.rs). The previously-archived
-    # n=5 llm_only runs in eval-docker/2026_05_03_*/full/llm_only/ are
-    # invalidated (hybrid LLM + baseline-chompy under the bug) and have been
-    # moved to eval-archive/llm_only_pre_single_prompt_2026_05_04/. Expand
-    # this list back out (and to n=5 invocations of run_one_table.sh) once
-    # this single run is verified.
+    "baseline",
+    "enum_only",
+    "baseline_and_enum",
+    "baseline_and_filter_1",
+    "baseline_and_filter_5",
+    "baseline_with_filter_5_and_enum",
     "llm_only",
 ]
 

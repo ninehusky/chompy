@@ -43,11 +43,11 @@ impl FromStr for Recipe {
 
 #[derive(Parser, Debug)]
 struct ChompyArgs {
-    #[clap(long, required_unless_present = "derive_only")]
+    #[clap(long, required_unless_present = "derive-only")]
     recipe: Option<Recipe>,
-    #[clap(long, required_unless_present = "derive_only")]
+    #[clap(long, required_unless_present = "derive-only")]
     llm_usage: Option<String>,
-    #[clap(long, required_unless_present = "derive_only")]
+    #[clap(long, required_unless_present = "derive-only")]
     output_path: Option<String>,
     /// Load a ruleset from this .txt file and run derivability only (no synthesis).
     /// Writes _against_halide.json and _against_caviar.json next to the input file.
