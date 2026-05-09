@@ -44,8 +44,8 @@ Each step trusts strictly more than the previous one:
 |---|--------------------------------------------|------------------|-----------------|--------|
 | 1 | Kick the tires                             | local cargo      | ~1 min          | binary works at all |
 | 2 | Recreate Table 1 from shipped JSONs        | python only      | ~5 s            | the shipped JSONs |
-| 3 | Verify the baseline binary                 | Docker           | ~25 min         | the shipped Docker |
-| 4 | Re-derive Table 1 from shipped rulesets    | Docker           | ~30-60 min      | nothing — re-runs derivability from scratch |
+| 3 | Verify the baseline binary                 | Docker           | ~35 min         | the shipped Docker |
+| 4 | Re-derive Table 1 from shipped rulesets    | Docker           | ~5 hours        | nothing — re-runs derivability from scratch |
 
 You don't have to do all four. Step 2 alone reproduces the paper's numbers
 from the shipped data; later steps progressively widen what's actually being
@@ -89,7 +89,7 @@ This is what Table 1 reports with display-name renaming — see the
 provenance map below (note that in the paper, `only_llm_terms` is
 represented as `only_llm_terms_conds`).
 
-### Step 3 — Verify the baseline binary (~25 min, Docker)
+### Step 3 — Verify the baseline binary (~35 min, Docker)
 
 Re-synthesize the deterministic `baseline` row from scratch in Docker. No
 LLM is involved, so the output is reproducible byte-for-byte:
@@ -107,7 +107,7 @@ docker run --rm -v "$(pwd)/eval-docker:/output" chompy:latest \
 `eval-paper/run_1/full/baseline/full_baseline.txt`. Derivability matches
 Table 1 exactly: 71.1% Caviar, 57.1% Halide.
 
-### Step 4 — Re-derive Table 1 from shipped rulesets (~30-60 min, Docker)
+### Step 4 — Re-derive Table 1 from shipped rulesets (~5 hours, Docker)
 
 The strongest verification. `reproduce.py` does NOT trust the shipped
 JSONs — it re-runs derivability against every shipped ruleset from scratch
