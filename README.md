@@ -104,8 +104,8 @@ only_llm_terms            5       207.6 ± 18.5   25.8 ± 10.3          14.8 ± 
 llm_terms_and_llm_filter  5       1403.4 ± 61.7  73.3 ± 1.6           60.0 ± 1.4           2333.8 ± 139.5
 ```
 
-This is what Table 1 reports (note that in the paper, `only_llm_terms` is
-represented as `only_llm_terms_conds`).
+This is what Table 1 reports (for clarity, in the paper we write `llm_terms_conds` for `only_llm_terms`
+and for brevity, we write `llm_terms_filter` for `llm_terms_and_llm_filter`, and `llm_filter_k` for `llm_filter_top_k`).
 
 ### Step 3 — Verify the baseline binary (~35 min, Docker)
 
