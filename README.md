@@ -37,8 +37,8 @@ docker build -t chompy:latest .
 
 ## Reproducing Table 1
 
-> **Note on conditional rule counts:** The published Table 1 includes a
-> column reporting the number of *conditional* rules in each synthesized
+> **Note on conditional rule counts:** The published Table 1
+> reports the number of *conditional* rules in each synthesized
 > ruleset. This column is not part of `expected_results.csv` or the
 > derivability pipeline — it is computed separately from the shipped `.txt`
 > rulesets via Step 5 below.
@@ -54,9 +54,6 @@ Each step trusts strictly more than the previous one:
 | 4 | Re-derive Table 1 from shipped rulesets    | Docker           | ~5 hours        | nothing — re-runs derivability from scratch |
 | 5 | Count conditional rules                    | python only      | ~5 s            | the shipped `.txt` rulesets |
 
-You don't have to do all five. Step 2 alone reproduces the paper's numbers
-from the shipped data; later steps progressively widen what's actually being
-verified.
 
 ### Step 1 — Kick the tires (~1 min, Docker)
 
@@ -107,8 +104,7 @@ only_llm_terms            5       207.6 ± 18.5   25.8 ± 10.3          14.8 ± 
 llm_terms_and_llm_filter  5       1403.4 ± 61.7  73.3 ± 1.6           60.0 ± 1.4           2333.8 ± 139.5
 ```
 
-This is what Table 1 reports with display-name renaming — see the
-provenance map below (note that in the paper, `only_llm_terms` is
+This is what Table 1 reports (note that in the paper, `only_llm_terms` is
 represented as `only_llm_terms_conds`).
 
 ### Step 3 — Verify the baseline binary (~35 min, Docker)
@@ -175,7 +171,7 @@ based timeouts.
 
 The shipped `eval-paper/` is never modified by `reproduce.py`. You can
 re-run the script as many times as you like; each run lands in
-`eval-paper-rerun/` (gitignored).
+`eval-paper-rerun/`.
 
 ### Step 5 — Count conditional rules (~5 s, no Docker)
 
@@ -203,6 +199,8 @@ llm_filter_top_5          5       1430.0 ± 15.8  1025.0 ± 15.8
 only_llm_terms            5       207.6 ± 18.5   117.0 ± 15.6
 llm_terms_and_llm_filter  5       1403.4 ± 61.7  992.4 ± 59.0
 ```
+
+(As a reminder, in the paper `only_llm_terms` is represented as `only_llm_terms_conds`.)
 
 For each row, the `num_conditional_rules` should match
 what is reported in our paper's Table 1.
