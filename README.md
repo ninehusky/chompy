@@ -37,7 +37,13 @@ docker build -t chompy:latest .
 
 ## Reproducing Table 1
 
-We provide four ways to verify Table 1, ordered cheapest to most thorough.
+> **Note on conditional rule counts:** The published Table 1 includes a
+> column reporting the number of *conditional* rules in each synthesized
+> ruleset. This column is not part of `expected_results.csv` or the
+> derivability pipeline — it is computed separately from the shipped `.txt`
+> rulesets via Step 5 below.
+
+We provide five ways to verify Table 1, ordered cheapest to most thorough.
 Each step trusts strictly more than the previous one:
 
 | # | Step                                       | Tool             | Wall clock      | Trusts |
@@ -46,8 +52,9 @@ Each step trusts strictly more than the previous one:
 | 2 | Recreate Table 1 from shipped JSONs        | python only      | ~5 s            | the shipped JSONs |
 | 3 | Verify the baseline binary                 | Docker           | ~35 min         | the shipped Docker |
 | 4 | Re-derive Table 1 from shipped rulesets    | Docker           | ~5 hours        | nothing — re-runs derivability from scratch |
+| 5 | Count conditional rules                    | python only      | ~5 s            | the shipped `.txt` rulesets |
 
-You don't have to do all four. Step 2 alone reproduces the paper's numbers
+You don't have to do all five. Step 2 alone reproduces the paper's numbers
 from the shipped data; later steps progressively widen what's actually being
 verified.
 
@@ -169,6 +176,36 @@ based timeouts.
 The shipped `eval-paper/` is never modified by `reproduce.py`. You can
 re-run the script as many times as you like; each run lands in
 `eval-paper-rerun/` (gitignored).
+
+### Step 5 — Count conditional rules (~5 s, no Docker)
+
+Counts the number of conditional rules (those with an `if` clause) in each
+shipped ruleset, reporting mean ± stddev across the five runs. This is
+computed directly from the `.txt` files and is independent of the
+derivability pipeline:
+
+```bash
+python3 python/conditional_rule_counts.py eval-paper
+```
+
+You should see:
+
+```
+Found 5 run(s) in eval-paper
+
+row                       n_runs  num_rules      num_conditional_rules
+────────────────────────  ──────  ─────────────  ─────────────────────
+baseline                  5       1579.0 ± 0.0   1174.0 ± 0.0
+llm_only                  5       116.4 ± 11.5   40.0 ± 14.5
+llm_with_enum             5       1526.4 ± 20.0  1118.8 ± 14.1
+llm_filter_top_1          5       882.6 ± 22.3   477.6 ± 22.3
+llm_filter_top_5          5       1430.0 ± 15.8  1025.0 ± 15.8
+only_llm_terms            5       207.6 ± 18.5   117.0 ± 15.6
+llm_terms_and_llm_filter  5       1403.4 ± 61.7  992.4 ± 59.0
+```
+
+For each row, the `num_conditional_rules` should match
+what is reported in our paper's Table 1.
 
 ## File layout / provenance map
 
