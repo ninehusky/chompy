@@ -1,4 +1,4 @@
-# Conditional Rewrite Rule Synthesis Using E-Graphs (FMCAD 2026 artifact)
+# Conditional Rewrite Rule Synthesis Using E-Graphs and Implication Propagation (FMCAD 2026 artifact)
 
 This is the artifact for our FMCAD 2026 paper *"Conditional Rewrite Rule
 Synthesis Using E-Graphs"*, which extends theory exploration to
