@@ -63,9 +63,9 @@ def mirror_inputs(src: Path, dst: Path):
         shutil.copy2(f, target)
 
 
-def run_derive_only(txt_path: Path, repo_root: Path):
-    rel = txt_path.relative_to(repo_root)
-    container_path = f"/repo/{rel}"
+def run_derive_only(txt_path: Path, rerun_dir: Path):
+    rel = txt_path.relative_to(rerun_dir)
+    container_path = f"/rerun/{rel}"
     print(f"[reproduce] --derive-only {rel}")
     user_args = []
     if hasattr(os, "getuid"):
@@ -73,7 +73,7 @@ def run_derive_only(txt_path: Path, repo_root: Path):
     subprocess.run(
         [
             "docker", "run", "--rm", *user_args,
-            "-v", f"{repo_root}:/repo",
+            "-v", f"{rerun_dir}:/rerun",
             DOCKER_IMAGE,
             BINARY, "--derive-only", container_path,
         ],
@@ -160,7 +160,7 @@ def main():
 
     print(f"[reproduce] Found {len(txt_files)} rulesets - running derivability...")
     for txt in txt_files:
-        run_derive_only(txt, repo_root)
+        run_derive_only(txt, rerun)
 
     print(f"[reproduce] Summarizing -> {out_csv}")
     subprocess.run(
