@@ -200,7 +200,8 @@ only_llm_terms            5       207.6 ± 18.5   117.0 ± 15.6
 llm_terms_and_llm_filter  5       1403.4 ± 61.7  992.4 ± 59.0
 ```
 
-(As a reminder, in the paper `only_llm_terms` is represented as `only_llm_terms_conds`.)
+(As a reminder, in the paper we write `llm_terms_conds` for `only_llm_terms`
+`llm_terms_filter` for `llm_terms_and_llm_filter`, and `llm_filter_k` for `llm_filter_top_k`.)
 
 For each row, the `num_conditional_rules` should match
 what is reported in our paper's Table 1.
