@@ -21,6 +21,7 @@ Usage:
 """
 import argparse
 import csv
+import os
 import shutil
 import subprocess
 import sys
@@ -66,9 +67,12 @@ def run_derive_only(txt_path: Path, repo_root: Path):
     rel = txt_path.relative_to(repo_root)
     container_path = f"/repo/{rel}"
     print(f"[reproduce] --derive-only {rel}")
+    user_args = []
+    if hasattr(os, "getuid"):
+        user_args = ["--user", f"{os.getuid()}:{os.getgid()}"]
     subprocess.run(
         [
-            "docker", "run", "--rm",
+            "docker", "run", "--rm", *user_args,
             "-v", f"{repo_root}:/repo",
             DOCKER_IMAGE,
             BINARY, "--derive-only", container_path,
